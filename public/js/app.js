@@ -73,6 +73,75 @@ function escHtml(s) {
 function eventIcon(type) {
   return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',var_review:'📺'}[type]||'📋';
 }
+function newsIcon(type) {
+  return {match:'⚽',tournament:'🏆',transfer:'🔄',rumor:'💬',injury:'🏥',scandal:'⚠️'}[type]||'📰';
+}
+// Position category for pitch placement
+function posCategory(pos) {
+  if (!pos) return 'CM';
+  if (pos === 'Goalkeeper') return 'GK';
+  if (['Centre-Back','Left-Back','Right-Back'].includes(pos)) return 'DEF';
+  if (pos === 'Defensive Midfield') return 'CDM';
+  if (['Central Midfield','Left Midfield','Right Midfield'].includes(pos)) return 'CM';
+  if (pos === 'Attacking Midfield') return 'CAM';
+  if (['Left Winger','Right Winger','Centre-Forward','Striker'].includes(pos)) return 'FWD';
+  return 'CM';
+}
+const PITCH_ROW_Y_HOME = { GK:90, DEF:75, CDM:62, CM:49, CAM:35, FWD:18 };
+const PITCH_ROW_Y_AWAY = { GK:10, DEF:25, CDM:38, CM:51, CAM:65, FWD:82 };
+function pitchCoords(pos, idxInRow, countInRow, isAway) {
+  const cat = posCategory(pos);
+  const y = (isAway ? PITCH_ROW_Y_AWAY : PITCH_ROW_Y_HOME)[cat] || 50;
+  const x = countInRow === 1 ? 50 : 10 + 80 * (idxInRow / (countInRow - 1));
+  return { x, y };
+}
+const PITCH_SVG = `<svg viewBox="0 0 280 400" xmlns="http://www.w3.org/2000/svg" class="pitch-svg">
+  <rect width="280" height="400" fill="#2d8a4e" rx="6"/>
+  <rect x="0" y="0" width="280" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="0" y="100" width="280" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="0" y="200" width="280" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="0" y="300" width="280" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="10" y="10" width="260" height="380" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
+  <line x1="10" y1="200" x2="270" y2="200" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
+  <circle cx="140" cy="200" r="40" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
+  <circle cx="140" cy="200" r="2.5" fill="rgba(255,255,255,.9)"/>
+  <rect x="115" y="0" width="50" height="10" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="88" y="10" width="104" height="30" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="58" y="10" width="164" height="82" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <circle cx="140" cy="75" r="2.5" fill="rgba(255,255,255,.9)"/>
+  <path d="M 107 92 A 42 42 0 0 1 173 92" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="115" y="390" width="50" height="10" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="88" y="360" width="104" height="30" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="58" y="308" width="164" height="82" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <circle cx="140" cy="325" r="2.5" fill="rgba(255,255,255,.9)"/>
+  <path d="M 107 308 A 42 42 0 0 0 173 308" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <path d="M 10 28 A 18 18 0 0 1 28 10" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+  <path d="M 252 10 A 18 18 0 0 1 270 28" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+  <path d="M 10 372 A 18 18 0 0 0 28 390" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+  <path d="M 252 390 A 18 18 0 0 0 270 372" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+</svg>`;
+function renderPitch(players, isAway = false) {
+  if (!players || !players.length) return `<div class="empty-state"><p>No player data</p></div>`;
+  const rows = {};
+  for (const p of players) {
+    const cat = posCategory(p.position);
+    if (!rows[cat]) rows[cat] = [];
+    rows[cat].push(p);
+  }
+  let dots = '';
+  for (const [cat, catPl] of Object.entries(rows)) {
+    catPl.forEach((p, i) => {
+      const { x, y } = pitchCoords(p.position, i, catPl.length, isAway);
+      const label = p.shirt_number || (p.position||'?').substring(0,2).toUpperCase();
+      const lastName = (p.name||'').split(' ').pop();
+      dots += `<div class="pitch-player${isAway?' away':''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" title="${escHtml(p.name)} (${p.position||'?'})">
+        <div class="pc">${escHtml(String(label))}</div>
+        <div class="pl">${escHtml(lastName)}</div>
+      </div>`;
+    });
+  }
+  return `<div class="pitch-container"><div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${dots}</div></div></div>`;
+}
 function ratingColor(r) { return r >= 7.5 ? 'high' : r >= 6 ? 'mid' : 'low'; }
 function achIcon(type) {
   return {hat_trick:'🎩',brace:'⚽⚽',man_of_the_match:'🌟',clean_sheet:'🧤',tournament_winner:'🏆'}[type]||'🏅';
@@ -124,19 +193,33 @@ document.getElementById('search-global').addEventListener('input', e => {
 // ─── Banner loader ────────────────────────────────────────────
 async function loadBanners() {
   try {
-    const b = await GET('/banners/public');
-    renderBannerCol('banner-left',  b.left  || []);
-    renderBannerCol('banner-right', b.right || []);
+    const [b, featured] = await Promise.all([GET('/banners/public'), GET('/stats/featured').catch(()=>({}))]);
+    renderBannerCol('banner-left',  b.left  || [], featured?.topValue || null, '💰 Top Value');
+    renderBannerCol('banner-right', b.right || [], featured?.topRated || null, '⭐ Top Rated');
   } catch { /* banners are optional */ }
 }
-function renderBannerCol(containerId, banners) {
+function renderBannerCol(containerId, banners, featuredPlayer, featuredLabel) {
   const el = document.getElementById(containerId);
   if (!el) return;
-  el.innerHTML = banners.map(b => `
+  let html = banners.map(b => `
     <${b.link_url ? `a href="${escHtml(b.link_url)}" target="_blank" rel="noopener"` : 'div'} class="banner-item">
       ${b.image_url ? `<img src="${escHtml(b.image_url)}" alt="${escHtml(b.title||'')}">` : `<div class="banner-text-only">${escHtml(b.title||'')}</div>`}
     </${b.link_url ? 'a' : 'div'}>
   `).join('');
+  if (featuredPlayer) {
+    const initials = (featuredPlayer.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const ratingStr = featuredPlayer.avg_rating ? `<div class="fc-rating">${featuredPlayer.avg_rating.toFixed(2)}</div><div class="fc-pos">Avg Rating</div>` : `<div class="fc-val">${fmtValue(featuredPlayer.market_value)}</div>`;
+    html += `<div class="featured-card" onclick="navigate('/players/${featuredPlayer.id}')">
+      <div class="fc-label">${featuredLabel}</div>
+      ${featuredPlayer.image_url
+        ? `<img src="${escHtml(featuredPlayer.image_url)}" class="fc-avatar" alt="" onerror="this.style.display='none'">`
+        : `<div class="fc-avatar-ph">${initials}</div>`}
+      <div class="fc-name">${escHtml(featuredPlayer.name)}</div>
+      <div class="fc-pos">${escHtml(featuredPlayer.team_name||'Free Agent')}</div>
+      ${ratingStr}
+    </div>`;
+  }
+  el.innerHTML = html;
 }
 
 // ─── Router ───────────────────────────────────────────────────
@@ -165,6 +248,7 @@ function router() {
   if (rawPath==='/tournaments') return renderTournaments(app);
   if (parts[0]==='tournaments'&&parts[1]) return renderTournamentDetail(app, parts[1]);
   if (rawPath==='/admin') return renderAdmin(app);
+  if (rawPath==='/news')  return renderNewsPage(app);
   if (rawPath==='/search') return renderSearch(app, params.q);
   app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>Page not found</p></div>`;
 }
@@ -177,7 +261,7 @@ window.addEventListener('load', () => { updateAuthUI(); loadBanners(); router();
 async function renderHome(app) {
   app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
   try {
-    const [stats, newsData] = await Promise.all([GET('/stats'), GET('/news?limit=8')]);
+    const [stats, newsData] = await Promise.all([GET('/stats'), GET('/news?limit=3')]);
     app.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-value">${stats.totals.teams}</div><div class="stat-label">Teams</div></div>
@@ -187,10 +271,10 @@ async function renderHome(app) {
       </div>
       ${newsData.rows.length ? `
       <div class="card mt-3 mb-3" style="margin-bottom:20px">
-        <div class="card-header">📰 Latest News</div>
+        <div class="card-header">📰 Latest News <a href="#/news" style="font-size:12px;color:rgba(255,255,255,.7);font-weight:400;float:right">All news →</a></div>
         ${newsData.rows.map(n => `
           <div class="news-item">
-            <div class="news-icon">${n.type==='match'?'⚽':n.type==='tournament'?'🏆':'🔄'}</div>
+            <div class="news-icon">${newsIcon(n.type)}</div>
             <div class="news-body">
               <div class="news-title">${escHtml(n.title)}</div>
               ${n.body ? `<div class="news-meta">${escHtml(n.body.substring(0,120))}${n.body.length>120?'…':''}</div>` : ''}
@@ -253,6 +337,35 @@ async function renderHome(app) {
       </div>` : ''}
     `;
   } catch (err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NEWS PAGE
+// ═══════════════════════════════════════════════════════════
+async function renderNewsPage(app) {
+  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  try {
+    const data = await GET('/news?limit=50');
+    app.innerHTML = `
+      <div class="page-header"><h1 class="page-title">📰 News Feed</h1></div>
+      <div class="card">
+        ${!data.rows.length ? '<div class="empty-state" style="padding:40px"><div class="empty-icon">📰</div><p>No news yet</p></div>' :
+          data.rows.map(n => `
+            <div class="news-item">
+              <div class="news-icon">${newsIcon(n.type)}</div>
+              <div class="news-body" style="flex:1">
+                <div class="news-title">${escHtml(n.title)}</div>
+                ${n.body ? `<div class="news-meta" style="margin-top:4px">${escHtml(n.body)}</div>` : ''}
+                <div class="news-meta" style="margin-top:4px">
+                  <span class="badge badge-green" style="font-size:10px">${n.type}</span>
+                  ${fmtDate(n.created_at)}
+                  ${n.match_id?`<a href="#/matches/${n.match_id}" style="color:var(--green)">View match</a>`:''}
+                  ${n.tournament_id?`<a href="#/tournaments/${n.tournament_id}" style="color:var(--green)">View tournament</a>`:''}
+                </div>
+              </div>
+            </div>`).join('')}
+      </div>`;
+  } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -363,17 +476,22 @@ async function renderTeamDetail(app, id) {
       </div>
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="squad">Squad (${team.players.length})</button>
+        <button class="detail-tab" data-tab="formation">Formation</button>
         <button class="detail-tab" data-tab="titles">Titles (${team.titles.length})</button>
         <button class="detail-tab" data-tab="transfers">Transfers</button>
         <button class="detail-tab" data-tab="matches">Matches</button>
       </div>
       <div id="tab-squad" class="tab-panel active">${renderSquadTab(team)}</div>
+      <div id="tab-formation" class="tab-panel">
+        <div class="pitch-section" style="padding:20px">
+          ${renderPitch(team.players.filter(p=>p.status==='active'||!p.status))}
+        </div>
+      </div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
       <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Loading matches…</p></div></div>
     `;
     setupTabs(app);
-    // Lazy load matches tab
     app.querySelector('[data-tab="matches"]').addEventListener('click', async () => {
       const panel = document.getElementById('tab-matches');
       if (panel.dataset.loaded) return;
@@ -564,9 +682,9 @@ async function renderPlayerDetail(app, id) {
   try {
     const player = await GET('/players/'+id);
     const age = calcAge(player.date_of_birth);
-    // Load achievements
-    let achRows = [];
+    let achRows = [], careerStats = null;
     try { const r = await GET('/players/'+id+'/achievements'); achRows = r; } catch{}
+    try { careerStats = await GET('/players/'+id+'/career-stats'); } catch{}
 
     app.innerHTML=`
       <div class="detail-hero">
@@ -590,12 +708,14 @@ async function renderPlayerDetail(app, id) {
         </div>`:''}
       </div>
       <div class="detail-tabs">
-        <button class="detail-tab active" data-tab="transfers">Transfers</button>
+        <button class="detail-tab active" data-tab="stats">Statistics</button>
+        <button class="detail-tab" data-tab="transfers">Transfers</button>
         <button class="detail-tab" data-tab="titles">Titles</button>
         <button class="detail-tab" data-tab="achievements">Achievements (${achRows.length})</button>
         <button class="detail-tab" data-tab="market">Value History</button>
       </div>
-      <div id="tab-transfers" class="tab-panel active">${renderTransfersTab(player.transfers)}</div>
+      <div id="tab-stats" class="tab-panel active">${renderPlayerCareerStats(careerStats, player.position)}</div>
+      <div id="tab-transfers" class="tab-panel">${renderTransfersTab(player.transfers)}</div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(player.titles,null,player.id)}</div>
       <div id="tab-achievements" class="tab-panel">${renderAchievementsTab(achRows)}</div>
       <div id="tab-market" class="tab-panel">${renderMarketHistoryTab(player)}</div>
@@ -617,6 +737,47 @@ function renderAchievementsTab(achievements) {
           <div class="ach-date">${fmtDate(a.created_at)}</div>
         </div>
       </div>`).join('')}
+  </div>`;
+}
+
+function renderPlayerCareerStats(cs, position) {
+  if (!cs || cs.matches_played === 0) {
+    return `<div class="empty-state"><div class="empty-icon">📊</div><p>No match appearances yet</p></div>`;
+  }
+  const r = cs.avg_rating;
+  const rCls = r >= 7.5 ? 'high' : r >= 6 ? 'mid' : 'low';
+  const gpm  = cs.matches_played > 0 ? (cs.total_goals / cs.matches_played).toFixed(2) : '0.00';
+  const apm  = cs.matches_played > 0 ? (cs.total_assists / cs.matches_played).toFixed(2) : '0.00';
+  const isGK = position === 'Goalkeeper';
+  return `<div class="career-stats-card">
+    <div class="cs-rating-block">
+      <div class="cs-rating-big ${rCls}">${r ? r.toFixed(2) : '–'}</div>
+      <div class="cs-rating-meta">
+        <div><span class="rm-label">Average Rating</span></div>
+        <div><span class="rm-label">Matches Played:</span> <span class="rm-val">${cs.matches_played}</span></div>
+        <div><span class="rm-label">Best Rating:</span> <span class="rm-val">${cs.best_rating || '–'}</span></div>
+      </div>
+    </div>
+    <div class="cs-grid">
+      ${isGK ? '' : `<div class="cs-stat"><div class="sv">${cs.total_goals}</div><div class="sl">Goals</div></div>`}
+      ${isGK ? '' : `<div class="cs-stat"><div class="sv">${cs.total_assists}</div><div class="sl">Assists</div></div>`}
+      ${isGK ? '' : `<div class="cs-stat"><div class="sv">${cs.total_goals + cs.total_assists}</div><div class="sl">G+A</div></div>`}
+      ${isGK ? `<div class="cs-stat"><div class="sv">${cs.clean_sheets}</div><div class="sl">Clean Sheets</div></div>` : ''}
+      <div class="cs-stat"><div class="sv">${gpm}</div><div class="sl">${isGK ? 'GA/Game' : 'Goals/Game'}</div></div>
+      ${isGK ? '' : `<div class="cs-stat"><div class="sv">${apm}</div><div class="sl">Assists/Game</div></div>`}
+      <div class="cs-stat"><div class="sv" style="color:#f39c12">${cs.total_yellow_cards}</div><div class="sl">Yellow Cards</div></div>
+      <div class="cs-stat"><div class="sv" style="color:#e74c3c">${cs.total_red_cards}</div><div class="sl">Red Cards</div></div>
+      <div class="cs-stat"><div class="sv">${cs.motm_awards}</div><div class="sl">MOTM Awards</div></div>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600">CAREER ACHIEVEMENTS</div>
+    <div class="cs-ach-row">
+      ${cs.hat_tricks ? `<div class="cs-ach-chip">🎩 ${cs.hat_tricks} Hat-trick${cs.hat_tricks>1?'s':''}</div>` : ''}
+      ${cs.braces ? `<div class="cs-ach-chip">⚽⚽ ${cs.braces} Brace${cs.braces>1?'s':''}</div>` : ''}
+      ${cs.motm_awards ? `<div class="cs-ach-chip">🌟 ${cs.motm_awards} MOTM</div>` : ''}
+      ${cs.clean_sheets && !isGK ? `<div class="cs-ach-chip">🧤 ${cs.clean_sheets} Clean Sheet${cs.clean_sheets>1?'s':''}</div>` : ''}
+      ${cs.tournament_wins ? `<div class="cs-ach-chip">🏆 ${cs.tournament_wins} Tournament Win${cs.tournament_wins>1?'s':''}</div>` : ''}
+      ${(!cs.hat_tricks && !cs.braces && !cs.motm_awards && !cs.clean_sheets && !cs.tournament_wins) ? '<span style="color:var(--text-muted);font-size:12px">None yet</span>' : ''}
+    </div>
   </div>`;
 }
 
@@ -993,23 +1154,54 @@ async function renderMatchDetail(app, id) {
           <span class="clock-min" id="match-clock">⏱ ${isFinished?'90':match.match_date?fmtDate(match.match_date):'–'}</span>
         </div>
       </div>
-      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         ${match.tournament_name?`<span class="badge badge-gold">🏆 ${escHtml(match.tournament_name)}</span>`:''}
         ${isAdmin()&&!isFinished?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ Simulate Match</button>`:''}
         ${isFinished?`<button class="btn btn-green" onclick="startMatchReplay(${id})">▶ Watch Replay</button>`:''}
       </div>
-      <div class="two-col">
-        <div>
-          <div style="font-weight:700;margin-bottom:8px;font-size:14px">📋 Match Events</div>
-          <div class="event-log" id="event-log">
-            ${isFinished ? renderEventLog(match.events) : '<div style="padding:40px;text-align:center;color:var(--text-muted)">No events yet</div>'}
-          </div>
-        </div>
-        <div>
-          ${isFinished&&match.stats.length?renderMatchStats(match.stats,match.home_team_id,match.away_team_id):'<div class="empty-state"><p>Stats available after match</p></div>'}
+      <div class="detail-tabs" id="match-tabs">
+        <button class="detail-tab active" data-tab="m-events">📋 Events</button>
+        <button class="detail-tab" data-tab="m-ratings">👤 Ratings</button>
+        ${isFinished?`<button class="detail-tab" data-tab="m-fullstats">📊 Stats</button>`:''}
+        ${isFinished?`<button class="detail-tab" data-tab="m-formations">🏟️ Formations</button>`:''}
+      </div>
+      <div id="tab-m-events" class="tab-panel active">
+        <div class="event-log" id="event-log">
+          ${isFinished ? renderEventLog(match.events) : '<div style="padding:40px;text-align:center;color:var(--text-muted)">No events yet</div>'}
         </div>
       </div>
+      <div id="tab-m-ratings" class="tab-panel">
+        ${isFinished&&match.stats.length?renderMatchPlayerRatings(match.stats,match.home_team_id,match.away_team_id):'<div class="empty-state"><p>Stats available after match</p></div>'}
+      </div>
+      ${isFinished?`<div id="tab-m-fullstats" class="tab-panel">${renderMatchFullStats(match.fullStats, match.home_team_name, match.away_team_name)}</div>`:''}
+      ${isFinished?`<div id="tab-m-formations" class="tab-panel"><div id="match-formations-panel"><div class="empty-state"><p>Loading formations…</p></div></div></div>`:''}
     `;
+    setupTabs(app);
+    // Lazy-load formations tab
+    if (isFinished) {
+      app.querySelector('[data-tab="m-formations"]')?.addEventListener('click', async () => {
+        const panel = document.getElementById('match-formations-panel');
+        if (panel.dataset.loaded) return;
+        panel.dataset.loaded = '1';
+        try {
+          const [homePl, awayPl] = await Promise.all([
+            GET('/players?team_id='+match.home_team_id+'&status=active'),
+            GET('/players?team_id='+match.away_team_id+'&status=active'),
+          ]);
+          panel.innerHTML = `
+            <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:16px">
+              <div class="pitch-section">
+                <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.home_team_name)}</div>
+                ${renderPitch(homePl, false)}
+              </div>
+              <div class="pitch-section">
+                <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.away_team_name)}</div>
+                ${renderPitch(awayPl, true)}
+              </div>
+            </div>`;
+        } catch { panel.innerHTML = '<div class="empty-state"><p>Error loading formations</p></div>'; }
+      }, { once: true });
+    }
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
 }
 
@@ -1028,8 +1220,9 @@ function renderEventLog(events) {
   return html;
 }
 
-function renderMatchStats(stats, homeId, awayId) {
-  const top = stats.slice(0, 10);
+function renderMatchPlayerRatings(stats, homeId, awayId) {
+  if (!stats.length) return '<div class="empty-state"><p>No rating data</p></div>';
+  const top = stats.slice(0, 15);
   return `<div class="card"><div class="card-header">Player Ratings</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Player</th><th>G</th><th>A</th><th>YC</th><th>RC</th><th>Rating</th></tr></thead>
@@ -1044,6 +1237,37 @@ function renderMatchStats(stats, homeId, awayId) {
         </tr>`;
       }).join('')}</tbody>
     </table></div>
+  </div>`;
+}
+
+function renderMatchFullStats(ms, homeName, awayName) {
+  if (!ms) return `<div class="empty-state"><p>Match statistics not available</p></div>`;
+  function row(homeVal, label, awayVal) {
+    return `<div class="match-stat-row">
+      <div class="msr-val home">${homeVal}</div>
+      <div class="msr-label">${label}</div>
+      <div class="msr-val away">${awayVal}</div>
+    </div>`;
+  }
+  return `<div class="card"><div class="card-header">Match Statistics</div>
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:4px">
+        <span style="color:var(--green)">${escHtml(homeName)}</span>
+        <span style="color:#e74c3c">${escHtml(awayName)}</span>
+      </div>
+      <div class="poss-bar">
+        <div class="pb-home" style="width:${ms.possession_home}%"></div>
+        <div class="pb-away" style="width:${ms.possession_away}%"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:12px">
+        <span>${ms.possession_home}%</span><span>Ball Possession</span><span>${ms.possession_away}%</span>
+      </div>
+      ${row(ms.shots_home, 'Shots', ms.shots_away)}
+      ${row(ms.shots_on_target_home, 'Shots on Target', ms.shots_on_target_away)}
+      ${row(ms.corners_home, 'Corners', ms.corners_away)}
+      ${row(ms.fouls_home, 'Fouls', ms.fouls_away)}
+      ${row(ms.offsides_home, 'Offsides', ms.offsides_away)}
+    </div>
   </div>`;
 }
 

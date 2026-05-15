@@ -135,6 +135,45 @@ router.delete('/:id', requireAuth, (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
+router.get('/:id/career-stats', (req, res) => {
+  const db = getDb();
+  const agg = db.prepare(`
+    SELECT
+      COUNT(*) as matches_played,
+      SUM(goals) as total_goals,
+      SUM(assists) as total_assists,
+      SUM(yellow_cards) as total_yellow_cards,
+      SUM(red_cards) as total_red_cards,
+      AVG(rating) as avg_rating,
+      MAX(rating) as best_rating
+    FROM player_match_stats WHERE player_id = ?
+  `).get(req.params.id);
+
+  const achCounts = db.prepare(`
+    SELECT achievement_type, COUNT(*) as cnt
+    FROM player_achievements WHERE player_id = ?
+    GROUP BY achievement_type
+  `).all(req.params.id);
+
+  const achMap = {};
+  for (const a of achCounts) achMap[a.achievement_type] = a.cnt;
+
+  res.json({
+    matches_played: agg?.matches_played || 0,
+    total_goals:    agg?.total_goals || 0,
+    total_assists:  agg?.total_assists || 0,
+    total_yellow_cards: agg?.total_yellow_cards || 0,
+    total_red_cards:    agg?.total_red_cards || 0,
+    avg_rating:     agg?.avg_rating ? parseFloat(agg.avg_rating.toFixed(2)) : null,
+    best_rating:    agg?.best_rating ? parseFloat(agg.best_rating.toFixed(2)) : null,
+    hat_tricks:       achMap.hat_trick || 0,
+    braces:           achMap.brace || 0,
+    motm_awards:      achMap.man_of_the_match || 0,
+    clean_sheets:     achMap.clean_sheet || 0,
+    tournament_wins:  achMap.tournament_winner || 0,
+  });
+});
+
 router.get('/:id/achievements', (req, res) => {
   const db = getDb();
   const achievements = db.prepare(`

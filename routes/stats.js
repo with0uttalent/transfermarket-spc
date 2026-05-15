@@ -56,4 +56,32 @@ router.get('/', (req, res) => {
   });
 });
 
+router.get('/featured', (req, res) => {
+  const db = getDb();
+  const topRated = db.prepare(`
+    SELECT p.id, p.name, p.position, p.image_url, p.market_value,
+      t.name as team_name, AVG(pms.rating) as avg_rating, COUNT(pms.id) as matches_played
+    FROM players p
+    LEFT JOIN teams t ON p.team_id = t.id
+    JOIN player_match_stats pms ON pms.player_id = p.id
+    WHERE p.status = 'active'
+    GROUP BY p.id
+    HAVING matches_played >= 1
+    ORDER BY avg_rating DESC
+    LIMIT 1
+  `).get();
+
+  const topValue = db.prepare(`
+    SELECT p.id, p.name, p.position, p.image_url, p.market_value,
+      t.name as team_name
+    FROM players p
+    LEFT JOIN teams t ON p.team_id = t.id
+    WHERE p.status = 'active' AND p.market_value > 0
+    ORDER BY p.market_value DESC
+    LIMIT 1
+  `).get();
+
+  res.json({ topRated: topRated || null, topValue: topValue || null });
+});
+
 module.exports = router;

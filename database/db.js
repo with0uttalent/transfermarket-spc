@@ -225,9 +225,29 @@ function initSchema() {
       type TEXT DEFAULT 'match',
       match_id INTEGER,
       tournament_id INTEGER,
+      player_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE SET NULL,
-      FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
+      FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS match_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER NOT NULL UNIQUE,
+      possession_home REAL DEFAULT 50,
+      possession_away REAL DEFAULT 50,
+      shots_home INTEGER DEFAULT 0,
+      shots_away INTEGER DEFAULT 0,
+      shots_on_target_home INTEGER DEFAULT 0,
+      shots_on_target_away INTEGER DEFAULT 0,
+      corners_home INTEGER DEFAULT 0,
+      corners_away INTEGER DEFAULT 0,
+      fouls_home INTEGER DEFAULT 0,
+      fouls_away INTEGER DEFAULT 0,
+      offsides_home INTEGER DEFAULT 0,
+      offsides_away INTEGER DEFAULT 0,
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
     );
   `);
 }

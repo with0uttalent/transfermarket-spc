@@ -45,7 +45,7 @@ router.get('/:id', (req, res) => {
     WHERE e.match_id=?
     ORDER BY e.minute
   `).all(req.params.id);
-  const stats = db.prepare(`
+  const playerStats = db.prepare(`
     SELECT s.*, p.name as player_name, p.position, p.image_url, t.id as team_id
     FROM player_match_stats s
     JOIN players p ON s.player_id = p.id
@@ -53,7 +53,8 @@ router.get('/:id', (req, res) => {
     WHERE s.match_id=?
     ORDER BY s.rating DESC
   `).all(req.params.id);
-  res.json({ ...match, events, stats });
+  const fullStats = db.prepare(`SELECT * FROM match_stats WHERE match_id=?`).get(req.params.id) || null;
+  res.json({ ...match, events, stats: playerStats, fullStats });
 });
 
 router.post('/', requireAuth, (req, res) => {
