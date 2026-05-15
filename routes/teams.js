@@ -1,0 +1,108 @@
+const express = require('express');
+const { getDb } = require('../database/db');
+const { requireAuth } = require('../middleware/auth');
+
+const router = express.Router();
+
+const BASE_QUERY = `
+  SELECT t.*,
+    co.name as country_name, co.flag_emoji,
+    comp.name as competition_name
+  FROM teams t
+  LEFT JOIN countries co ON t.country_id = co.id
+  LEFT JOIN competitions comp ON t.competition_id = comp.id
+`;
+
+router.get('/', (req, res) => {
+  const db = getDb();
+  const { search, competition_id } = req.query;
+  let query = BASE_QUERY;
+  const params = [];
+  const conditions = [];
+
+  if (search) {
+    conditions.push('(t.name LIKE ? OR t.short_name LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
+  if (competition_id) {
+    conditions.push('t.competition_id = ?');
+    params.push(competition_id);
+  }
+  if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
+  query += ' ORDER BY t.market_value DESC';
+
+  const rows = db.prepare(query).all(...params);
+  res.json(rows);
+});
+
+router.get('/:id', (req, res) => {
+  const db = getDb();
+  const team = db.prepare(BASE_QUERY + ' WHERE t.id = ?').get(req.params.id);
+  if (!team) return res.status(404).json({ error: 'Not found' });
+
+  const players = db.prepare(`
+    SELECT p.*, co.name as nationality_name, co.flag_emoji
+    FROM players p
+    LEFT JOIN countries co ON p.nationality_id = co.id
+    WHERE p.team_id = ?
+    ORDER BY p.market_value DESC
+  `).all(req.params.id);
+
+  const titles = db.prepare(`
+    SELECT ti.*, comp.name as competition_name
+    FROM titles ti
+    LEFT JOIN competitions comp ON ti.competition_id = comp.id
+    WHERE ti.team_id = ?
+    ORDER BY ti.year DESC
+  `).all(req.params.id);
+
+  const transfers = db.prepare(`
+    SELECT tr.*,
+      p.name as player_name,
+      ft.name as from_team_name,
+      tt.name as to_team_name
+    FROM transfers tr
+    JOIN players p ON tr.player_id = p.id
+    LEFT JOIN teams ft ON tr.from_team_id = ft.id
+    LEFT JOIN teams tt ON tr.to_team_id = tt.id
+    WHERE tr.from_team_id = ? OR tr.to_team_id = ?
+    ORDER BY tr.transfer_date DESC
+    LIMIT 20
+  `).all(req.params.id, req.params.id);
+
+  res.json({ ...team, players, titles, transfers });
+});
+
+router.post('/', requireAuth, (req, res) => {
+  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO teams (name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(name, short_name || null, country_id || null, competition_id || null,
+    founded || null, stadium || null, logo_url || null, market_value || 0);
+  res.status(201).json({ id: result.lastInsertRowid, name });
+});
+
+router.put('/:id', requireAuth, (req, res) => {
+  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  const db = getDb();
+  const result = db.prepare(`
+    UPDATE teams SET name=?, short_name=?, country_id=?, competition_id=?, founded=?, stadium=?, logo_url=?, market_value=?
+    WHERE id=?
+  `).run(name, short_name || null, country_id || null, competition_id || null,
+    founded || null, stadium || null, logo_url || null, market_value || 0, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ id: Number(req.params.id), name });
+});
+
+router.delete('/:id', requireAuth, (req, res) => {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM teams WHERE id=?').run(req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ message: 'Deleted' });
+});
+
+module.exports = router;

@@ -1,0 +1,4 @@
+database/*.db
+.env
+public/images/uploads/*
+!public/images/uploads/.gitkeep

@@ -1,0 +1,59 @@
+const express = require('express');
+const { getDb } = require('../database/db');
+
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  const db = getDb();
+
+  const totalTeams = db.prepare('SELECT COUNT(*) as count FROM teams').get().count;
+  const totalPlayers = db.prepare('SELECT COUNT(*) as count FROM players').get().count;
+  const totalTransfers = db.prepare('SELECT COUNT(*) as count FROM transfers').get().count;
+  const totalTransferValue = db.prepare('SELECT COALESCE(SUM(transfer_fee), 0) as total FROM transfers').get().total;
+  const topPlayers = db.prepare(`
+    SELECT p.id, p.name, p.position, p.market_value, p.image_url,
+      t.name as team_name, co.flag_emoji
+    FROM players p
+    LEFT JOIN teams t ON p.team_id = t.id
+    LEFT JOIN countries co ON p.nationality_id = co.id
+    ORDER BY p.market_value DESC
+    LIMIT 10
+  `).all();
+
+  const topTeams = db.prepare(`
+    SELECT t.id, t.name, t.market_value, t.logo_url,
+      co.flag_emoji, comp.name as competition_name
+    FROM teams t
+    LEFT JOIN countries co ON t.country_id = co.id
+    LEFT JOIN competitions comp ON t.competition_id = comp.id
+    ORDER BY t.market_value DESC
+    LIMIT 10
+  `).all();
+
+  const recentTransfers = db.prepare(`
+    SELECT tr.*,
+      p.name as player_name, p.position,
+      ft.name as from_team_name,
+      tt.name as to_team_name
+    FROM transfers tr
+    JOIN players p ON tr.player_id = p.id
+    LEFT JOIN teams ft ON tr.from_team_id = ft.id
+    LEFT JOIN teams tt ON tr.to_team_id = tt.id
+    ORDER BY tr.created_at DESC
+    LIMIT 10
+  `).all();
+
+  res.json({
+    totals: {
+      teams: totalTeams,
+      players: totalPlayers,
+      transfers: totalTransfers,
+      transfer_value: totalTransferValue,
+    },
+    top_players: topPlayers,
+    top_teams: topTeams,
+    recent_transfers: recentTransfers,
+  });
+});
+
+module.exports = router;
