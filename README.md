@@ -20,16 +20,27 @@ A full-featured football database web application inspired by Transfermarkt. Tra
 | Manage competitions and leagues | — | ✅ |
 | Manage countries / nationalities | — | ✅ |
 | Change admin password | — | ✅ |
+| Advertising banners (left/right columns) | — | ✅ |
+| Loan players to other clubs | — | ✅ |
+| Simulate matches with animated replay | ✅ | ✅ |
+| Create & simulate tournaments (knockout bracket) | ✅ | ✅ |
+| News feed (from matches & tournaments) | ✅ | ✅ |
+| Player achievements & match stats | ✅ | ✅ |
 
 ### What you can manage
 
 - **Teams** — name, short name, country, competition, founded year, stadium, logo, squad market value
 - **Players** — name, date of birth, nationality, position, foot, height, shirt number, team, market value, status (active / retired / free agent), photo
-- **Market Values** — set values per player; history is recorded automatically each time a value changes
+- **Market Values** — set values per player; history is recorded automatically each time a value changes; match performance also adjusts values automatically
 - **Transfers** — permanent, loan, free, or youth transfers with fee and date; moving a player updates their team automatically
+- **Loans** — rent a player to another club with start/end dates and a loan fee; the player auto-returns when the loan expires
 - **Titles** — league wins, cup wins, individual awards; assignable to a team or a player
 - **Competitions** — leagues, cups, international tournaments linked to countries
 - **Countries** — flag emoji, 3-letter code, used as nationalities and club countries
+- **Matches** — schedule matches between teams, simulate them with a probabilistic engine, watch an 18-second animated replay
+- **Tournaments** — create knockout tournaments, add teams, auto-generate a seeded bracket, simulate round by round
+- **Banners** — upload or link advertising banners shown in the left and right sidebar columns on every page
+- **News** — auto-generated from match results and tournament events; shown as a block on the homepage
 
 ---
 
@@ -232,6 +243,33 @@ Open a player → click **Edit** → change the **Market Value** field → save.
 
 Open a team or player detail page → click the **Titles** tab → **+ Add Title**. Link to a competition if desired, enter the season and year.
 
+### Simulating a match
+
+1. Go to **Matches** → click **+ Schedule Match**.
+2. Select home team, away team, and a date.
+3. Open the match detail page → click **Simulate Match** (admin only).
+4. Once simulated, click **Watch Replay** to see an 18-second animated replay with a live event log.
+
+Market values of standout performers are automatically adjusted after simulation.
+
+### Running a tournament
+
+1. Go to **Tournaments** → click **+ New Tournament**.
+2. Open the tournament → click **+ Add Teams** and select participating clubs.
+3. Click **Start Tournament** — the bracket is seeded by squad market value.
+4. On each round, click **Simulate Round** to play all matches and advance the bracket.
+5. The champion is crowned automatically and players receive achievement records.
+
+### Managing loans
+
+Open a player's profile → click **Loan Out**. Enter the destination club, loan fee, start and end dates. The player moves to the loan club and returns automatically when the loan expires (checked daily at 00:05).
+
+To end a loan early: go to **Transfers** → **Loans** tab → click **End Loan**.
+
+### Advertising banners
+
+Go to **Admin** → **Banners**. Add a banner with a name, image URL or upload, optional link, and choose **left** or **right** position. Active banners appear in the sidebar columns on every page.
+
 ---
 
 ## File Structure
@@ -247,13 +285,21 @@ transfermarket-spc/
 │   └── transfermarket.db  # Auto-created on first run
 ├── routes/
 │   ├── auth.js
+│   ├── banners.js         # Advertising banners
 │   ├── countries.js
 │   ├── competitions.js
-│   ├── teams.js
+│   ├── loans.js           # Player loans
+│   ├── matches.js         # Match simulation
+│   ├── news.js            # Auto-generated news feed
 │   ├── players.js
-│   ├── transfers.js
+│   ├── stats.js
+│   ├── teams.js
 │   ├── titles.js
-│   └── stats.js
+│   ├── tournaments.js     # Knockout tournaments
+│   └── transfers.js
+├── services/
+│   ├── matchSimulator.js  # Probabilistic match engine
+│   └── scheduler.js       # Daily cron (00:05) for auto-simulation
 ├── middleware/
 │   └── auth.js            # JWT verification
 ├── scripts/
@@ -292,6 +338,30 @@ sudo systemctl restart transfermarket
 ```
 
 Your data in `database/transfermarket.db` is never touched by updates.
+
+### Migrating from v1 to v2 (existing deployments)
+
+If you already have players, teams, and other data from v1, migration is **fully automatic and non-destructive**.
+
+All new v2 tables (`matches`, `match_events`, `tournaments`, `loans`, `banners`, `news`, etc.) use `CREATE TABLE IF NOT EXISTS`, so they are created on first startup without modifying or dropping any existing tables.
+
+**Recommended steps for safety:**
+
+```bash
+# 1. Back up your database first
+cp database/transfermarket.db database/transfermarket.db.backup-$(date +%Y%m%d)
+
+# 2. Pull the new code
+git pull
+
+# 3. Install new dependency (node-cron)
+npm install
+
+# 4. Restart the service
+sudo systemctl restart transfermarket
+```
+
+That's it. All your existing teams, players, transfers, and titles will be intact. The new features (matches, tournaments, loans, banners, news) are empty and ready to populate.
 
 ---
 
