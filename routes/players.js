@@ -135,4 +135,39 @@ router.delete('/:id', requireAuth, (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
+router.get('/:id/achievements', (req, res) => {
+  const db = getDb();
+  const achievements = db.prepare(`
+    SELECT pa.*,
+      m.match_date, m.home_score, m.away_score,
+      ht.name as home_team_name, at.name as away_team_name,
+      t.name as tournament_name
+    FROM player_achievements pa
+    LEFT JOIN matches m ON pa.match_id = m.id
+    LEFT JOIN teams ht ON m.home_team_id = ht.id
+    LEFT JOIN teams at ON m.away_team_id = at.id
+    LEFT JOIN tournaments t ON pa.tournament_id = t.id
+    WHERE pa.player_id = ?
+    ORDER BY pa.created_at DESC
+  `).all(req.params.id);
+  res.json(achievements);
+});
+
+router.get('/:id/match-stats', (req, res) => {
+  const db = getDb();
+  const stats = db.prepare(`
+    SELECT pms.*,
+      m.match_date, m.home_score, m.away_score, m.status,
+      ht.name as home_team_name, at.name as away_team_name
+    FROM player_match_stats pms
+    JOIN matches m ON pms.match_id = m.id
+    JOIN teams ht ON m.home_team_id = ht.id
+    JOIN teams at ON m.away_team_id = at.id
+    WHERE pms.player_id = ?
+    ORDER BY m.match_date DESC
+    LIMIT 20
+  `).all(req.params.id);
+  res.json(stats);
+});
+
 module.exports = router;

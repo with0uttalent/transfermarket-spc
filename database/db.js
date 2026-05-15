@@ -1,6 +1,5 @@
 const Database = require('better-sqlite3');
 const path = require('path');
-const fs = require('fs');
 
 const DB_PATH = path.join(__dirname, 'transfermarket.db');
 
@@ -111,6 +110,124 @@ function initSchema() {
       market_value REAL NOT NULL,
       recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
+
+    -- ── New tables (v2) ───────────────────────────────────────
+
+    CREATE TABLE IF NOT EXISTS banners (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      position TEXT NOT NULL CHECK(position IN ('left','right')),
+      title TEXT,
+      image_url TEXT,
+      link_url TEXT,
+      active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      home_team_id INTEGER NOT NULL,
+      away_team_id INTEGER NOT NULL,
+      home_score INTEGER DEFAULT 0,
+      away_score INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'scheduled',
+      match_date DATE,
+      tournament_id INTEGER,
+      tournament_round INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (home_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (away_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS match_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER NOT NULL,
+      minute INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      team_id INTEGER,
+      player_id INTEGER,
+      player2_id INTEGER,
+      description TEXT,
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE SET NULL,
+      FOREIGN KEY (player2_id) REFERENCES players(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS player_match_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id INTEGER NOT NULL,
+      match_id INTEGER NOT NULL,
+      goals INTEGER DEFAULT 0,
+      assists INTEGER DEFAULT 0,
+      yellow_cards INTEGER DEFAULT 0,
+      red_cards INTEGER DEFAULT 0,
+      minutes_played INTEGER DEFAULT 90,
+      rating REAL DEFAULT 6.0,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS player_achievements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id INTEGER NOT NULL,
+      achievement_type TEXT NOT NULL,
+      description TEXT,
+      match_id INTEGER,
+      tournament_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE SET NULL,
+      FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tournaments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      status TEXT DEFAULT 'setup',
+      current_round INTEGER DEFAULT 0,
+      total_rounds INTEGER DEFAULT 0,
+      bracket_data TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tournament_teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      seed INTEGER DEFAULT 0,
+      eliminated INTEGER DEFAULT 0,
+      FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS loans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id INTEGER NOT NULL,
+      from_team_id INTEGER,
+      to_team_id INTEGER NOT NULL,
+      loan_fee REAL DEFAULT 0,
+      start_date DATE,
+      end_date DATE,
+      status TEXT DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+      FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE SET NULL,
+      FOREIGN KEY (to_team_id) REFERENCES teams(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS news (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      body TEXT,
+      type TEXT DEFAULT 'match',
+      match_id INTEGER,
+      tournament_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE SET NULL,
+      FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL
     );
   `);
 }
