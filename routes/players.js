@@ -135,6 +135,41 @@ router.delete('/:id', requireAuth, (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
+router.get('/:id/skills', (req, res) => {
+  const db = getDb();
+  let skills = db.prepare(`SELECT * FROM player_skills WHERE player_id=?`).get(req.params.id);
+  if (!skills) {
+    // Lazy initialize skills for this player
+    const player = db.prepare('SELECT * FROM players WHERE id=?').get(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Not found' });
+    const mv   = player.market_value || 500000;
+    const base = Math.min(88, Math.max(38, Math.round(52 + (Math.log10(Math.max(mv, 100000)) - 5) * 13)));
+    const v    = () => Math.round((Math.random() - 0.5) * 22);
+    const pos  = player.position || '';
+    let pace, shooting, passing, defending, physical;
+    if (pos === 'Goalkeeper') {
+      pace = base-12+v(); shooting = base-18+v(); passing = base-8+v(); defending = base+8+v(); physical = base+2+v();
+    } else if (['Centre-Back','Left-Back','Right-Back'].includes(pos)) {
+      pace = base+2+v(); shooting = base-14+v(); passing = base-4+v(); defending = base+12+v(); physical = base+10+v();
+    } else if (pos === 'Defensive Midfield') {
+      pace = base-4+v(); shooting = base-10+v(); passing = base+8+v(); defending = base+10+v(); physical = base+4+v();
+    } else if (['Central Midfield','Attacking Midfield'].includes(pos)) {
+      pace = base+2+v(); shooting = base+2+v(); passing = base+12+v(); defending = base-8+v(); physical = base+v();
+    } else if (['Left Winger','Right Winger'].includes(pos)) {
+      pace = base+14+v(); shooting = base+4+v(); passing = base+6+v(); defending = base-14+v(); physical = base-8+v();
+    } else {
+      pace = base+10+v(); shooting = base+16+v(); passing = base-4+v(); defending = base-18+v(); physical = base+4+v();
+    }
+    const clamp = x => Math.min(99, Math.max(25, x));
+    db.prepare(`INSERT INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`)
+      .run(player.id, clamp(pace), clamp(shooting), clamp(passing), clamp(defending), clamp(physical));
+    skills = db.prepare(`SELECT * FROM player_skills WHERE player_id=?`).get(req.params.id);
+  }
+  // Also include injury status
+  const injury = db.prepare(`SELECT * FROM player_injuries WHERE player_id=? AND matches_remaining>0`).get(req.params.id);
+  res.json({ ...skills, injury: injury || null });
+});
+
 router.get('/:id/career-stats', (req, res) => {
   const db = getDb();
   const agg = db.prepare(`

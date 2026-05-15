@@ -74,7 +74,7 @@ function eventIcon(type) {
   return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',var_review:'📺'}[type]||'📋';
 }
 function newsIcon(type) {
-  return {match:'⚽',tournament:'🏆',transfer:'🔄',rumor:'💬',injury:'🏥',scandal:'⚠️'}[type]||'📰';
+  return {match:'⚽',tournament:'🏆',transfer:'🔄',rumor:'💬',injury:'🏥',scandal:'⚠️',team:'🏟️'}[type]||'📰';
 }
 // Position category for pitch placement
 function posCategory(pos) {
@@ -132,11 +132,14 @@ function renderPitch(players, isAway = false) {
   for (const [cat, catPl] of Object.entries(rows)) {
     catPl.forEach((p, i) => {
       const { x, y } = pitchCoords(p.position, i, catPl.length, isAway);
-      const label = p.shirt_number || (p.position||'?').substring(0,2).toUpperCase();
-      const lastName = (p.name||'').split(' ').pop();
+      const firstName = (p.name||'').split(' ')[0];
+      const initials = (p.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+      const avatarHtml = p.image_url
+        ? `<img src="${escHtml(p.image_url)}" alt="${escHtml(p.name)}" onerror="this.style.display='none'">`
+        : `<div class="pc-ini">${escHtml(initials)}</div>`;
       dots += `<div class="pitch-player${isAway?' away':''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" title="${escHtml(p.name)} (${p.position||'?'})">
-        <div class="pc">${escHtml(String(label))}</div>
-        <div class="pl">${escHtml(lastName)}</div>
+        <div class="pc-av">${avatarHtml}</div>
+        <div class="pl">${escHtml(firstName)}</div>
       </div>`;
     });
   }
@@ -295,7 +298,7 @@ async function renderHome(app) {
                   <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><div class="font-bold">${escHtml(p.name)}</div><div class="text-muted" style="font-size:11px">${p.flag_emoji||''}</div></div></div></td>
                   <td>${posBadge(p.position)}</td>
                   <td class="text-muted">${escHtml(p.team_name||'Free')}</td>
-                  <td class="text-right mv">${fmtValue(p.market_value)}</td>
+                  <td class="text-right" style="white-space:nowrap;font-size:12px;color:var(--green);font-weight:700">${fmtValue(p.market_value)}</td>
                 </tr>`).join('')}
             </tbody>
           </table></div>
@@ -480,6 +483,7 @@ async function renderTeamDetail(app, id) {
         <button class="detail-tab" data-tab="titles">Titles (${team.titles.length})</button>
         <button class="detail-tab" data-tab="transfers">Transfers</button>
         <button class="detail-tab" data-tab="matches">Matches</button>
+        <button class="detail-tab" data-tab="team-news">News</button>
       </div>
       <div id="tab-squad" class="tab-panel active">${renderSquadTab(team)}</div>
       <div id="tab-formation" class="tab-panel">
@@ -490,6 +494,7 @@ async function renderTeamDetail(app, id) {
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
       <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Loading matches…</p></div></div>
+      <div id="tab-team-news" class="tab-panel"><div class="empty-state"><p>Loading…</p></div></div>
     `;
     setupTabs(app);
     app.querySelector('[data-tab="matches"]').addEventListener('click', async () => {
@@ -500,6 +505,24 @@ async function renderTeamDetail(app, id) {
         const matches = await GET('/matches?team_id='+id+'&limit=20');
         panel.innerHTML = renderMatchList(matches, id);
       } catch { panel.innerHTML = '<div class="empty-state"><p>Error loading matches</p></div>'; }
+    }, { once: true });
+    app.querySelector('[data-tab="team-news"]').addEventListener('click', async () => {
+      const panel = document.getElementById('tab-team-news');
+      if (panel.dataset.loaded) return;
+      panel.dataset.loaded = '1';
+      try {
+        const data = await GET('/news?team_id='+id+'&limit=30');
+        if (!data.rows.length) { panel.innerHTML = '<div class="empty-state"><div class="empty-icon">📰</div><p>No news yet</p></div>'; return; }
+        panel.innerHTML = `<div class="card">${data.rows.map(n => `
+          <div class="news-item">
+            <div class="news-icon">${newsIcon(n.type)}</div>
+            <div class="news-body">
+              <div class="news-title">${escHtml(n.title)}</div>
+              ${n.body ? `<div class="news-meta">${escHtml(n.body.substring(0,150))}${n.body.length>150?'…':''}</div>` : ''}
+              <div class="news-meta">${fmtDate(n.created_at)}</div>
+            </div>
+          </div>`).join('')}</div>`;
+      } catch { panel.innerHTML = '<div class="empty-state"><p>Error loading news</p></div>'; }
     }, { once: true });
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
 }
@@ -682,9 +705,10 @@ async function renderPlayerDetail(app, id) {
   try {
     const player = await GET('/players/'+id);
     const age = calcAge(player.date_of_birth);
-    let achRows = [], careerStats = null;
+    let achRows = [], careerStats = null, playerSkills = null;
     try { const r = await GET('/players/'+id+'/achievements'); achRows = r; } catch{}
     try { careerStats = await GET('/players/'+id+'/career-stats'); } catch{}
+    try { playerSkills = await GET('/players/'+id+'/skills'); } catch{}
 
     app.innerHTML=`
       <div class="detail-hero">
@@ -714,7 +738,7 @@ async function renderPlayerDetail(app, id) {
         <button class="detail-tab" data-tab="achievements">Achievements (${achRows.length})</button>
         <button class="detail-tab" data-tab="market">Value History</button>
       </div>
-      <div id="tab-stats" class="tab-panel active">${renderPlayerCareerStats(careerStats, player.position)}</div>
+      <div id="tab-stats" class="tab-panel active"><div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">${renderPentagonChart(playerSkills, player.position)}<div style="flex:1;min-width:260px">${renderPlayerCareerStats(careerStats, player.position)}</div></div></div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(player.transfers)}</div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(player.titles,null,player.id)}</div>
       <div id="tab-achievements" class="tab-panel">${renderAchievementsTab(achRows)}</div>
@@ -781,19 +805,111 @@ function renderPlayerCareerStats(cs, position) {
   </div>`;
 }
 
+function renderPentagonChart(skills, position) {
+  if (!skills) return '<div class="empty-state"><p>Skills data not available</p></div>';
+  const isGK = position === 'Goalkeeper';
+  const labels = isGK
+    ? ['Reflexes', 'Positioning', 'Kicking', 'Handling', 'Aerial']
+    : ['Pace', 'Shooting', 'Passing', 'Defending', 'Physical'];
+  const values = [skills.pace, skills.shooting, skills.passing, skills.defending, skills.physical];
+
+  const cx = 110, cy = 110, rMax = 80, rLabel = 100;
+  const N = 5;
+
+  function pt(r, i) {
+    const a = (Math.PI * 2 * i / N) - Math.PI / 2;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  }
+
+  const rings = [0.25, 0.5, 0.75, 1.0].map(pct => {
+    const pts = Array.from({length:N}, (_,i) => pt(rMax * pct, i));
+    return pts.map((p,i) => `${i===0?'M':'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + 'Z';
+  });
+
+  const axes = Array.from({length:N}, (_,i) => {
+    const p = pt(rMax, i);
+    return `M${cx},${cy} L${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+  });
+
+  const skillPts = values.map((v, i) => pt(rMax * Math.min(99, Math.max(1, v||50)) / 99, i));
+  const skillPath = skillPts.map((p,i) => `${i===0?'M':'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + 'Z';
+
+  const labelPts = Array.from({length:N}, (_,i) => pt(rLabel, i));
+  const textAnchors = ['middle', 'start', 'start', 'end', 'end'];
+
+  const svgH = 220, svgW = 220;
+
+  return `<div class="pentagon-wrap">
+    <svg viewBox="0 0 ${svgW} ${svgH}" class="pentagon-svg">
+      ${rings.map(d => `<path d="${d}" fill="none" stroke="var(--border)" stroke-width="1"/>`).join('')}
+      ${axes.map(d => `<path d="${d}" stroke="var(--border)" stroke-width="1"/>`).join('')}
+      <path d="${skillPath}" fill="rgba(39,174,96,.25)" stroke="var(--green)" stroke-width="2"/>
+      ${skillPts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="var(--green)"/>`).join('')}
+      ${labelPts.map((p, i) => `
+        <text x="${p.x.toFixed(1)}" y="${(p.y - 7).toFixed(1)}"
+          text-anchor="${textAnchors[i]}"
+          font-size="9" fill="var(--text-muted)" font-family="sans-serif">${labels[i]}</text>
+        <text x="${p.x.toFixed(1)}" y="${(p.y + 5).toFixed(1)}"
+          text-anchor="${textAnchors[i]}"
+          font-size="11" fill="var(--text)" font-weight="700" font-family="sans-serif">${values[i] || 50}</text>
+      `).join('')}
+    </svg>
+  </div>`;
+}
+
 function renderMarketHistoryTab(player) {
   const hist = player.market_value_history || [];
   if (!hist.length) return `<div class="empty-state"><div class="empty-icon">📈</div><p>No market value history</p></div>`;
-  const max = Math.max(...hist.map(h=>h.market_value));
+
+  const W = 480, H = 140;
+  const PAD = { top: 16, right: 16, bottom: 28, left: 60 };
+  const iW = W - PAD.left - PAD.right;
+  const iH = H - PAD.top - PAD.bottom;
+
+  const vals = hist.map(h => h.market_value);
+  const maxV = Math.max(...vals) * 1.15;
+  const minV = Math.min(0, ...vals) * 0.9;
+  const dates = hist.map(h => new Date(h.recorded_at).getTime());
+  const minD = Math.min(...dates), maxD = Math.max(...dates);
+
+  const toX = ts => PAD.left + (maxD === minD ? iW/2 : iW * (ts - minD) / (maxD - minD));
+  const toY = v  => PAD.top  + iH * (1 - (v - minV) / (maxV - minV || 1));
+
+  const pts = hist.map((h, i) => ({ x: toX(dates[i]), y: toY(h.market_value), v: h.market_value, d: h.recorded_at }));
+  const linePath = pts.map((p,i) => `${i===0?'M':'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = pts.length > 1
+    ? `${linePath} L${pts[pts.length-1].x.toFixed(1)},${(PAD.top+iH).toFixed(1)} L${pts[0].x.toFixed(1)},${(PAD.top+iH).toFixed(1)} Z`
+    : '';
+
+  const yTicks = [0, 0.5, 1].map(pct => {
+    const v = minV + (maxV - minV) * (1 - pct);
+    const y = PAD.top + iH * pct;
+    return { v, y };
+  });
+
+  const chartHtml = `<div class="mv-chart-wrap">
+    <svg viewBox="0 0 ${W} ${H}" class="mv-chart-svg">
+      <defs>
+        <linearGradient id="mvGrad${player.id}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#27ae60" stop-opacity=".35"/>
+          <stop offset="100%" stop-color="#27ae60" stop-opacity=".03"/>
+        </linearGradient>
+      </defs>
+      ${yTicks.map(t => `<line x1="${PAD.left}" y1="${t.y.toFixed(1)}" x2="${W-PAD.right}" y2="${t.y.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`).join('')}
+      ${yTicks.map(t => `<text x="${PAD.left-6}" y="${(t.y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--text-muted)" font-family="sans-serif">${fmtValue(t.v)}</text>`).join('')}
+      ${areaPath ? `<path d="${areaPath}" fill="url(#mvGrad${player.id})"/>` : ''}
+      <path d="${linePath}" fill="none" stroke="#27ae60" stroke-width="2.5" stroke-linejoin="round"/>
+      ${pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="#27ae60" stroke="var(--surface)" stroke-width="1.5"><title>${fmtValue(p.v)} · ${fmtDate(p.d)}</title></circle>`).join('')}
+      <line x1="${PAD.left}" y1="${PAD.top}" x2="${PAD.left}" y2="${PAD.top+iH}" stroke="var(--border)" stroke-width="1"/>
+      <line x1="${PAD.left}" y1="${PAD.top+iH}" x2="${W-PAD.right}" y2="${PAD.top+iH}" stroke="var(--border)" stroke-width="1"/>
+    </svg>
+  </div>`;
+
   return `<div class="card"><div class="card-header">Market Value History</div>
-    <div class="card-body">
-      <div class="chart-container">
-        ${hist.map(h=>`<div class="chart-bar" style="height:${max>0?Math.max(4,Math.round(h.market_value/max*100)):4}%" title="${fmtValue(h.market_value)} (${fmtDate(h.recorded_at)})"></div>`).join('')}
-      </div>
-    </div>
+    <div class="card-body">${chartHtml}</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th class="text-right">Value</th></tr></thead>
-      <tbody>${[...hist].reverse().map(h=>`<tr><td class="text-muted">${fmtDate(h.recorded_at)}</td><td class="text-right mv">${fmtValue(h.market_value)}</td></tr>`).join('')}</tbody>
+      <tbody>${[...hist].reverse().slice(0,10).map(h=>`<tr><td class="text-muted">${fmtDate(h.recorded_at)}</td><td class="text-right mv">${fmtValue(h.market_value)}</td></tr>`).join('')}</tbody>
     </table></div>
   </div>`;
 }

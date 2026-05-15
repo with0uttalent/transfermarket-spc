@@ -249,7 +249,35 @@ function initSchema() {
       offsides_away INTEGER DEFAULT 0,
       FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS player_skills (
+      player_id INTEGER PRIMARY KEY,
+      pace INTEGER DEFAULT 60,
+      shooting INTEGER DEFAULT 60,
+      passing INTEGER DEFAULT 60,
+      defending INTEGER DEFAULT 60,
+      physical INTEGER DEFAULT 60,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS player_injuries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id INTEGER NOT NULL UNIQUE,
+      injury_type TEXT NOT NULL DEFAULT 'muscle strain',
+      matches_remaining INTEGER DEFAULT 3,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
   `);
+
+  // Idempotent column additions for existing databases
+  const migrations = [
+    `ALTER TABLE news ADD COLUMN player_id INTEGER`,
+    `ALTER TABLE news ADD COLUMN team_id INTEGER`,
+  ];
+  for (const m of migrations) {
+    try { db.exec(m); } catch { /* column already exists */ }
+  }
 }
 
 module.exports = { getDb };
