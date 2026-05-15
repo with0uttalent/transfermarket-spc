@@ -1,4 +1,7 @@
 database/*.db
+database/*.db-shm
+database/*.db-wal
 .env
+node_modules/
 public/images/uploads/*
 !public/images/uploads/.gitkeep
