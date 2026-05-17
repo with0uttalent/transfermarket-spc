@@ -1,7 +1,7 @@
 'use strict';
 const cron = require('node-cron');
 const { getDb } = require('../database/db');
-const { simulateMatch } = require('./matchSimulator');
+const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
 
 function fmtV(v) {
   if (!v || v === 0) return 'undisclosed';
@@ -310,6 +310,190 @@ function generateRandomPlayerNews() {
   }
 }
 
+// ─── simulateLeagueMatchday ────────────────────────────────────────────────────
+// Simulates the next unplayed matchday for a league using team lineups + skills
+function simulateLeagueMatchday(leagueId) {
+  const db = getDb();
+  const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(leagueId);
+  if (!league) throw new Error(`League ${leagueId} not found`);
+  if (league.status !== 'active') throw new Error(`League ${leagueId} is not active`);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Find next unplayed matchday with scheduled_date <= today
+  const nextRow = db.prepare(`
+    SELECT MIN(matchday) as matchday
+    FROM league_schedule
+    WHERE league_id=? AND match_id IS NULL AND scheduled_date <= ?
+  `).get(leagueId, today);
+
+  if (!nextRow || nextRow.matchday === null) {
+    console.log(`[Scheduler] League ${leagueId}: no matchdays due today`);
+    return;
+  }
+  const matchday = nextRow.matchday;
+
+  // Get all schedule rows for this matchday
+  const scheduleRows = db.prepare(`
+    SELECT ls.*, ht.name AS home_name, at.name AS away_name
+    FROM league_schedule ls
+    JOIN teams ht ON ls.home_team_id = ht.id
+    JOIN teams at ON ls.away_team_id = at.id
+    WHERE ls.league_id=? AND ls.matchday=? AND ls.match_id IS NULL
+  `).all(leagueId, matchday);
+
+  for (const srow of scheduleRows) {
+    // Get lineup starters (slots 1-11) and reserves (slots 12-22)
+    const lineupRows = db.prepare(`
+      SELECT tl.slot, tl.player_id, tl.position_override,
+             p.id, p.name, p.position, p.market_value, p.status
+      FROM team_lineups tl
+      JOIN players p ON tl.player_id = p.id
+      WHERE tl.team_id = ?
+      ORDER BY tl.slot ASC
+    `);
+
+    const homeLineup = lineupRows.all(srow.home_team_id);
+    const awayLineup = lineupRows.all(srow.away_team_id);
+
+    const homeStarters = homeLineup.filter(p => p.slot >= 1 && p.slot <= 11)
+      .map(p => ({ ...p, position: p.position_override || p.position }));
+    const homeReserves = homeLineup.filter(p => p.slot >= 12 && p.slot <= 22)
+      .map(p => ({ ...p, position: p.position_override || p.position }));
+    const awayStarters = awayLineup.filter(p => p.slot >= 1 && p.slot <= 11)
+      .map(p => ({ ...p, position: p.position_override || p.position }));
+    const awayReserves = awayLineup.filter(p => p.slot >= 12 && p.slot <= 22)
+      .map(p => ({ ...p, position: p.position_override || p.position }));
+
+    // If no lineup set, fall back to all active non-injured players
+    let homePlayers, awayPlayers, useLineup = false;
+    if (homeStarters.length >= 7 && awayStarters.length >= 7) {
+      useLineup = true;
+    } else {
+      homePlayers = db.prepare(`
+        SELECT p.* FROM players p
+        WHERE p.team_id=? AND p.status='active'
+          AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
+      `).all(srow.home_team_id);
+      awayPlayers = db.prepare(`
+        SELECT p.* FROM players p
+        WHERE p.team_id=? AND p.status='active'
+          AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
+      `).all(srow.away_team_id);
+    }
+
+    // Build skills map
+    const allPlayerIds = useLineup
+      ? [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves].map(p => p.player_id)
+      : [...(homePlayers||[]), ...(awayPlayers||[])].map(p => p.id);
+
+    const skillsMap = {};
+    if (allPlayerIds.length) {
+      const placeholders = allPlayerIds.map(() => '?').join(',');
+      const skillRows = db.prepare(
+        `SELECT * FROM player_skills WHERE player_id IN (${placeholders})`
+      ).all(...allPlayerIds);
+      for (const sk of skillRows) skillsMap[sk.player_id] = sk;
+    }
+
+    // Create match record
+    const matchR = db.prepare(`
+      INSERT INTO matches (home_team_id, away_team_id, match_date, status, league_id, matchday)
+      VALUES (?,?,?,'scheduled',?,?)
+    `).run(srow.home_team_id, srow.away_team_id, today, leagueId, matchday);
+    const matchId = matchR.lastInsertRowid;
+
+    let result;
+    if (useLineup) {
+      result = simulateMatchWithLineup(
+        srow.home_team_id, srow.away_team_id,
+        homeStarters, homeReserves,
+        awayStarters, awayReserves,
+        skillsMap
+      );
+    } else {
+      result = simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers);
+    }
+
+    applyMatchResults(matchId, srow.home_team_id, srow.away_team_id, result);
+
+    const evRows = db.prepare('SELECT * FROM match_events WHERE match_id=?').all(matchId);
+    generateMatchNews(matchId, srow.home_name, srow.away_name, result.homeScore, result.awayScore, evRows);
+
+    // Update league_schedule
+    db.prepare('UPDATE league_schedule SET match_id=? WHERE id=?').run(matchId, srow.id);
+
+    // Update league_standings
+    const { homeScore, awayScore } = result;
+    const homeWon = homeScore > awayScore;
+    const draw = homeScore === awayScore;
+
+    const updateStanding = db.prepare(`
+      UPDATE league_standings
+      SET played = played + 1,
+          won    = won    + ?,
+          drawn  = drawn  + ?,
+          lost   = lost   + ?,
+          goals_for     = goals_for     + ?,
+          goals_against = goals_against + ?,
+          points = points + ?
+      WHERE league_id=? AND team_id=?
+    `);
+
+    updateStanding.run(
+      homeWon ? 1 : 0, draw ? 1 : 0, (!homeWon && !draw) ? 1 : 0,
+      homeScore, awayScore,
+      homeWon ? 3 : draw ? 1 : 0,
+      leagueId, srow.home_team_id
+    );
+    updateStanding.run(
+      (!homeWon && !draw) ? 1 : 0, draw ? 1 : 0, homeWon ? 1 : 0,
+      awayScore, homeScore,
+      (!homeWon && !draw) ? 3 : draw ? 1 : 0,
+      leagueId, srow.away_team_id
+    );
+
+    // Team-specific match news
+    const homeTeam = db.prepare('SELECT name FROM teams WHERE id=?').get(srow.home_team_id);
+    const awayTeam = db.prepare('SELECT name FROM teams WHERE id=?').get(srow.away_team_id);
+    if (homeTeam && awayTeam) {
+      const homeMsg = homeWon
+        ? `${homeTeam.name} secured a ${homeScore}-${awayScore} victory at home!`
+        : draw ? `${homeTeam.name} drew ${homeScore}-${awayScore} in the league.`
+               : `${homeTeam.name} suffered a ${homeScore}-${awayScore} league defeat.`;
+      const awayMsg = !homeWon && !draw
+        ? `${awayTeam.name} claimed a brilliant ${awayScore}-${homeScore} away win!`
+        : draw ? `${awayTeam.name} drew ${awayScore}-${homeScore} in the league.`
+               : `${awayTeam.name} lost ${awayScore}-${homeScore} on the road.`;
+
+      db.prepare(`INSERT INTO news (title, body, type, match_id, team_id) VALUES (?,?,?,?,?)`).run(
+        `League MD${matchday}: ${srow.home_name} vs ${srow.away_name}`, homeMsg, 'team', matchId, srow.home_team_id
+      );
+      db.prepare(`INSERT INTO news (title, body, type, match_id, team_id) VALUES (?,?,?,?,?)`).run(
+        `League MD${matchday}: ${srow.home_name} vs ${srow.away_name}`, awayMsg, 'team', matchId, srow.away_team_id
+      );
+    }
+
+    console.log(`[Scheduler] League ${leagueId} MD${matchday}: ${srow.home_name} ${homeScore}-${awayScore} ${srow.away_name}`);
+  }
+
+  // Update current_matchday
+  db.prepare('UPDATE leagues SET current_matchday=? WHERE id=?').run(matchday, leagueId);
+
+  // Check if all matchdays done
+  const remaining = db.prepare(`
+    SELECT COUNT(*) as cnt FROM league_schedule WHERE league_id=? AND match_id IS NULL
+  `).get(leagueId);
+
+  if (remaining.cnt === 0) {
+    const windowEnd = new Date();
+    windowEnd.setDate(windowEnd.getDate() + 7);
+    db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`)
+      .run(windowEnd.toISOString().slice(0, 10), leagueId);
+    console.log(`[Scheduler] League ${leagueId}: all matchdays completed, entering transfer window`);
+  }
+}
+
 function startScheduler() {
   // Daily at 00:05 – simulate scheduled matches & return expired loans
   cron.schedule('5 0 * * *', () => { try { simulateScheduledMatches(); } catch(e) { console.warn('[Scheduler] Daily sim error:', e.message); } });
@@ -329,7 +513,22 @@ function startScheduler() {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  console.log('[Scheduler] Crons: match/30min | transfer/12h | news/15min | daily-sim/00:05.');
+  // Daily at 08:00 – simulate league matchdays due today
+  cron.schedule('0 8 * * *', () => {
+    try {
+      const db = getDb();
+      const activeLeagues = db.prepare(`SELECT id FROM leagues WHERE status='active'`).all();
+      for (const league of activeLeagues) {
+        try {
+          simulateLeagueMatchday(league.id);
+        } catch(e) {
+          console.warn(`[Scheduler] League ${league.id} matchday error:`, e.message);
+        }
+      }
+    } catch(e) { console.warn('[Scheduler] League cron error:', e.message); }
+  });
+
+  console.log('[Scheduler] Crons: match/30min | transfer/12h | news/15min | daily-sim/00:05 | league-matchday/08:00.');
 }
 
-module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews };
+module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };

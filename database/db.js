@@ -268,12 +268,109 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS leagues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL DEFAULT 'Premier League',
+      season INTEGER NOT NULL DEFAULT 1,
+      status TEXT DEFAULT 'setup',
+      current_matchday INTEGER DEFAULT 0,
+      total_matchdays INTEGER DEFAULT 0,
+      start_date DATE,
+      end_date DATE,
+      transfer_window_end DATE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS league_standings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      played INTEGER DEFAULT 0,
+      won INTEGER DEFAULT 0,
+      drawn INTEGER DEFAULT 0,
+      lost INTEGER DEFAULT 0,
+      goals_for INTEGER DEFAULT 0,
+      goals_against INTEGER DEFAULT 0,
+      points INTEGER DEFAULT 0,
+      UNIQUE(league_id, team_id),
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS league_schedule (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id INTEGER NOT NULL,
+      matchday INTEGER NOT NULL,
+      home_team_id INTEGER NOT NULL,
+      away_team_id INTEGER NOT NULL,
+      match_id INTEGER,
+      scheduled_date DATE,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+      FOREIGN KEY (home_team_id) REFERENCES teams(id),
+      FOREIGN KEY (away_team_id) REFERENCES teams(id),
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS coaches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER UNIQUE NOT NULL,
+      team_id INTEGER UNIQUE,
+      name TEXT NOT NULL,
+      avatar_url TEXT,
+      age INTEGER,
+      height INTEGER,
+      playing_style TEXT DEFAULT '4-4-2',
+      description TEXT,
+      season_name_changes INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS team_lineups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      slot INTEGER NOT NULL,
+      position_override TEXT,
+      UNIQUE(team_id, player_id),
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS transfer_offers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_team_id INTEGER NOT NULL,
+      to_team_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      offer_type TEXT DEFAULT 'buy',
+      amount REAL DEFAULT 0,
+      loan_months INTEGER DEFAULT 6,
+      status TEXT DEFAULT 'pending',
+      message TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      responded_at DATETIME,
+      FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (to_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS season_budgets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      league_id INTEGER NOT NULL,
+      total_budget REAL DEFAULT 0,
+      spent REAL DEFAULT 0,
+      income REAL DEFAULT 0,
+      UNIQUE(team_id, league_id),
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE
+    );
   `);
 
   // Idempotent column additions for existing databases
   const migrations = [
     `ALTER TABLE news ADD COLUMN player_id INTEGER`,
     `ALTER TABLE news ADD COLUMN team_id INTEGER`,
+    `ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'admin'`,
+    `ALTER TABLE teams ADD COLUMN stadium_url TEXT`,
+    `ALTER TABLE matches ADD COLUMN league_id INTEGER`,
+    `ALTER TABLE matches ADD COLUMN matchday INTEGER DEFAULT 0`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

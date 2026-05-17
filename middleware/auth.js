@@ -1,18 +1,49 @@
 const jwt = require('jsonwebtoken');
 
-function requireAuth(req, res, next) {
+function extractUser(req) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7);
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = payload;
-    next();
+    return jwt.verify(token, process.env.JWT_SECRET);
   } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    return null;
   }
 }
 
-module.exports = { requireAuth };
+function requireAuth(req, res, next) {
+  const payload = extractUser(req);
+  if (!payload) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  req.user = payload;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  const payload = extractUser(req);
+  if (!payload) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  req.user = payload;
+  const role = payload.role || 'admin';
+  if (role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+function requireCoach(req, res, next) {
+  const payload = extractUser(req);
+  if (!payload) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  req.user = payload;
+  const role = payload.role || 'admin';
+  if (role !== 'coach' && role !== 'admin') {
+    return res.status(403).json({ error: 'Coach or admin access required' });
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, requireCoach };

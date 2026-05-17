@@ -1,9 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
-   TransferMarket SPA  (v2)
+   TransferMarket SPA  (v5)
    ═══════════════════════════════════════════════════════════ */
 
 // ─── State ──────────────────────────────────────────────────
-const State = { token: localStorage.getItem('tm_token') || null, user: null };
+function decodeJWT(token) {
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); } catch { return {}; }
+}
+const _stored = localStorage.getItem('tm_token');
+const _payload = _stored ? decodeJWT(_stored) : {};
+const State = {
+  token: _stored || null,
+  user: _payload.username || null,
+  role: _payload.role || null,
+  coachProfile: null,
+};
 
 // ─── API ─────────────────────────────────────────────────────
 async function api(method, path, body) {
@@ -62,6 +72,15 @@ function avatarEl(url, name, large) {
   const initials = (name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   if (url) return `<img src="${url}" class="${cls}" alt="${escHtml(name)}" onerror="this.style.display='none'">`;
   return `<div class="${phCls}">${initials}</div>`;
+}
+function avatarElXL(url, name) {
+  const initials = (name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  if (url) return `<img src="${escHtml(url)}" class="avatar-xl" alt="${escHtml(name)}" onerror="this.style.display='none'">`;
+  return `<div class="avatar-placeholder-xl">${initials}</div>`;
+}
+function teamLogoXL(url, name) {
+  if (url) return `<img src="${escHtml(url)}" class="team-logo-xl" alt="${escHtml(name)}" onerror="this.style.display='none'">`;
+  return `<div class="team-logo-placeholder-xl">${(name||'?').substring(0,3).toUpperCase()}</div>`;
 }
 function teamLogoEl(url, name) {
   if (url) return `<img src="${url}" class="team-logo" alt="${escHtml(name)}" onerror="this.style.display='none'">`;
@@ -151,13 +170,24 @@ function achIcon(type) {
 }
 
 // ─── Auth ─────────────────────────────────────────────────────
-function isAdmin() { return !!State.token; }
+function isLoggedIn() { return !!State.token; }
+function isAdmin() { return !!State.token && State.role !== 'coach'; }
+function isCoach() { return !!State.token && State.role === 'coach'; }
 
 function updateAuthUI() {
-  document.getElementById('btn-login').classList.toggle('hidden', isAdmin());
-  document.getElementById('btn-logout').classList.toggle('hidden', !isAdmin());
-  document.getElementById('admin-indicator').classList.toggle('hidden', !isAdmin());
+  const loggedIn = isLoggedIn();
+  document.getElementById('btn-login').classList.toggle('hidden', loggedIn);
+  document.getElementById('btn-logout').classList.toggle('hidden', !loggedIn);
+  const indEl = document.getElementById('user-indicator');
+  indEl.classList.toggle('hidden', !loggedIn);
+  if (loggedIn) { indEl.textContent = isCoach() ? 'COACH' : 'ADMIN'; indEl.style.color = isCoach() ? '#3498db' : '#f1c40f'; }
   document.getElementById('nav-admin').classList.toggle('hidden', !isAdmin());
+  document.getElementById('nav-coach').classList.toggle('hidden', !isCoach());
+}
+
+async function loadCoachProfile() {
+  if (!isCoach()) return;
+  try { State.coachProfile = await GET('/coaches/me'); } catch { State.coachProfile = null; }
 }
 document.getElementById('btn-login').addEventListener('click', () => {
   document.getElementById('login-modal').classList.remove('hidden');
@@ -173,15 +203,15 @@ async function doLogin() {
   errEl.style.display = 'none';
   try {
     const data = await POST('/auth/login', { username: document.getElementById('login-username').value.trim(), password: document.getElementById('login-password').value });
-    State.token = data.token; State.user = data.username;
+    State.token = data.token; State.user = data.username; State.role = data.role || 'admin';
     localStorage.setItem('tm_token', data.token);
     document.getElementById('login-modal').classList.add('hidden');
     document.getElementById('login-password').value = '';
-    updateAuthUI(); toast('Logged in as ' + data.username); router();
+    updateAuthUI(); await loadCoachProfile(); toast('Logged in as ' + data.username); router();
   } catch (err) { errEl.textContent = err.message; errEl.style.display = 'block'; }
 }
 document.getElementById('btn-logout').addEventListener('click', () => {
-  State.token = null; localStorage.removeItem('tm_token'); updateAuthUI(); toast('Logged out','info'); navigate('/');
+  State.token = null; State.role = null; State.coachProfile = null; localStorage.removeItem('tm_token'); updateAuthUI(); toast('Logged out','info'); navigate('/');
 });
 
 // ─── Global Search ────────────────────────────────────────────
@@ -250,13 +280,16 @@ function router() {
   if (parts[0]==='matches'&&parts[1]) return renderMatchDetail(app, parts[1]);
   if (rawPath==='/tournaments') return renderTournaments(app);
   if (parts[0]==='tournaments'&&parts[1]) return renderTournamentDetail(app, parts[1]);
+  if (rawPath==='/leagues') return renderLeagues(app);
+  if (parts[0]==='leagues'&&parts[1]) return renderLeagueDetail(app, parts[1]);
+  if (rawPath==='/coach') return renderCoachDashboard(app);
   if (rawPath==='/admin') return renderAdmin(app);
   if (rawPath==='/news')  return renderNewsPage(app);
   if (rawPath==='/search') return renderSearch(app, params.q);
   app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>Page not found</p></div>`;
 }
 window.addEventListener('hashchange', router);
-window.addEventListener('load', () => { updateAuthUI(); loadBanners(); router(); });
+window.addEventListener('load', async () => { updateAuthUI(); await loadCoachProfile(); loadBanners(); router(); });
 
 // ═══════════════════════════════════════════════════════════
 //  HOME
@@ -1661,7 +1694,11 @@ async function deleteTournament(id, name) {
 // ═══════════════════════════════════════════════════════════
 async function renderAdmin(app) {
   if (!isAdmin()) { app.innerHTML=`<div class="empty-state"><div class="empty-icon">🔒</div><p>Login required</p></div>`; return; }
-  const [stats, countries, banners] = await Promise.all([GET('/stats'), GET('/countries'), GET('/banners')]);
+  const [stats, countries, banners, users, leagues] = await Promise.all([
+    GET('/stats'), GET('/countries'), GET('/banners'),
+    GET('/auth/users').catch(()=>[]),
+    GET('/leagues').catch(()=>[]),
+  ]);
   app.innerHTML=`
     <div class="page-header"><h1 class="page-title">Admin Panel</h1><span class="badge badge-gold">ADMIN</span></div>
     <div class="stats-grid">
@@ -1678,6 +1715,7 @@ async function renderAdmin(app) {
           <button class="btn btn-green" onclick="showPlayerForm()">+ Add Player</button>
           <button class="btn btn-green" onclick="showMatchForm()">+ Schedule Match</button>
           <button class="btn btn-green" onclick="showTournamentForm()">+ New Tournament</button>
+          <button class="btn btn-green" onclick="navigate('/leagues')">🏆 Manage Leagues</button>
         </div>
       </div>
       <div class="card">
@@ -1691,6 +1729,46 @@ async function renderAdmin(app) {
         </table></div>
       </div>
     </div>
+
+    <!-- Team Generator -->
+    <div class="card mt-3">
+      <div class="card-header">Team Generator</div>
+      <div class="generator-panel">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Generate a complete squad of 22 players (11 starters + 11 reserves) for a new team.</p>
+        <div class="form-row">
+          <div class="form-group"><label>Team Name *</label><input type="text" id="gen-name" placeholder="e.g. City United FC"/></div>
+          <div class="form-group"><label>Short Name</label><input type="text" id="gen-short" maxlength="10" placeholder="e.g. CUF"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Average Market Value (€M)</label><input type="number" id="gen-mv" value="5" min="0.5" max="100" step="0.5" placeholder="5"/></div>
+          <div class="form-group" style="align-self:flex-end"><button class="btn btn-green" onclick="generateTeam()" style="width:100%">⚡ Generate Team</button></div>
+        </div>
+        <div id="gen-result"></div>
+      </div>
+    </div>
+
+    <!-- User Management -->
+    <div class="card mt-3">
+      <div class="card-header">User Management
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showCreateUserForm()">+ Add User</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Manages</th><th></th></tr></thead>
+        <tbody id="users-tbody">
+          ${users.map(u=>`<tr>
+            <td class="font-bold">${escHtml(u.username)}</td>
+            <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+            <td class="text-muted">${fmtDate(u.created_at)}</td>
+            <td class="text-muted">${escHtml(u.team_name||'–')}</td>
+            <td style="white-space:nowrap">
+              ${u.role==='coach'?`<button class="btn-icon" onclick="showAssignCoachForm(${u.id},'${escHtml(u.username)}')">⚙️ Assign</button>`:''}
+            </td>
+          </tr>`).join('')}
+          ${!users.length?`<tr><td colspan="5" class="text-center text-muted" style="padding:20px">No users yet</td></tr>`:''}
+        </tbody>
+      </table></div>
+    </div>
+
     <!-- Banners management -->
     <div class="card mt-3">
       <div class="card-header">
@@ -1717,7 +1795,7 @@ async function renderAdmin(app) {
       </table></div>
     </div>
     <div class="card mt-3">
-      <div class="card-header">Change Admin Password</div>
+      <div class="card-header">Change Password</div>
       <div class="card-body">
         <div class="form-row-3">
           <div class="form-group"><label>Current Password</label><input type="password" id="pw-current"/></div>
@@ -1728,6 +1806,81 @@ async function renderAdmin(app) {
       </div>
     </div>
   `;
+}
+
+async function generateTeam() {
+  const name = document.getElementById('gen-name').value.trim();
+  const short_name = document.getElementById('gen-short').value.trim();
+  const avgMv = parseFloat(document.getElementById('gen-mv').value)||5;
+  if (!name) { toast('Team name required','error'); return; }
+  const btn = event.target; btn.disabled=true; btn.textContent='Generating…';
+  try {
+    const result = await POST('/admin/generate-team', {name, short_name:short_name||null, avg_market_value_m:avgMv});
+    document.getElementById('gen-result').innerHTML = `
+      <div style="margin-top:16px;padding:12px;background:rgba(39,174,96,.1);border-radius:6px;border:1px solid rgba(39,174,96,.3)">
+        <div style="font-weight:700;margin-bottom:8px;color:var(--green)">✅ ${escHtml(result.team.name)} created — ${result.players.length} players generated</div>
+        <div class="generator-result">
+          ${result.players.map((p,i)=>`<div class="gen-player-row"><div class="gpr-slot">${i<11?i+1:''}<span style="font-size:9px">${i>=11?'RES':''}</span></div><div class="gpr-name">${escHtml(p.name)}</div>${posBadge(p.position)}<div style="font-size:11px;color:var(--green);margin-left:auto">${fmtValue(p.market_value)}</div></div>`).join('')}
+        </div>
+        <button class="btn btn-outline" style="margin-top:10px;color:#fff;border-color:rgba(255,255,255,.3)" onclick="navigate('/teams/${result.team.id}')">View Team →</button>
+      </div>`;
+    btn.textContent='⚡ Generate Team'; btn.disabled=false;
+    document.getElementById('gen-name').value=''; document.getElementById('gen-short').value='';
+  } catch(e) { toast(e.message,'error'); btn.textContent='⚡ Generate Team'; btn.disabled=false; }
+}
+
+async function showCreateUserForm() {
+  mkModal('Create User Account', `
+    <div class="form-group"><label>Username *</label><input type="text" id="nu-user" placeholder="e.g. coach_arsenalFC"/></div>
+    <div class="form-group"><label>Password *</label><input type="password" id="nu-pass" placeholder="min 8 characters"/></div>
+    <div class="form-group"><label>Role *</label>
+      <select id="nu-role">
+        <option value="coach">Coach</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+  `, async () => {
+    const username = document.getElementById('nu-user').value.trim();
+    const password = document.getElementById('nu-pass').value;
+    const role = document.getElementById('nu-role').value;
+    if (!username||!password) { toast('Fill all fields','error'); return false; }
+    if (password.length<8) { toast('Password min 8 chars','error'); return false; }
+    const data = await POST('/auth/users', {username,password,role});
+    toast('User created. '+( role==='coach'?'Now assign a team via ⚙️ Assign.':''));
+    if (role==='coach') {
+      // Create coach profile automatically
+      await POST('/coaches', {user_id:data.id, name:username}).catch(()=>{});
+    }
+  });
+}
+
+async function showAssignCoachForm(userId, username) {
+  const [teams, coaches] = await Promise.all([GET('/teams'), GET('/coaches')]);
+  const existing = coaches.find(c=>c.user_id===userId);
+  mkModal(`Assign Team to ${username}`, `
+    <div class="form-group"><label>Team *</label>
+      <select id="ac-team">
+        <option value="">Select team…</option>
+        ${teams.map(t=>`<option value="${t.id}"${existing?.team_id===t.id?' selected':''}>${escHtml(t.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label>Coach Name</label><input type="text" id="ac-name" value="${escHtml(existing?.name||username)}"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Age</label><input type="number" id="ac-age" value="${existing?.age||''}"/></div>
+      <div class="form-group"><label>Height (cm)</label><input type="number" id="ac-height" value="${existing?.height||''}"/></div>
+    </div>
+    <div class="form-group"><label>Playing Style</label><input type="text" id="ac-style" value="${escHtml(existing?.playing_style||'')}" placeholder="e.g. 4-3-3 High Press"/></div>
+  `, async () => {
+    const team_id = parseInt(document.getElementById('ac-team').value);
+    const name = document.getElementById('ac-name').value.trim()||username;
+    const age = parseInt(document.getElementById('ac-age').value)||null;
+    const height = parseInt(document.getElementById('ac-height').value)||null;
+    const playing_style = document.getElementById('ac-style').value.trim()||null;
+    if (!team_id) { toast('Select a team','error'); return false; }
+    if (existing) await PUT('/coaches/'+existing.id, {name,team_id,age,height,playing_style});
+    else await POST('/coaches', {user_id:userId,team_id,name,age,height,playing_style});
+    toast(`${username} assigned to team!`);
+  });
 }
 
 async function changePassword() {
@@ -1795,6 +1948,547 @@ async function renderSearch(app, query) {
       ${!players.length&&!teams.length?`<div class="empty-state"><div class="empty-icon">🔍</div><p>No results for "${escHtml(query)}"</p></div>`:''}
     `;
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LEAGUES
+// ═══════════════════════════════════════════════════════════
+async function renderLeagues(app) {
+  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  try {
+    const leagues = await GET('/leagues');
+    app.innerHTML = `
+      <div class="page-header">
+        <h1 class="page-title">🏆 Leagues</h1>
+        ${isAdmin() ? `<button class="btn btn-green" onclick="showCreateLeagueForm()">+ New League</button>` : ''}
+      </div>
+      ${!leagues.length ? `<div class="empty-state"><div class="empty-icon">🏆</div><p>No leagues yet. Create one in the admin panel.</p></div>` :
+        leagues.map(l => `
+          <div class="card mb-2 clickable-row" onclick="navigate('/leagues/${l.id}')" style="padding:16px 20px;display:flex;align-items:center;gap:16px">
+            <div style="flex:1">
+              <div style="font-size:18px;font-weight:700">${escHtml(l.name)}</div>
+              <div style="font-size:13px;color:var(--text-muted);margin-top:4px">Season ${l.season} · Matchday ${l.current_matchday}/${l.total_matchdays}</div>
+            </div>
+            <span class="season-badge season-${l.status}">${l.status.replace('_',' ')}</span>
+            ${isAdmin() ? `<div onclick="event.stopPropagation()" style="display:flex;gap:6px">
+              ${l.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${l.id})">Start Season</button>`:''}
+              ${l.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${l.id})">▶ Next Matchday</button>`:''}
+              ${l.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${l.id})">→ Next Season</button>`:''}
+              <button class="btn-icon danger" onclick="deleteLeague(${l.id},'${escHtml(l.name)}')">🗑️</button>
+            </div>` : ''}
+          </div>`).join('')}
+    `;
+  } catch(err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
+}
+
+async function showCreateLeagueForm() {
+  const teams = await GET('/teams');
+  mkModal('Create League', `
+    <div class="form-row">
+      <div class="form-group"><label>League Name *</label><input type="text" id="lg-name" value="Premier League"/></div>
+      <div class="form-group"><label>Season #</label><input type="number" id="lg-season" value="1" min="1"/></div>
+    </div>
+    <div class="form-group"><label>Select Teams (pick up to 10)</label>
+      <div class="team-checklist">
+        ${teams.map(t => `<label class="team-check-item"><input type="checkbox" class="lg-team-cb" value="${t.id}"> ${teamLogoEl(t.logo_url,t.name)} ${escHtml(t.name)}</label>`).join('')}
+      </div>
+    </div>
+  `, async () => {
+    const name = document.getElementById('lg-name').value.trim();
+    const season = parseInt(document.getElementById('lg-season').value) || 1;
+    const team_ids = [...document.querySelectorAll('.lg-team-cb:checked')].map(cb => parseInt(cb.value));
+    if (!name) { toast('Name required','error'); return false; }
+    if (team_ids.length < 2) { toast('Select at least 2 teams','error'); return false; }
+    if (team_ids.length > 20) { toast('Max 20 teams','error'); return false; }
+    await POST('/leagues', { name, season, team_ids });
+    toast('League created! Now click "Start Season" to generate the schedule.');
+  });
+}
+
+async function startLeague(id) {
+  if (!confirm('Generate schedule and start the season?')) return;
+  try { await POST('/leagues/'+id+'/start', {}); toast('Season started! Schedule generated.'); router(); }
+  catch(e) { toast(e.message,'error'); }
+}
+
+async function simulateLeagueMatchday(id) {
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '…';
+  try { const r = await POST('/leagues/'+id+'/simulate-matchday', {}); toast(r.message || 'Matchday simulated!'); router(); }
+  catch(e) { toast(e.message,'error'); btn.disabled=false; btn.textContent='▶ Next Matchday'; }
+}
+
+async function leagueNextSeason(id) {
+  if (!confirm('Award champion title and start new season?')) return;
+  try { const r = await POST('/leagues/'+id+'/next-season', {}); toast(r.message || 'New season started!'); router(); }
+  catch(e) { toast(e.message,'error'); }
+}
+
+async function deleteLeague(id, name) {
+  if (!confirm(`Delete league "${name}"? All standings and schedule will be lost.`)) return;
+  try { await DEL('/leagues/'+id); toast('Deleted'); router(); } catch(e) { toast(e.message,'error'); }
+}
+
+async function renderLeagueDetail(app, id) {
+  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  try {
+    const lg = await GET('/leagues/'+id);
+    const statusBadge = `<span class="season-badge season-${lg.status}">${lg.status.replace('_',' ')}</span>`;
+    app.innerHTML = `
+      <div class="page-header" style="flex-wrap:wrap;gap:8px">
+        <div>
+          <h1 class="page-title">${escHtml(lg.name)}</h1>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px">Season ${lg.season} · ${statusBadge} · Matchday ${lg.current_matchday}/${lg.total_matchdays}</div>
+        </div>
+        ${isAdmin() ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${lg.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${lg.id})">Start Season</button>`:''}
+          ${lg.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${lg.id})">▶ Simulate Next Matchday</button>`:''}
+          ${lg.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${lg.id})">→ Start New Season</button>`:''}
+        </div>` : ''}
+      </div>
+      <div class="detail-tabs">
+        <button class="detail-tab active" data-tab="standings">Standings</button>
+        <button class="detail-tab" data-tab="schedule">Schedule</button>
+        <button class="detail-tab" data-tab="scorers">Top Scorers</button>
+        <button class="detail-tab" data-tab="assists">Top Assists</button>
+      </div>
+      <div id="tab-standings" class="tab-panel active">${renderLeagueStandings(lg.standings)}</div>
+      <div id="tab-schedule" class="tab-panel">${renderLeagueSchedule(lg.schedule)}</div>
+      <div id="tab-scorers" class="tab-panel">${renderLeagueTopScorers(lg.top_scorers)}</div>
+      <div id="tab-assists" class="tab-panel">${renderLeagueTopAssists(lg.top_assists)}</div>
+    `;
+    setupTabs(app);
+  } catch(err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
+}
+
+function renderLeagueStandings(standings) {
+  if (!standings || !standings.length) return `<div class="empty-state"><div class="empty-icon">📊</div><p>No standings yet. Start the season to generate them.</p></div>`;
+  const n = standings.length;
+  return `<div class="card" style="padding:0">
+    <table class="league-table">
+      <thead><tr>
+        <th class="rank-col">#</th>
+        <th style="text-align:left;padding-left:12px">Team</th>
+        <th title="Played">P</th><th title="Won">W</th><th title="Drawn">D</th><th title="Lost">L</th>
+        <th title="Goals For">GF</th><th title="Goals Against">GA</th><th title="Goal Difference">GD</th>
+        <th class="pts-col" title="Points">Pts</th>
+        <th>Form</th>
+      </tr></thead>
+      <tbody>
+        ${standings.map((s,i) => {
+          const gd = (s.goals_for||0)-(s.goals_against||0);
+          const zone = i<4?'zone-cl':i<6?'zone-eur':i>=n-3?'zone-rel':'';
+          const form = (s.form||[]).map(r=>`<span class="form-badge form-${r.toLowerCase()}">${r}</span>`).join('');
+          return `<tr class="clickable-row ${zone}" onclick="navigate('/teams/${s.team_id}')">
+            <td class="rank-col">${i+1}</td>
+            <td style="text-align:left;padding-left:12px"><div class="flex-center gap-2">${teamLogoEl(s.logo_url,s.team_name)}<span class="font-bold">${escHtml(s.team_name||'–')}</span></div></td>
+            <td>${s.played}</td><td>${s.won}</td><td>${s.drawn}</td><td>${s.lost}</td>
+            <td>${s.goals_for}</td><td>${s.goals_against}</td>
+            <td>${gd>=0?'+':''}${gd}</td>
+            <td class="pts-col">${s.points}</td>
+            <td>${form}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <div style="padding:10px 14px;font-size:11px;color:var(--text-muted);display:flex;gap:16px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:10px;height:10px;background:#3498db;border-radius:2px;margin-right:4px"></span>Champions League</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:#e67e22;border-radius:2px;margin-right:4px"></span>European place</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:#e74c3c;border-radius:2px;margin-right:4px"></span>Relegation zone</span>
+    </div>
+  </div>`;
+}
+
+function renderLeagueSchedule(schedule) {
+  if (!schedule || !schedule.length) return `<div class="empty-state"><div class="empty-icon">📅</div><p>No schedule yet</p></div>`;
+  const byMatchday = {};
+  for (const s of schedule) {
+    if (!byMatchday[s.matchday]) byMatchday[s.matchday] = [];
+    byMatchday[s.matchday].push(s);
+  }
+  return `<div class="card" style="padding:16px">
+    ${Object.entries(byMatchday).map(([md, games]) => `
+      <div class="matchday-group">
+        <div class="matchday-header">Matchday ${md} · ${fmtDate(games[0].scheduled_date)}</div>
+        ${games.map(g => {
+          const played = g.match_id && g.home_score !== null;
+          return `<div class="matchday-item" ${g.match_id?`onclick="navigate('/matches/${g.match_id}')"`:''}>
+            <div class="mi-team home">${escHtml(g.home_team_name||'–')}</div>
+            <div class="mi-score ${played?'':'pending'}">${played?`${g.home_score}–${g.away_score}`:'vs'}</div>
+            <div class="mi-team">${escHtml(g.away_team_name||'–')}</div>
+          </div>`;
+        }).join('')}
+      </div>`).join('')}
+  </div>`;
+}
+
+function renderLeagueTopScorers(scorers) {
+  if (!scorers || !scorers.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>No goals scored yet</p></div>`;
+  return `<div class="card" style="padding:16px">
+    ${scorers.map((p,i) => `
+      <div class="scorers-row clickable-row" onclick="navigate('/players/${p.player_id}')">
+        <div class="sr-rank">${i+1}</div>
+        ${avatarEl(p.image_url,p.player_name)}
+        <div style="flex:1"><div class="font-bold">${escHtml(p.player_name)}</div><div class="text-muted" style="font-size:11px">${escHtml(p.team_name||'–')}</div></div>
+        <div class="sr-goals">${p.total_goals}</div><div style="font-size:11px;color:var(--text-muted)">goals</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+function renderLeagueTopAssists(assists) {
+  if (!assists || !assists.length) return `<div class="empty-state"><div class="empty-icon">🎯</div><p>No assists recorded yet</p></div>`;
+  return `<div class="card" style="padding:16px">
+    ${assists.map((p,i) => `
+      <div class="scorers-row clickable-row" onclick="navigate('/players/${p.player_id}')">
+        <div class="sr-rank">${i+1}</div>
+        ${avatarEl(p.image_url,p.player_name)}
+        <div style="flex:1"><div class="font-bold">${escHtml(p.player_name)}</div><div class="text-muted" style="font-size:11px">${escHtml(p.team_name||'–')}</div></div>
+        <div class="sr-assists">${p.total_assists}</div><div style="font-size:11px;color:var(--text-muted)">assists</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  COACH DASHBOARD
+// ═══════════════════════════════════════════════════════════
+async function renderCoachDashboard(app) {
+  if (!isCoach() && !isAdmin()) {
+    app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><p>Coach login required</p></div>`;
+    return;
+  }
+  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  try {
+    const coach = State.coachProfile || await GET('/coaches/me');
+    if (!coach) { app.innerHTML = `<div class="empty-state"><div class="empty-icon">⚽</div><p>No coach profile found. Contact admin.</p></div>`; return; }
+    State.coachProfile = coach;
+    const [team, lineupData, offersData] = await Promise.all([
+      GET('/teams/'+coach.team_id),
+      GET('/lineups/'+coach.team_id).catch(()=>({lineup:[]})),
+      GET('/transfer-offers').catch(()=>[]),
+    ]);
+    const lineup = { slots: lineupData.lineup || [] };
+    const offers = Array.isArray(offersData) ? offersData : [];
+    const pendingCount = offers.filter(o=>o.status==='pending').length;
+    const activeLeague = await GET('/leagues').then(ls=>ls.find(l=>l.status==='active'||l.status==='transfer_window')).catch(()=>null);
+    const budget = activeLeague ? await GET('/leagues/'+activeLeague.id+'/budget/'+coach.team_id).catch(()=>null) : null;
+
+    app.innerHTML = `
+      <div class="coach-hero">
+        ${avatarElXL(coach.avatar_url, coach.name)}
+        <div class="coach-info">
+          <h1>${escHtml(coach.name)}</h1>
+          <div class="coach-meta">
+            ${coach.age?`<span>Age ${coach.age}</span>`:''}
+            ${coach.height?`<span>${coach.height} cm</span>`:''}
+            ${coach.playing_style?`<span>Style: ${escHtml(coach.playing_style)}</span>`:''}
+          </div>
+          ${coach.description?`<div style="margin-top:8px;font-size:13px;color:var(--text-muted)">${escHtml(coach.description)}</div>`:''}
+        </div>
+        <div class="coach-team-badge">
+          ${teamLogoXL(team.logo_url, team.name)}
+          <div class="team-name">${escHtml(team.name)}</div>
+          <div class="budget-label">${fmtValue(team.market_value)} squad value</div>
+        </div>
+        <div style="margin-left:8px">
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:12px" onclick="showCoachEditForm(${JSON.stringify(coach).replace(/"/g,'&quot;')})">Edit Profile</button>
+        </div>
+      </div>
+      ${budget?`
+      <div class="card mb-2" style="padding:16px">
+        <div class="card-header" style="margin:-16px -16px 12px;border-radius:10px 10px 0 0">Season Budget</div>
+        <div class="budget-bar"><div class="budget-bar-fill${(budget.spent||0)>budget.total_budget?' over':''}" style="width:${Math.min(100,Math.round(((budget.spent||0)/Math.max(budget.total_budget,1))*100))}%"></div></div>
+        <div class="budget-stats">
+          <div class="budget-stat"><div class="bs-val">${fmtValue(budget.total_budget)}</div><div class="bs-label">Total Budget</div></div>
+          <div class="budget-stat"><div class="bs-val spent">${fmtValue(budget.spent||0)}</div><div class="bs-label">Spent</div></div>
+          <div class="budget-stat"><div class="bs-val">${fmtValue((budget.total_budget||0)+(budget.income||0)-(budget.spent||0))}</div><div class="bs-label">Available</div></div>
+        </div>
+      </div>` : ''}
+      <div class="detail-tabs">
+        <button class="detail-tab active" data-tab="lineup">Lineup</button>
+        <button class="detail-tab" data-tab="offers">Transfer Offers ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
+        <button class="detail-tab" data-tab="post-news">Post News</button>
+        <button class="detail-tab" data-tab="squad">Full Squad</button>
+      </div>
+      <div id="tab-lineup" class="tab-panel active"></div>
+      <div id="tab-offers" class="tab-panel"></div>
+      <div id="tab-post-news" class="tab-panel"></div>
+      <div id="tab-squad" class="tab-panel"></div>
+    `;
+    setupTabs(app);
+
+    // Render lineup tab
+    document.getElementById('tab-lineup').innerHTML = renderLineupEditor(team, lineup);
+    bindLineupEditor(team, lineup);
+
+    // Render offers tab
+    document.getElementById('tab-offers').innerHTML = renderTransferOffersTab(offers, coach.team_id);
+
+    // Render post news
+    document.getElementById('tab-post-news').innerHTML = `
+      <div class="card" style="padding:20px">
+        <div class="card-header" style="margin:-20px -20px 16px;border-radius:10px 10px 0 0">Post Club News</div>
+        <div class="form-group"><label>Title *</label><input type="text" id="cn-title" placeholder="News headline…"/></div>
+        <div class="form-group"><label>Body</label><textarea id="cn-body" rows="5" placeholder="Write your club news here…" style="resize:vertical"></textarea></div>
+        <button class="btn btn-green" onclick="postCoachNews(${coach.team_id})">Publish News</button>
+      </div>`;
+
+    // Render squad tab
+    document.getElementById('tab-squad').innerHTML = renderSquadTab(team);
+
+  } catch(err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
+}
+
+function renderLineupEditor(team, lineup) {
+  const slots = lineup.slots || [];
+  const starters = slots.filter(s=>s.slot<=11).sort((a,b)=>a.slot-b.slot);
+  const reserves = slots.filter(s=>s.slot>11).sort((a,b)=>a.slot-b.slot);
+  const allPlayers = team.players || [];
+  const assignedIds = new Set(slots.map(s=>s.player_id));
+  const unassigned = allPlayers.filter(p=>!assignedIds.has(p.id));
+
+  const playerCard = (p, slot, isStarter) => `
+    <div class="player-card" data-player-id="${p.player_id||p.id}" data-slot="${slot}">
+      ${avatarEl(p.image_url||p.player_image,p.player_name||p.name)}
+      <div class="pc-info">
+        <div class="pc-name">${escHtml(p.player_name||p.name)}</div>
+        <div class="pc-pos">${posBadge(p.position_override||p.position)} <span class="slot-badge">#${slot}</span></div>
+      </div>
+      <div class="pc-btn">
+        <button class="btn-icon" onclick="movePlayerToLineup(${p.player_id||p.id},${isStarter?12:1},${team.id})" title="${isStarter?'→ Bench':'→ Start'}">
+          ${isStarter?'🪑':'⚡'}
+        </button>
+        <button class="btn-icon" onclick="removeFromLineup(${p.player_id||p.id},${team.id})" title="Remove">✕</button>
+      </div>
+    </div>`;
+
+  const unassignedCard = (p) => `
+    <div class="player-card">
+      ${avatarEl(p.image_url,p.name)}
+      <div class="pc-info">
+        <div class="pc-name">${escHtml(p.name)}</div>
+        <div class="pc-pos">${posBadge(p.position)}</div>
+      </div>
+      <div class="pc-btn">
+        <button class="btn btn-sm btn-green" onclick="addToLineup(${p.id},${team.id},'start')">Start</button>
+        <button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="addToLineup(${p.id},${team.id},'bench')">Bench</button>
+      </div>
+    </div>`;
+
+  return `
+    <div class="lineup-editor">
+      <div class="lineup-save-bar">
+        <span>Set your 11 starters and up to 11 reserves</span>
+        <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Auto-Select</button>
+      </div>
+      <div class="lineup-columns">
+        <div>
+          <div class="lineup-col-header">Starting XI <span class="badge badge-green">${starters.length}/11</span></div>
+          <div id="starters-col">
+            ${starters.map(s=>playerCard(s,s.slot,true)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">No starters selected</div>'}
+          </div>
+          <div class="lineup-col-header" style="margin-top:16px">Reserves <span class="badge" style="background:rgba(255,255,255,.1)">${reserves.length}/11</span></div>
+          <div id="reserves-col">
+            ${reserves.map(s=>playerCard(s,s.slot,false)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">No reserves selected</div>'}
+          </div>
+        </div>
+        <div>
+          <div class="lineup-col-header">Unassigned Players <span class="badge" style="background:rgba(255,255,255,.1)">${unassigned.length}</span></div>
+          <div id="unassigned-col">
+            ${unassigned.map(p=>unassignedCard(p)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">All players assigned ✓</div>'}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function bindLineupEditor() { /* interactions handled by global functions */ }
+
+async function addToLineup(playerId, teamId, where) {
+  try {
+    const lineupResp = await GET('/lineups/'+teamId);
+    const lineupArr = lineupResp.lineup || [];
+    const usedSlots = new Set(lineupArr.map(s=>s.slot));
+    let slot;
+    if (where === 'start') {
+      for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){slot=i;break;} }
+      if (!slot) { toast('Starters full (11/11)','error'); return; }
+    } else {
+      for (let i=12;i<=22;i++) { if(!usedSlots.has(i)){slot=i;break;} }
+      if (!slot) { toast('Bench full (11/11)','error'); return; }
+    }
+    const current = lineupArr.filter(s=>s.player_id!==playerId);
+    current.push({slot, player_id:playerId});
+    await PUT('/lineups/'+teamId, {lineup:current});
+    toast('Lineup updated'); navigate('/coach');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function movePlayerToLineup(playerId, targetSlotBase, teamId) {
+  try {
+    const lineupResp = await GET('/lineups/'+teamId);
+    const lineupArr = lineupResp.lineup || [];
+    const usedSlots = new Set(lineupArr.map(s=>s.slot));
+    let slot;
+    if (targetSlotBase === 1) {
+      for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){slot=i;break;} }
+    } else {
+      for (let i=12;i<=22;i++) { if(!usedSlots.has(i)){slot=i;break;} }
+    }
+    if (!slot) { toast('Section full','error'); return; }
+    const current = lineupArr.filter(s=>s.player_id!==playerId);
+    current.push({slot, player_id:playerId});
+    await PUT('/lineups/'+teamId, {lineup:current});
+    toast('Moved'); navigate('/coach');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function removeFromLineup(playerId, teamId) {
+  try {
+    const lineupResp = await GET('/lineups/'+teamId);
+    const current = (lineupResp.lineup||[]).filter(s=>s.player_id!==playerId);
+    await PUT('/lineups/'+teamId, {lineup:current});
+    toast('Removed'); navigate('/coach');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function autoLineup(teamId) {
+  if (!confirm('Auto-assign all players to starter/reserve slots?')) return;
+  try {
+    await POST('/lineups/'+teamId+'/auto', {});
+    toast('Lineup auto-generated!'); navigate('/coach');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function postCoachNews(teamId) {
+  const title = document.getElementById('cn-title').value.trim();
+  const body = document.getElementById('cn-body').value.trim();
+  if (!title) { toast('Title required','error'); return; }
+  try {
+    await POST('/coaches/me/news', {title, body});
+    toast('News published!');
+    document.getElementById('cn-title').value = '';
+    document.getElementById('cn-body').value = '';
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function renderTransferOffersTab(offers, myTeamId) {
+  const received = offers.filter(o=>o.to_team_id===myTeamId&&o.status==='pending');
+  const sent = offers.filter(o=>o.from_team_id===myTeamId);
+  const fmtStatus = s => ({pending:'🕐 Pending',accepted:'✅ Accepted',rejected:'❌ Rejected',cancelled:'⚫ Cancelled'}[s]||s);
+
+  const offerCard = (o, isReceived) => `
+    <div class="offer-card offer-${o.status}">
+      <div class="offer-header">
+        <span class="offer-type-badge offer-${o.offer_type}">${o.offer_type}</span>
+        <span class="font-bold">${escHtml(o.player_name||'Player')}</span>
+        <span class="text-muted" style="font-size:12px">${isReceived?`From ${escHtml(o.from_team_name)}`:`To ${escHtml(o.to_team_name)}`}</span>
+        <span class="ml-auto">${fmtStatus(o.status)}</span>
+      </div>
+      <div class="offer-amount">${fmtValue(o.amount)}</div>
+      ${o.offer_type==='loan'?`<div class="offer-meta">Loan duration: ${o.loan_months} months</div>`:''}
+      ${o.message?`<div class="offer-meta" style="margin-top:6px;font-style:italic">"${escHtml(o.message)}"</div>`:''}
+      <div class="offer-meta">${fmtDate(o.created_at)}</div>
+      ${isReceived&&o.status==='pending'?`
+        <div class="offer-actions">
+          <button class="btn btn-green" onclick="respondOffer(${o.id},'accept')">✓ Accept</button>
+          <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="respondOffer(${o.id},'reject')">✗ Reject</button>
+        </div>` : ''}
+      ${!isReceived&&o.status==='pending'?`
+        <div class="offer-actions">
+          <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c;font-size:12px" onclick="respondOffer(${o.id},'cancel')">Cancel Offer</button>
+        </div>` : ''}
+    </div>`;
+
+  return `
+    <div class="card" style="padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div class="font-bold">Transfer Offers</div>
+        <button class="btn btn-green" onclick="showSendOfferForm()">+ Send Offer</button>
+      </div>
+      ${received.length?`<div style="font-size:12px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin-bottom:8px">Received (${received.length})</div>${received.map(o=>offerCard(o,true)).join('')}`:''}
+      ${sent.length?`<div style="font-size:12px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin-bottom:8px;margin-top:${received.length?16:0}px">Sent (${sent.length})</div>${sent.map(o=>offerCard(o,false)).join('')}`:''}
+      ${!received.length&&!sent.length?`<div class="empty-state" style="padding:30px"><div class="empty-icon">📨</div><p>No transfer offers yet</p></div>`:''}
+    </div>`;
+}
+
+async function respondOffer(id, action) {
+  const labels = {accept:'Accept this offer?',reject:'Reject this offer?',cancel:'Cancel this offer?'};
+  if (!confirm(labels[action])) return;
+  try {
+    await PUT('/transfer-offers/'+id+'/'+action, {});
+    toast(action==='accept'?'Transfer completed!':action==='reject'?'Offer rejected':'Offer cancelled');
+    navigate('/coach');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function showSendOfferForm() {
+  const teams = await GET('/teams');
+  const coach = State.coachProfile;
+  const myTeamId = coach?.team_id;
+  const otherTeams = teams.filter(t=>t.id!==myTeamId);
+  mkModal('Send Transfer Offer', `
+    <div class="form-group"><label>Target Team *</label>
+      <select id="sof-team" onchange="loadTeamPlayersForOffer()">
+        <option value="">Select team…</option>
+        ${otherTeams.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label>Player *</label><select id="sof-player"><option value="">Select team first…</option></select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Type</label>
+        <select id="sof-type"><option value="buy">Buy</option><option value="loan">Loan</option></select>
+      </div>
+      <div class="form-group"><label>Amount (€) *</label><input type="number" id="sof-amount" step="100000" min="0"/></div>
+    </div>
+    <div class="form-group"><label>Loan Duration (months)</label><input type="number" id="sof-months" value="6" min="1" max="24"/></div>
+    <div class="form-group"><label>Message (optional)</label><textarea id="sof-msg" rows="2"></textarea></div>
+  `, async () => {
+    const to_team_id = parseInt(document.getElementById('sof-team').value);
+    const player_id = parseInt(document.getElementById('sof-player').value);
+    const offer_type = document.getElementById('sof-type').value;
+    const amount = parseFloat(document.getElementById('sof-amount').value)||0;
+    const loan_months = parseInt(document.getElementById('sof-months').value)||6;
+    const message = document.getElementById('sof-msg').value.trim()||null;
+    if (!to_team_id||!player_id||!amount) { toast('Fill all required fields','error'); return false; }
+    await POST('/transfer-offers', {to_team_id,player_id,offer_type,amount,loan_months,message});
+    toast('Offer sent!');
+  });
+}
+
+async function loadTeamPlayersForOffer() {
+  const teamId = document.getElementById('sof-team').value;
+  const sel = document.getElementById('sof-player');
+  if (!teamId) { sel.innerHTML='<option value="">Select team first…</option>'; return; }
+  const players = await GET('/players?team_id='+teamId).catch(()=>[]);
+  sel.innerHTML = players.map(p=>`<option value="${p.id}">${escHtml(p.name)} (${fmtValue(p.market_value)})</option>`).join('');
+}
+
+async function showCoachEditForm(coach) {
+  mkModal('Edit Coach Profile', `
+    <div class="form-row">
+      <div class="form-group"><label>Name *</label><input type="text" id="ce-name" value="${escHtml(coach.name||'')}"/></div>
+      <div class="form-group"><label>Avatar URL</label><input type="text" id="ce-avatar" value="${escHtml(coach.avatar_url||'')}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Age</label><input type="number" id="ce-age" value="${coach.age||''}"/></div>
+      <div class="form-group"><label>Height (cm)</label><input type="number" id="ce-height" value="${coach.height||''}"/></div>
+    </div>
+    <div class="form-group"><label>Playing Style / Preferred Formation</label>
+      <input type="text" id="ce-style" value="${escHtml(coach.playing_style||'')}" placeholder="e.g. 4-3-3 High Press"/>
+    </div>
+    <div class="form-group"><label>Description</label><textarea id="ce-desc" rows="3">${escHtml(coach.description||'')}</textarea></div>
+  `, async () => {
+    await PUT('/coaches/'+coach.id, {
+      name: document.getElementById('ce-name').value.trim(),
+      avatar_url: document.getElementById('ce-avatar').value.trim()||null,
+      age: parseInt(document.getElementById('ce-age').value)||null,
+      height: parseInt(document.getElementById('ce-height').value)||null,
+      playing_style: document.getElementById('ce-style').value.trim()||null,
+      description: document.getElementById('ce-desc').value.trim()||null,
+    });
+    State.coachProfile = null;
+    toast('Profile updated');
+  });
 }
 
 // ═══════════════════════════════════════════════════════════

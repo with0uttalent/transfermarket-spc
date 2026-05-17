@@ -1111,3 +1111,141 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 /* ── Market value SVG line chart ────────────────────────────── */
 .mv-chart-wrap { width: 100%; overflow-x: auto; }
 .mv-chart-svg { min-width: 280px; width: 100%; max-width: 480px; display: block; }
+
+/* ═══════════════════════════════════════════════════════════
+   v5 — League, Coach, Transfer-Offer styles
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Large avatars (profile pages) ─────────────────────────── */
+.avatar-xl { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 3px solid var(--green); display: block; }
+.avatar-placeholder-xl {
+  width: 96px; height: 96px; border-radius: 50%; background: var(--bg-card); border: 3px solid var(--green);
+  display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 700; color: var(--green); flex-shrink: 0;
+}
+.avatar-2xl { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid var(--green); display: block; }
+.avatar-placeholder-2xl {
+  width: 120px; height: 120px; border-radius: 50%; background: var(--bg-card); border: 4px solid var(--green);
+  display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 700; color: var(--green); flex-shrink: 0;
+}
+.team-logo-xl { width: 96px; height: 96px; object-fit: contain; border-radius: 8px; }
+.team-logo-placeholder-xl {
+  width: 96px; height: 96px; border-radius: 8px; background: var(--green); color: #fff; font-weight: 700; font-size: 22px;
+  display: flex; align-items: center; justify-content: center;
+}
+.stadium-img { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; }
+
+/* ── League table ───────────────────────────────────────────── */
+.league-table { width: 100%; border-collapse: collapse; }
+.league-table th, .league-table td { padding: 9px 8px; text-align: center; border-bottom: 1px solid var(--border); font-size: 13px; }
+.league-table th { font-size: 11px; text-transform: uppercase; color: var(--text-muted); background: var(--bg-darker); }
+.league-table td:nth-child(2) { text-align: left; }
+.league-table .pts-col { font-weight: 700; color: var(--green); font-size: 15px; }
+.league-table .rank-col { font-size: 12px; color: var(--text-muted); width: 28px; }
+.league-table tr.zone-cl td:first-child { border-left: 3px solid #3498db; }
+.league-table tr.zone-eur td:first-child { border-left: 3px solid #e67e22; }
+.league-table tr.zone-rel td:first-child { border-left: 3px solid #e74c3c; }
+.league-table tr:hover { background: var(--bg-hover); cursor: pointer; }
+
+/* form badges */
+.form-badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 3px; font-size: 10px; font-weight: 700; margin: 0 1px; }
+.form-w { background: #27ae60; color: #fff; }
+.form-d { background: #7f8c8d; color: #fff; }
+.form-l { background: #e74c3c; color: #fff; }
+
+/* season status badges */
+.season-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.season-setup { background: rgba(255,255,255,.1); color: var(--text-muted); }
+.season-active { background: rgba(39,174,96,.2); color: #2ecc71; }
+.season-transfer_window { background: rgba(241,196,15,.2); color: #f1c40f; }
+.season-finished { background: rgba(52,73,94,.4); color: var(--text-muted); }
+
+/* ── League schedule ────────────────────────────────────────── */
+.matchday-group { margin-bottom: 20px; }
+.matchday-header { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: .5px; padding: 6px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.matchday-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.matchday-item:hover { background: var(--bg-hover); }
+.mi-team { flex: 1; font-size: 13px; font-weight: 500; }
+.mi-team.home { text-align: right; }
+.mi-score { font-size: 14px; font-weight: 700; color: var(--green); min-width: 50px; text-align: center; background: var(--bg-darker); border-radius: 4px; padding: 2px 8px; }
+.mi-score.pending { color: var(--text-muted); font-weight: 400; font-size: 12px; }
+
+/* ── Top scorers table ──────────────────────────────────────── */
+.scorers-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.sr-rank { font-size: 12px; color: var(--text-muted); width: 20px; text-align: right; flex-shrink: 0; }
+.sr-goals { font-size: 18px; font-weight: 900; color: var(--green); width: 32px; text-align: right; flex-shrink: 0; }
+.sr-assists { font-size: 18px; font-weight: 900; color: #3498db; width: 32px; text-align: right; flex-shrink: 0; }
+
+/* ── Coach dashboard ────────────────────────────────────────── */
+.coach-hero { display: flex; align-items: center; gap: 20px; padding: 24px; background: var(--bg-card); border-radius: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.coach-info { flex: 1; min-width: 180px; }
+.coach-info h1 { font-size: 24px; font-weight: 800; margin: 0 0 8px; }
+.coach-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--text-muted); }
+.coach-team-badge { margin-left: auto; text-align: right; }
+.coach-team-badge .team-name { font-size: 18px; font-weight: 700; }
+.coach-team-badge .budget-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Lineup editor ──────────────────────────────────────────── */
+.lineup-editor { background: var(--bg-card); border-radius: 10px; padding: 20px; }
+.lineup-save-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.lineup-save-bar span { flex: 1; font-size: 14px; color: var(--text-muted); }
+.lineup-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .lineup-columns { grid-template-columns: 1fr; } }
+.lineup-col-header { font-size: 12px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); letter-spacing: .5px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.lineup-col-header .badge { margin-left: auto; }
+.player-card { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg-darker); border-radius: 8px; margin-bottom: 6px; cursor: default; }
+.player-card:hover { background: var(--bg-hover); }
+.player-card .pc-info { flex: 1; min-width: 0; }
+.player-card .pc-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-card .pc-pos { font-size: 11px; color: var(--text-muted); }
+.player-card .pc-btn { flex-shrink: 0; }
+.player-card.injured { opacity: .5; }
+.slot-badge { font-size: 11px; background: var(--green); color: #fff; padding: 1px 6px; border-radius: 3px; }
+
+/* ── Transfer offers ────────────────────────────────────────── */
+.offer-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+.offer-card.offer-pending { border-left: 3px solid #f1c40f; }
+.offer-card.offer-accepted { border-left: 3px solid var(--green); }
+.offer-card.offer-rejected { border-left: 3px solid #e74c3c; opacity: .7; }
+.offer-card.offer-cancelled { border-left: 3px solid var(--text-muted); opacity: .6; }
+.offer-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.offer-type-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; text-transform: uppercase; }
+.offer-buy { background: rgba(39,174,96,.2); color: #2ecc71; }
+.offer-loan { background: rgba(52,152,219,.2); color: #3498db; }
+.offer-meta { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+.offer-amount { font-size: 18px; font-weight: 800; color: var(--green); }
+.offer-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+/* ── Budget bar ─────────────────────────────────────────────── */
+.budget-bar { background: var(--bg-darker); border-radius: 6px; overflow: hidden; height: 10px; margin: 8px 0; }
+.budget-bar-fill { height: 100%; background: var(--green); transition: width .4s; border-radius: 6px; }
+.budget-bar-fill.over { background: #e74c3c; }
+.budget-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+.budget-stat { text-align: center; }
+.budget-stat .bs-val { font-size: 16px; font-weight: 700; color: var(--green); }
+.budget-stat .bs-val.spent { color: #e74c3c; }
+.budget-stat .bs-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Users management (admin) ───────────────────────────────── */
+.role-badge { font-size: 10px; padding: 2px 7px; border-radius: 3px; font-weight: 700; text-transform: uppercase; }
+.role-admin { background: rgba(241,196,15,.25); color: #f1c40f; }
+.role-coach { background: rgba(52,152,219,.25); color: #3498db; }
+
+/* ── Team generator ─────────────────────────────────────────── */
+.generator-panel { background: var(--bg-card); border-radius: 10px; padding: 20px; }
+.generator-result { margin-top: 16px; max-height: 350px; overflow-y: auto; }
+.gen-player-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.gen-player-row .gpr-slot { width: 24px; color: var(--text-muted); font-size: 11px; }
+.gen-player-row .gpr-name { flex: 1; font-weight: 500; }
+
+/* ── League creation form (multi-step) ──────────────────────── */
+.team-checklist { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; max-height: 240px; overflow-y: auto; }
+.team-check-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg-darker); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.team-check-item input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--green); }
+
+/* ── Coach profile card ─────────────────────────────────────── */
+.coaches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-top: 16px; }
+.coach-card { background: var(--bg-card); border-radius: 10px; padding: 20px; text-align: center; transition: transform .15s; cursor: pointer; }
+.coach-card:hover { transform: translateY(-2px); }
+.coach-card .cc-name { font-size: 16px; font-weight: 700; margin: 10px 0 4px; }
+.coach-card .cc-team { font-size: 13px; color: var(--green); }
+.coach-card .cc-style { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
