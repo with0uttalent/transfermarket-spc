@@ -307,7 +307,7 @@ async function renderHome(app) {
       </div>
       ${newsData.rows.length ? `
       <div class="card mt-3 mb-3" style="margin-bottom:20px">
-        <div class="card-header">📰 Latest News <a href="#/news" style="font-size:12px;color:rgba(255,255,255,.7);font-weight:400;float:right">All news →</a></div>
+        <div class="card-header">📰 Последние новости <a href="#/news" style="font-size:12px;color:rgba(255,255,255,.7);font-weight:400;float:right">Все новости →</a></div>
         ${newsData.rows.map(n => `
           <div class="news-item">
             <div class="news-icon">${newsIcon(n.type)}</div>
@@ -383,9 +383,9 @@ async function renderNewsPage(app) {
   try {
     const data = await GET('/news?limit=50');
     app.innerHTML = `
-      <div class="page-header"><h1 class="page-title">📰 News Feed</h1></div>
+      <div class="page-header"><h1 class="page-title">📰 Последние новости</h1></div>
       <div class="card">
-        ${!data.rows.length ? '<div class="empty-state" style="padding:40px"><div class="empty-icon">📰</div><p>No news yet</p></div>' :
+        ${!data.rows.length ? '<div class="empty-state" style="padding:40px"><div class="empty-icon">📰</div><p>Новостей пока нет</p></div>' :
           data.rows.map(n => `
             <div class="news-item">
               <div class="news-icon">${newsIcon(n.type)}</div>
@@ -416,7 +416,7 @@ async function renderTeams(app, params) {
     app.innerHTML = `
       <div class="page-header">
         <h1 class="page-title">Teams <small>${teams.length} clubs</small></h1>
-        ${isAdmin()?`<button class="btn btn-green" onclick="showTeamForm()">+ Add Team</button>`:''}
+        ${isAdmin()?`<button class="btn btn-green" onclick="showTeamForm()">+ Добавить команду</button>`:''}
       </div>
       <div class="filters">
         <input type="search" id="team-search" placeholder="Search teams…" />
@@ -426,7 +426,7 @@ async function renderTeams(app, params) {
         </select>
       </div>
       <div class="card"><div class="table-wrap"><table>
-        <thead><tr><th>Team</th><th>Country</th><th>League</th><th>Founded</th><th>Stadium</th><th class="text-right">Squad Value</th>${isAdmin()?'<th></th>':''}</tr></thead>
+        <thead><tr><th>Команда</th><th>Страна</th><th>Лига</th><th>Основан</th><th>Стадион</th><th class="text-right">Стоимость состава</th>${isAdmin()?'<th></th>':''}</tr></thead>
         <tbody id="teams-tbody"></tbody>
       </table></div></div>`;
     const renderRows = list => {
@@ -460,28 +460,29 @@ async function renderTeams(app, params) {
 async function showTeamForm(team) {
   const [countries, competitions] = await Promise.all([GET('/countries'), GET('/competitions')]);
   const isEdit = !!team;
-  const modal = mkModal(isEdit?'Edit Team':'Add New Team', `
+  const modal = mkModal(isEdit?'Редактировать команду':'Добавить команду', `
     <div class="form-row">
-      <div class="form-group"><label>Team Name *</label><input type="text" id="tf-name" value="${escHtml(team?.name||'')}"/></div>
-      <div class="form-group"><label>Short Name</label><input type="text" id="tf-short" value="${escHtml(team?.short_name||'')}" maxlength="10"/></div>
+      <div class="form-group"><label>Название команды *</label><input type="text" id="tf-name" value="${escHtml(team?.name||'')}"/></div>
+      <div class="form-group"><label>Краткое название</label><input type="text" id="tf-short" value="${escHtml(team?.short_name||'')}" maxlength="10"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Country</label><select id="tf-country"><option value="">–</option>${countries.map(c=>`<option value="${c.id}"${team?.country_id==c.id?' selected':''}>${c.flag_emoji||''} ${escHtml(c.name)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Competition</label><select id="tf-comp"><option value="">–</option>${competitions.map(c=>`<option value="${c.id}"${team?.competition_id==c.id?' selected':''}>${escHtml(c.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Страна</label><select id="tf-country"><option value="">–</option>${countries.map(c=>`<option value="${c.id}"${team?.country_id==c.id?' selected':''}>${c.flag_emoji||''} ${escHtml(c.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Соревнование</label><select id="tf-comp"><option value="">–</option>${competitions.map(c=>`<option value="${c.id}"${team?.competition_id==c.id?' selected':''}>${escHtml(c.name)}</option>`).join('')}</select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Founded</label><input type="number" id="tf-founded" value="${team?.founded||''}"/></div>
-      <div class="form-group"><label>Stadium</label><input type="text" id="tf-stadium" value="${escHtml(team?.stadium||'')}"/></div>
+      <div class="form-group"><label>Основан</label><input type="number" id="tf-founded" value="${team?.founded||''}"/></div>
+      <div class="form-group"><label>Стадион</label><input type="text" id="tf-stadium" value="${escHtml(team?.stadium||'')}"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Market Value (€)</label><input type="number" id="tf-mv" value="${team?.market_value||0}" step="100000"/></div>
-      <div class="form-group"><label>Logo URL</label><input type="text" id="tf-logo" value="${escHtml(team?.logo_url||'')}"/></div>
+      <div class="form-group"><label>Рыночная стоимость (€)</label><input type="number" id="tf-mv" value="${team?.market_value||0}" step="100000"/></div>
+      <div class="form-group"><label>URL логотипа</label><input type="text" id="tf-logo" value="${escHtml(team?.logo_url||'')}"/></div>
     </div>
+    <div class="form-group"><label>Фото стадиона (URL)</label><input type="text" id="tf-stadium-url" value="${escHtml(team?.stadium_url||'')}"/></div>
   `, async () => {
-    const payload = { name:document.getElementById('tf-name').value.trim(), short_name:document.getElementById('tf-short').value.trim(), country_id:document.getElementById('tf-country').value||null, competition_id:document.getElementById('tf-comp').value||null, founded:document.getElementById('tf-founded').value||null, stadium:document.getElementById('tf-stadium').value.trim(), market_value:parseFloat(document.getElementById('tf-mv').value)||0, logo_url:document.getElementById('tf-logo').value.trim()||null };
-    if (!payload.name) { toast('Name required','error'); return false; }
+    const payload = { name:document.getElementById('tf-name').value.trim(), short_name:document.getElementById('tf-short').value.trim(), country_id:document.getElementById('tf-country').value||null, competition_id:document.getElementById('tf-comp').value||null, founded:document.getElementById('tf-founded').value||null, stadium:document.getElementById('tf-stadium').value.trim(), market_value:parseFloat(document.getElementById('tf-mv').value)||0, logo_url:document.getElementById('tf-logo').value.trim()||null, stadium_url:document.getElementById('tf-stadium-url').value.trim()||null };
+    if (!payload.name) { toast('Название обязательно','error'); return false; }
     if (isEdit) await PUT('/teams/'+team.id, payload); else await POST('/teams', payload);
-    toast(isEdit?'Team updated':'Team added');
+    toast(isEdit?'Команда обновлена':'Команда добавлена');
   });
 }
 async function deleteTeam(id, name) {
@@ -501,22 +502,23 @@ async function renderTeamDetail(app, id) {
           <div class="meta">
             ${team.flag_emoji?`<span>${team.flag_emoji} ${escHtml(team.country_name)}</span>`:''}
             ${team.competition_name?`<span>🏆 ${escHtml(team.competition_name)}</span>`:''}
-            ${team.founded?`<span>📅 Founded ${team.founded}</span>`:''}
+            ${team.founded?`<span>📅 Основан ${team.founded}</span>`:''}
             ${team.stadium?`<span>🏟️ ${escHtml(team.stadium)}</span>`:''}
           </div>
         </div>
-        <div class="hero-mv"><div class="mv-label">Squad Value</div><div class="mv-value">${fmtValue(team.market_value)}</div></div>
+        <div class="hero-mv"><div class="mv-label">Стоимость состава</div><div class="mv-value">${fmtValue(team.market_value)}</div></div>
         ${isAdmin()?`<div style="margin-left:16px;display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showTeamForm(${JSON.stringify(team).replace(/"/g,'&quot;')})">Edit</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showTeamForm(${JSON.stringify(team).replace(/"/g,'&quot;')})">Редактировать</button>
         </div>`:''}
       </div>
+      ${team.stadium_url ? `<div class="stadium-banner"><img src="${escHtml(team.stadium_url)}" alt="${escHtml(team.stadium||team.name)}" class="stadium-img"/><div class="stadium-label">🏟️ ${escHtml(team.stadium||'Стадион')}</div></div>` : ''}
       <div class="detail-tabs">
-        <button class="detail-tab active" data-tab="squad">Squad (${team.players.length})</button>
-        <button class="detail-tab" data-tab="formation">Formation</button>
-        <button class="detail-tab" data-tab="titles">Titles (${team.titles.length})</button>
-        <button class="detail-tab" data-tab="transfers">Transfers</button>
-        <button class="detail-tab" data-tab="matches">Matches</button>
-        <button class="detail-tab" data-tab="team-news">News</button>
+        <button class="detail-tab active" data-tab="squad">Состав (${team.players.length})</button>
+        <button class="detail-tab" data-tab="formation">Состав на поле</button>
+        <button class="detail-tab" data-tab="titles">Титулы (${team.titles.length})</button>
+        <button class="detail-tab" data-tab="transfers">Трансферы</button>
+        <button class="detail-tab" data-tab="matches">Матчи</button>
+        <button class="detail-tab" data-tab="team-news">Новости</button>
       </div>
       <div id="tab-squad" class="tab-panel active">${renderSquadTab(team)}</div>
       <div id="tab-formation" class="tab-panel">
@@ -526,7 +528,7 @@ async function renderTeamDetail(app, id) {
       </div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
-      <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Loading matches…</p></div></div>
+      <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Загрузка матчей…</p></div></div>
       <div id="tab-team-news" class="tab-panel"><div class="empty-state"><p>Загрузка…</p></div></div>
     `;
     setupTabs(app);
@@ -545,7 +547,7 @@ async function renderTeamDetail(app, id) {
       panel.dataset.loaded = '1';
       try {
         const data = await GET('/news?team_id='+id+'&limit=30');
-        if (!data.rows.length) { panel.innerHTML = '<div class="empty-state"><div class="empty-icon">📰</div><p>No news yet</p></div>'; return; }
+        if (!data.rows.length) { panel.innerHTML = '<div class="empty-state"><div class="empty-icon">📰</div><p>Новостей пока нет</p></div>'; return; }
         panel.innerHTML = `<div class="card">${data.rows.map(n => `
           <div class="news-item">
             <div class="news-icon">${newsIcon(n.type)}</div>
@@ -561,11 +563,12 @@ async function renderTeamDetail(app, id) {
 }
 
 function renderSquadTab(team) {
-  if (!team.players.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>No players</p></div>`;
+  if (!team.players.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>Игроки отсутствуют</p></div>`;
+  const showActions = isAdmin() || isCoach();
   return `<div class="card">
-    <div class="card-header">Squad ${isAdmin()?`<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showPlayerForm(null,${team.id})">+ Add Player</button>`:''}  </div>
+    <div class="card-header">Состав ${isAdmin()?`<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showPlayerForm(null,${team.id})">+ Добавить игрока</button>`:''}  </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>#</th><th>Player</th><th>Nat.</th><th>Pos</th><th>Age</th><th>Foot</th><th class="text-right">Value</th>${isAdmin()?'<th></th>':''}</tr></thead>
+      <thead><tr><th>#</th><th>Игрок</th><th>Нац.</th><th>Поз</th><th>Возраст</th><th>Нога</th><th class="text-right">Ценность</th>${showActions?'<th></th>':''}</tr></thead>
       <tbody>
         ${team.players.map(p=>`
           <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
@@ -580,11 +583,30 @@ function renderSquadTab(team) {
               <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
               <button class="btn-icon" onclick="showLoanForm(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Loan out">🔗</button>
               <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
-            </td>`:''}
+            </td>`:isCoach()?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button></td>`:''}
           </tr>`).join('')}
       </tbody>
     </table></div>
   </div>`;
+}
+
+async function showCoachPlayerEditForm(player) {
+  const countries = await GET('/countries').catch(()=>[]);
+  mkModal('Редактировать игрока', `
+    <div class="form-group"><label>Имя *</label><input type="text" id="cpe-name" value="${escHtml(player.name||'')}"/></div>
+    <div class="form-group"><label>Национальность</label>
+      <select id="cpe-nat">
+        <option value="">—</option>
+        ${countries.map(c=>`<option value="${c.id}"${player.nationality_id==c.id?' selected':''}>${c.flag_emoji||''} ${escHtml(c.name)}</option>`).join('')}
+      </select>
+    </div>
+  `, async () => {
+    const name = document.getElementById('cpe-name').value.trim();
+    const nationality_id = document.getElementById('cpe-nat').value||null;
+    if (!name) { toast('Имя обязательно','error'); return false; }
+    await fetch('/api/players/'+player.id, {method:'PATCH', headers:{'Content-Type':'application/json','Authorization':'Bearer '+State.token}, body:JSON.stringify({name,nationality_id})}).then(r=>{if(!r.ok) throw new Error('Ошибка'); return r.json();});
+    toast('Игрок обновлён');
+  });
 }
 
 function renderTitlesTab(titles, teamId, playerId) {
@@ -650,7 +672,7 @@ async function renderPlayers(app, params) {
     app.innerHTML=`
       <div class="page-header">
         <h1 class="page-title">Players <small>${players.length} registered</small></h1>
-        ${isAdmin()?`<button class="btn btn-green" onclick="showPlayerForm()">+ Add Player</button>`:''}
+        ${isAdmin()?`<button class="btn btn-green" onclick="showPlayerForm()">+ Добавить игрока</button>`:''}
       </div>
       <div class="filters">
         <input type="search" id="player-search" placeholder="Search players…"/>
@@ -659,12 +681,12 @@ async function renderPlayers(app, params) {
         <select id="player-status-filter"><option value="">All Status</option><option value="active">Active</option><option value="retired">Retired</option><option value="free_agent">Free Agent</option></select>
       </div>
       <div class="card"><div class="table-wrap"><table>
-        <thead><tr><th>Player</th><th>Nat.</th><th>Position</th><th>Age</th><th>Team</th><th>Foot</th><th class="text-right">Value</th>${isAdmin()?'<th></th>':''}</tr></thead>
+        <thead><tr><th>Игрок</th><th>Нац.</th><th>Позиция</th><th>Возраст</th><th>Команда</th><th>Нога</th><th class="text-right">Ценность</th>${isAdmin()?'<th></th>':''}</tr></thead>
         <tbody id="players-tbody"></tbody>
       </table></div></div>`;
     const renderRows = list => {
       const tbody = document.getElementById('players-tbody');
-      if (!list.length){tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">⚽</div><p>No players</p></div></td></tr>`;return;}
+      if (!list.length){tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">⚽</div><p>Игроки отсутствуют</p></div></td></tr>`;return;}
       tbody.innerHTML = list.map(p=>`
         <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
           <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><div class="font-bold">${escHtml(p.name)}</div>${p.status!=='active'?`<span class="badge badge-gray">${p.status}</span>`:''}</div></div></td>
@@ -699,33 +721,33 @@ async function renderPlayers(app, params) {
 async function showPlayerForm(player, defaultTeamId) {
   const [countries, teams] = await Promise.all([GET('/countries'), GET('/teams')]);
   const isEdit = !!player;
-  mkModal(isEdit?'Edit Player':'Add New Player', `
+  mkModal(isEdit?'Редактировать игрока':'Добавить игрока', `
     <div class="form-row">
-      <div class="form-group"><label>Full Name *</label><input type="text" id="pf-name" value="${escHtml(player?.name||'')}"/></div>
-      <div class="form-group"><label>Date of Birth</label><input type="date" id="pf-dob" value="${player?.date_of_birth?.substring(0,10)||''}"/></div>
+      <div class="form-group"><label>Имя *</label><input type="text" id="pf-name" value="${escHtml(player?.name||'')}"/></div>
+      <div class="form-group"><label>Дата рождения</label><input type="date" id="pf-dob" value="${player?.date_of_birth?.substring(0,10)||''}"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Nationality</label><select id="pf-nat"><option value="">–</option>${countries.map(c=>`<option value="${c.id}"${player?.nationality_id==c.id?' selected':''}>${c.flag_emoji||''} ${escHtml(c.name)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Position</label><select id="pf-pos"><option value="">–</option>${POSITIONS.map(p=>`<option value="${p}"${player?.position===p?' selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Национальность</label><select id="pf-nat"><option value="">–</option>${countries.map(c=>`<option value="${c.id}"${player?.nationality_id==c.id?' selected':''}>${c.flag_emoji||''} ${escHtml(c.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Позиция</label><select id="pf-pos"><option value="">–</option>${POSITIONS.map(p=>`<option value="${p}"${player?.position===p?' selected':''}>${p}</option>`).join('')}</select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Team</label><select id="pf-team"><option value="">Free Agent</option>${teams.map(t=>`<option value="${t.id}"${(player?.team_id||defaultTeamId)==t.id?' selected':''}>${escHtml(t.name)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Shirt #</label><input type="number" id="pf-shirt" value="${player?.shirt_number||''}" min="1" max="99"/></div>
+      <div class="form-group"><label>Команда</label><select id="pf-team"><option value="">Free Agent</option>${teams.map(t=>`<option value="${t.id}"${(player?.team_id||defaultTeamId)==t.id?' selected':''}>${escHtml(t.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Номер</label><input type="number" id="pf-shirt" value="${player?.shirt_number||''}" min="1" max="99"/></div>
     </div>
     <div class="form-row-3">
-      <div class="form-group"><label>Foot</label><select id="pf-foot"><option value="">–</option><option value="Right"${player?.foot==='Right'?' selected':''}>Right</option><option value="Left"${player?.foot==='Left'?' selected':''}>Left</option><option value="Both"${player?.foot==='Both'?' selected':''}>Both</option></select></div>
-      <div class="form-group"><label>Height (cm)</label><input type="number" id="pf-height" value="${player?.height||''}" min="140" max="220"/></div>
-      <div class="form-group"><label>Status</label><select id="pf-status"><option value="active"${(!player?.status||player.status==='active')?' selected':''}>Active</option><option value="retired"${player?.status==='retired'?' selected':''}>Retired</option><option value="free_agent"${player?.status==='free_agent'?' selected':''}>Free Agent</option></select></div>
+      <div class="form-group"><label>Нога</label><select id="pf-foot"><option value="">–</option><option value="Right"${player?.foot==='Right'?' selected':''}>Right</option><option value="Left"${player?.foot==='Left'?' selected':''}>Left</option><option value="Both"${player?.foot==='Both'?' selected':''}>Both</option></select></div>
+      <div class="form-group"><label>Рост (см)</label><input type="number" id="pf-height" value="${player?.height||''}" min="140" max="220"/></div>
+      <div class="form-group"><label>Статус</label><select id="pf-status"><option value="active"${(!player?.status||player.status==='active')?' selected':''}>Active</option><option value="retired"${player?.status==='retired'?' selected':''}>Retired</option><option value="free_agent"${player?.status==='free_agent'?' selected':''}>Free Agent</option></select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Market Value (€)</label><input type="number" id="pf-mv" value="${player?.market_value||0}" min="0" step="100000"/></div>
-      <div class="form-group"><label>Image URL</label><input type="text" id="pf-img" value="${escHtml(player?.image_url||'')}"/></div>
+      <div class="form-group"><label>Рыночная стоимость (€)</label><input type="number" id="pf-mv" value="${player?.market_value||0}" min="0" step="100000"/></div>
+      <div class="form-group"><label>URL фото</label><input type="text" id="pf-img" value="${escHtml(player?.image_url||'')}"/></div>
     </div>
   `, async () => {
     const payload = { name:document.getElementById('pf-name').value.trim(), date_of_birth:document.getElementById('pf-dob').value||null, nationality_id:document.getElementById('pf-nat').value||null, position:document.getElementById('pf-pos').value||null, foot:document.getElementById('pf-foot').value||null, height:parseInt(document.getElementById('pf-height').value)||null, team_id:document.getElementById('pf-team').value||null, shirt_number:parseInt(document.getElementById('pf-shirt').value)||null, market_value:parseFloat(document.getElementById('pf-mv').value)||0, image_url:document.getElementById('pf-img').value.trim()||null, status:document.getElementById('pf-status').value };
-    if (!payload.name){toast('Name required','error');return false;}
+    if (!payload.name){toast('Имя обязательно','error');return false;}
     if (isEdit) await PUT('/players/'+player.id, payload); else await POST('/players', payload);
-    toast(isEdit?'Player updated':'Player added');
+    toast(isEdit?'Игрок обновлён':'Игрок добавлен');
   });
 }
 async function deletePlayer(id, name) {
@@ -757,19 +779,19 @@ async function renderPlayerDetail(app, id) {
             ${player.height?`<span>📏 ${player.height}cm</span>`:''}
           </div>
         </div>
-        <div class="hero-mv"><div class="mv-label">Market Value</div><div class="mv-value">${fmtValue(player.market_value)}</div></div>
+        <div class="hero-mv"><div class="mv-label">Рыночная стоимость</div><div class="mv-value">${fmtValue(player.market_value)}</div></div>
         ${isAdmin()?`<div style="margin-left:16px;display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showPlayerForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Edit</button>
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showTransferForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Transfer</button>
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showLoanForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Loan</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showPlayerForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Редактировать</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showTransferForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Трансфер</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showLoanForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Аренда</button>
         </div>`:''}
       </div>
       <div class="detail-tabs">
-        <button class="detail-tab active" data-tab="stats">Statistics</button>
-        <button class="detail-tab" data-tab="transfers">Transfers</button>
-        <button class="detail-tab" data-tab="titles">Titles</button>
-        <button class="detail-tab" data-tab="achievements">Achievements (${achRows.length})</button>
-        <button class="detail-tab" data-tab="market">Value History</button>
+        <button class="detail-tab active" data-tab="stats">Статистика</button>
+        <button class="detail-tab" data-tab="transfers">Трансферы</button>
+        <button class="detail-tab" data-tab="titles">Титулы</button>
+        <button class="detail-tab" data-tab="achievements">Достижения (${achRows.length})</button>
+        <button class="detail-tab" data-tab="market">История стоимости</button>
       </div>
       <div id="tab-stats" class="tab-panel active"><div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">${renderPentagonChart(playerSkills, player.position)}<div style="flex:1;min-width:260px">${renderPlayerCareerStats(careerStats, player.position)}</div></div></div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(player.transfers)}</div>
@@ -1112,7 +1134,7 @@ async function renderTransfers(app, params) {
     const [transfers, teams, loans] = await Promise.all([GET('/transfers?limit=100'), GET('/teams'), GET('/loans')]);
     app.innerHTML=`
       <div class="page-header">
-        <h1 class="page-title">Transfers & Loans</h1>
+        <h1 class="page-title">Трансферы</h1>
         ${isAdmin()?`<div style="display:flex;gap:8px"><button class="btn btn-green" onclick="showTransferFormStandalone()">+ Transfer</button><button class="btn btn-outline btn-green" onclick="showLoanFormStandalone()">+ Loan</button></div>`:''}
       </div>
       <div class="detail-tabs" style="margin-bottom:16px">
@@ -1620,7 +1642,7 @@ function renderBracket(tour) {
 function renderTournamentTeams(tour, tournamentId) {
   if (!tour.teams.length) return `<div class="empty-state"><div class="empty-icon">🏟️</div><p>No teams added yet</p></div>`;
   return `<div class="card"><div class="table-wrap"><table>
-    <thead><tr><th>Seed</th><th>Team</th><th>Country</th><th class="text-right">Squad Value</th>${isAdmin()&&tour.status==='setup'?'<th></th>':''}</tr></thead>
+    <thead><tr><th>Seed</th><th>Команда</th><th>Страна</th><th class="text-right">Стоимость состава</th>${isAdmin()&&tour.status==='setup'?'<th></th>':''}</tr></thead>
     <tbody>${tour.teams.map(t=>`
       <tr class="clickable-row" onclick="navigate('/teams/${t.team_id}')">
         <td class="font-bold">#${t.seed||'–'}</td>
@@ -1700,7 +1722,7 @@ async function renderAdmin(app) {
     GET('/leagues').catch(()=>[]),
   ]);
   app.innerHTML=`
-    <div class="page-header"><h1 class="page-title">Admin Panel</h1><span class="badge badge-gold">ADMIN</span></div>
+    <div class="page-header"><h1 class="page-title">Панель администратора</h1><span class="badge badge-gold">ADMIN</span></div>
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-value">${stats.totals.teams}</div><div class="stat-label">Teams</div></div>
       <div class="stat-card"><div class="stat-value">${stats.totals.players}</div><div class="stat-label">Players</div></div>
@@ -1711,8 +1733,8 @@ async function renderAdmin(app) {
       <div class="card">
         <div class="card-header">Quick Actions</div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
-          <button class="btn btn-green" onclick="showTeamForm()">+ Add Team</button>
-          <button class="btn btn-green" onclick="showPlayerForm()">+ Add Player</button>
+          <button class="btn btn-green" onclick="showTeamForm()">+ Добавить команду</button>
+          <button class="btn btn-green" onclick="showPlayerForm()">+ Добавить игрока</button>
           <button class="btn btn-green" onclick="showMatchForm()">+ Schedule Match</button>
           <button class="btn btn-green" onclick="showTournamentForm()">+ New Tournament</button>
           <button class="btn btn-green" onclick="navigate('/leagues')">🏆 Manage Leagues</button>
@@ -1732,16 +1754,16 @@ async function renderAdmin(app) {
 
     <!-- Team Generator -->
     <div class="card mt-3">
-      <div class="card-header">Team Generator</div>
+      <div class="card-header">Генератор команды</div>
       <div class="generator-panel">
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Generate a complete squad of 22 players (11 starters + 11 reserves) for a new team.</p>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Сгенерировать полный состав из 22 игроков (11 основных + 11 запасных) для новой команды.</p>
         <div class="form-row">
           <div class="form-group"><label>Team Name *</label><input type="text" id="gen-name" placeholder="e.g. City United FC"/></div>
           <div class="form-group"><label>Short Name</label><input type="text" id="gen-short" maxlength="10" placeholder="e.g. CUF"/></div>
         </div>
         <div class="form-row">
           <div class="form-group"><label>Average Market Value (€M)</label><input type="number" id="gen-mv" value="5" min="0.5" max="100" step="0.5" placeholder="5"/></div>
-          <div class="form-group" style="align-self:flex-end"><button class="btn btn-green" onclick="generateTeam()" style="width:100%">⚡ Generate Team</button></div>
+          <div class="form-group" style="align-self:flex-end"><button class="btn btn-green" onclick="generateTeam()" style="width:100%">⚡ Сгенерировать состав</button></div>
         </div>
         <div id="gen-result"></div>
       </div>
@@ -1749,11 +1771,11 @@ async function renderAdmin(app) {
 
     <!-- User Management -->
     <div class="card mt-3">
-      <div class="card-header">User Management
-        <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showCreateUserForm()">+ Add User</button>
+      <div class="card-header">Пользователи
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showCreateUserForm()">+ Добавить пользователя</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Manages</th><th></th></tr></thead>
+        <thead><tr><th>Имя пользователя</th><th>Роль</th><th>Created</th><th>Manages</th><th></th></tr></thead>
         <tbody id="users-tbody">
           ${users.map(u=>`<tr>
             <td class="font-bold">${escHtml(u.username)}</td>
@@ -1761,7 +1783,7 @@ async function renderAdmin(app) {
             <td class="text-muted">${fmtDate(u.created_at)}</td>
             <td class="text-muted">${escHtml(u.team_name||'–')}</td>
             <td style="white-space:nowrap">
-              ${u.role==='coach'?`<button class="btn-icon" onclick="showAssignCoachForm(${u.id},'${escHtml(u.username)}')">⚙️ Assign</button>`:''}
+              ${u.role==='coach'?`<button class="btn-icon" onclick="showAssignCoachForm(${u.id},'${escHtml(u.username)}')">⚙️ Назначить</button>`:''}
             </td>
           </tr>`).join('')}
           ${!users.length?`<tr><td colspan="5" class="text-center text-muted" style="padding:20px">No users yet</td></tr>`:''}
@@ -1824,16 +1846,16 @@ async function generateTeam() {
         </div>
         <button class="btn btn-outline" style="margin-top:10px;color:#fff;border-color:rgba(255,255,255,.3)" onclick="navigate('/teams/${result.team.id}')">View Team →</button>
       </div>`;
-    btn.textContent='⚡ Generate Team'; btn.disabled=false;
+    btn.textContent='⚡ Сгенерировать состав'; btn.disabled=false;
     document.getElementById('gen-name').value=''; document.getElementById('gen-short').value='';
-  } catch(e) { toast(e.message,'error'); btn.textContent='⚡ Generate Team'; btn.disabled=false; }
+  } catch(e) { toast(e.message,'error'); btn.textContent='⚡ Сгенерировать состав'; btn.disabled=false; }
 }
 
 async function showCreateUserForm() {
-  mkModal('Create User Account', `
-    <div class="form-group"><label>Username *</label><input type="text" id="nu-user" placeholder="e.g. coach_arsenalFC"/></div>
-    <div class="form-group"><label>Password *</label><input type="password" id="nu-pass" placeholder="min 8 characters"/></div>
-    <div class="form-group"><label>Role *</label>
+  mkModal('Создать пользователя', `
+    <div class="form-group"><label>Имя пользователя *</label><input type="text" id="nu-user" placeholder="e.g. coach_arsenalFC"/></div>
+    <div class="form-group"><label>Пароль *</label><input type="password" id="nu-pass" placeholder="min 8 characters"/></div>
+    <div class="form-group"><label>Роль *</label>
       <select id="nu-role">
         <option value="coach">Coach</option>
         <option value="admin">Admin</option>
@@ -1843,10 +1865,10 @@ async function showCreateUserForm() {
     const username = document.getElementById('nu-user').value.trim();
     const password = document.getElementById('nu-pass').value;
     const role = document.getElementById('nu-role').value;
-    if (!username||!password) { toast('Fill all fields','error'); return false; }
-    if (password.length<8) { toast('Password min 8 chars','error'); return false; }
+    if (!username||!password) { toast('Заполните все поля','error'); return false; }
+    if (password.length<8) { toast('Пароль: мин. 8 символов','error'); return false; }
     const data = await POST('/auth/users', {username,password,role});
-    toast('User created. '+( role==='coach'?'Now assign a team via ⚙️ Assign.':''));
+    toast('Пользователь создан. '+( role==='coach'?'Теперь назначьте команду через ⚙️ Назначить.':''));
     if (role==='coach') {
       // Create coach profile automatically
       await POST('/coaches', {user_id:data.id, name:username}).catch(()=>{});
@@ -1857,29 +1879,29 @@ async function showCreateUserForm() {
 async function showAssignCoachForm(userId, username) {
   const [teams, coaches] = await Promise.all([GET('/teams'), GET('/coaches')]);
   const existing = coaches.find(c=>c.user_id===userId);
-  mkModal(`Assign Team to ${username}`, `
-    <div class="form-group"><label>Team *</label>
+  mkModal(`Назначить клуб: ${username}`, `
+    <div class="form-group"><label>Команда *</label>
       <select id="ac-team">
-        <option value="">Select team…</option>
+        <option value="">Выберите команду…</option>
         ${teams.map(t=>`<option value="${t.id}"${existing?.team_id===t.id?' selected':''}>${escHtml(t.name)}</option>`).join('')}
       </select>
     </div>
-    <div class="form-group"><label>Coach Name</label><input type="text" id="ac-name" value="${escHtml(existing?.name||username)}"/></div>
+    <div class="form-group"><label>Имя тренера</label><input type="text" id="ac-name" value="${escHtml(existing?.name||username)}"/></div>
     <div class="form-row">
-      <div class="form-group"><label>Age</label><input type="number" id="ac-age" value="${existing?.age||''}"/></div>
-      <div class="form-group"><label>Height (cm)</label><input type="number" id="ac-height" value="${existing?.height||''}"/></div>
+      <div class="form-group"><label>Возраст</label><input type="number" id="ac-age" value="${existing?.age||''}"/></div>
+      <div class="form-group"><label>Рост (см)</label><input type="number" id="ac-height" value="${existing?.height||''}"/></div>
     </div>
-    <div class="form-group"><label>Playing Style</label><input type="text" id="ac-style" value="${escHtml(existing?.playing_style||'')}" placeholder="e.g. 4-3-3 High Press"/></div>
+    <div class="form-group"><label>Игровой стиль</label><input type="text" id="ac-style" value="${escHtml(existing?.playing_style||'')}" placeholder="e.g. 4-3-3 High Press"/></div>
   `, async () => {
     const team_id = parseInt(document.getElementById('ac-team').value);
     const name = document.getElementById('ac-name').value.trim()||username;
     const age = parseInt(document.getElementById('ac-age').value)||null;
     const height = parseInt(document.getElementById('ac-height').value)||null;
     const playing_style = document.getElementById('ac-style').value.trim()||null;
-    if (!team_id) { toast('Select a team','error'); return false; }
+    if (!team_id) { toast('Выберите команду','error'); return false; }
     if (existing) await PUT('/coaches/'+existing.id, {name,team_id,age,height,playing_style});
     else await POST('/coaches', {user_id:userId,team_id,name,age,height,playing_style});
-    toast(`${username} assigned to team!`);
+    toast(`Клуб назначен: ${username}!`);
   });
 }
 
@@ -1945,7 +1967,7 @@ async function renderSearch(app, query) {
         <thead><tr><th>Team</th><th>League</th><th class="text-right">Value</th></tr></thead>
         <tbody>${teams.map(t=>`<tr class="clickable-row" onclick="navigate('/teams/${t.id}')"><td><div class="flex-center gap-2">${teamLogoEl(t.logo_url,t.name)}<span class="font-bold">${escHtml(t.name)}</span></div></td><td class="text-muted">${escHtml(t.competition_name||'–')}</td><td class="text-right mv">${fmtValue(t.market_value)}</td></tr>`).join('')}</tbody>
       </table></div></div>`:''}
-      ${!players.length&&!teams.length?`<div class="empty-state"><div class="empty-icon">🔍</div><p>No results for "${escHtml(query)}"</p></div>`:''}
+      ${!players.length&&!teams.length?`<div class="empty-state"><div class="empty-icon">🔍</div><p>Ничего не найдено по запросу "${escHtml(query)}"</p></div>`:''}
     `;
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
 }
@@ -1959,21 +1981,21 @@ async function renderLeagues(app) {
     const leagues = await GET('/leagues');
     app.innerHTML = `
       <div class="page-header">
-        <h1 class="page-title">🏆 Leagues</h1>
+        <h1 class="page-title">🏆 Лиги</h1>
         ${isAdmin() ? `<button class="btn btn-green" onclick="showCreateLeagueForm()">+ New League</button>` : ''}
       </div>
-      ${!leagues.length ? `<div class="empty-state"><div class="empty-icon">🏆</div><p>No leagues yet. Create one in the admin panel.</p></div>` :
+      ${!leagues.length ? `<div class="empty-state"><div class="empty-icon">🏆</div><p>Лиг пока нет</p></div>` :
         leagues.map(l => `
           <div class="card mb-2 clickable-row" onclick="navigate('/leagues/${l.id}')" style="padding:16px 20px;display:flex;align-items:center;gap:16px">
             <div style="flex:1">
               <div style="font-size:18px;font-weight:700">${escHtml(l.name)}</div>
               <div style="font-size:13px;color:var(--text-muted);margin-top:4px">Season ${l.season} · Matchday ${l.current_matchday}/${l.total_matchdays}</div>
             </div>
-            <span class="season-badge season-${l.status}">${l.status.replace('_',' ')}</span>
+            <span class="season-badge season-${l.status}">${({active:'Активна',transfer_window:'Трансферное окно',pending:'Ожидание',finished:'Завершена',setup:'Настройка'}[l.status]||l.status.replace('_',' '))}</span>
             ${isAdmin() ? `<div onclick="event.stopPropagation()" style="display:flex;gap:6px">
-              ${l.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${l.id})">Start Season</button>`:''}
-              ${l.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${l.id})">▶ Next Matchday</button>`:''}
-              ${l.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${l.id})">→ Next Season</button>`:''}
+              ${l.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${l.id})">Начать сезон</button>`:''}
+              ${l.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${l.id})">▶ Сыграть тур</button>`:''}
+              ${l.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${l.id})">→ Следующий сезон</button>`:''}
               <button class="btn-icon danger" onclick="deleteLeague(${l.id},'${escHtml(l.name)}')">🗑️</button>
             </div>` : ''}
           </div>`).join('')}
@@ -2006,21 +2028,21 @@ async function showCreateLeagueForm() {
 }
 
 async function startLeague(id) {
-  if (!confirm('Generate schedule and start the season?')) return;
-  try { await POST('/leagues/'+id+'/start', {}); toast('Season started! Schedule generated.'); router(); }
+  if (!confirm('Начать сезон?')) return;
+  try { await POST('/leagues/'+id+'/start', {}); toast('Сезон начат!'); router(); }
   catch(e) { toast(e.message,'error'); }
 }
 
 async function simulateLeagueMatchday(id) {
   const btn = event.target;
   btn.disabled = true; btn.textContent = '…';
-  try { const r = await POST('/leagues/'+id+'/simulate-matchday', {}); toast(r.message || 'Matchday simulated!'); router(); }
-  catch(e) { toast(e.message,'error'); btn.disabled=false; btn.textContent='▶ Next Matchday'; }
+  try { const r = await POST('/leagues/'+id+'/simulate-matchday', {}); toast(r.message || 'Тур сыгран!'); router(); }
+  catch(e) { toast(e.message,'error'); btn.disabled=false; btn.textContent='▶ Сыграть тур'; }
 }
 
 async function leagueNextSeason(id) {
-  if (!confirm('Award champion title and start new season?')) return;
-  try { const r = await POST('/leagues/'+id+'/next-season', {}); toast(r.message || 'New season started!'); router(); }
+  if (!confirm('Начать новый сезон?')) return;
+  try { const r = await POST('/leagues/'+id+'/next-season', {}); toast(r.message || 'Новый сезон начат!'); router(); }
   catch(e) { toast(e.message,'error'); }
 }
 
@@ -2033,7 +2055,7 @@ async function renderLeagueDetail(app, id) {
   app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const lg = await GET('/leagues/'+id);
-    const statusBadge = `<span class="season-badge season-${lg.status}">${lg.status.replace('_',' ')}</span>`;
+    const statusBadge = `<span class="season-badge season-${lg.status}">${({active:'Активна',transfer_window:'Трансферное окно',pending:'Ожидание',finished:'Завершена',setup:'Настройка'}[lg.status]||lg.status.replace('_',' '))}</span>`;
     app.innerHTML = `
       <div class="page-header" style="flex-wrap:wrap;gap:8px">
         <div>
@@ -2041,16 +2063,16 @@ async function renderLeagueDetail(app, id) {
           <div style="font-size:13px;color:var(--text-muted);margin-top:2px">Season ${lg.season} · ${statusBadge} · Matchday ${lg.current_matchday}/${lg.total_matchdays}</div>
         </div>
         ${isAdmin() ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          ${lg.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${lg.id})">Start Season</button>`:''}
-          ${lg.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${lg.id})">▶ Simulate Next Matchday</button>`:''}
-          ${lg.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${lg.id})">→ Start New Season</button>`:''}
+          ${lg.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${lg.id})">Начать сезон</button>`:''}
+          ${lg.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${lg.id})">▶ Сыграть тур</button>`:''}
+          ${lg.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${lg.id})">→ Следующий сезон</button>`:''}
         </div>` : ''}
       </div>
       <div class="detail-tabs">
-        <button class="detail-tab active" data-tab="standings">Standings</button>
-        <button class="detail-tab" data-tab="schedule">Schedule</button>
-        <button class="detail-tab" data-tab="scorers">Top Scorers</button>
-        <button class="detail-tab" data-tab="assists">Top Assists</button>
+        <button class="detail-tab active" data-tab="standings">Таблица</button>
+        <button class="detail-tab" data-tab="schedule">Расписание</button>
+        <button class="detail-tab" data-tab="scorers">Бомбардиры</button>
+        <button class="detail-tab" data-tab="assists">Ассистенты</button>
       </div>
       <div id="tab-standings" class="tab-panel active">${renderLeagueStandings(lg.standings)}</div>
       <div id="tab-schedule" class="tab-panel">${renderLeagueSchedule(lg.schedule)}</div>
@@ -2062,17 +2084,17 @@ async function renderLeagueDetail(app, id) {
 }
 
 function renderLeagueStandings(standings) {
-  if (!standings || !standings.length) return `<div class="empty-state"><div class="empty-icon">📊</div><p>No standings yet. Start the season to generate them.</p></div>`;
+  if (!standings || !standings.length) return `<div class="empty-state"><div class="empty-icon">📊</div><p>Таблица пуста</p></div>`;
   const n = standings.length;
   return `<div class="card" style="padding:0">
     <table class="league-table">
       <thead><tr>
         <th class="rank-col">#</th>
-        <th style="text-align:left;padding-left:12px">Team</th>
+        <th style="text-align:left;padding-left:12px">Клуб</th>
         <th title="Played">P</th><th title="Won">W</th><th title="Drawn">D</th><th title="Lost">L</th>
         <th title="Goals For">GF</th><th title="Goals Against">GA</th><th title="Goal Difference">GD</th>
         <th class="pts-col" title="Points">Pts</th>
-        <th>Form</th>
+        <th>Форма</th>
       </tr></thead>
       <tbody>
         ${standings.map((s,i) => {
@@ -2100,17 +2122,27 @@ function renderLeagueStandings(standings) {
 }
 
 function renderLeagueSchedule(schedule) {
-  if (!schedule || !schedule.length) return `<div class="empty-state"><div class="empty-icon">📅</div><p>No schedule yet</p></div>`;
-  const byMatchday = {};
+  if (!schedule || !schedule.length) return `<div class="empty-state"><div class="empty-icon">📅</div><p>Расписание пока не составлено</p></div>`;
+  const today = new Date().toISOString().substring(0, 10);
+  // Group by calendar date (fall back to matchday if no date)
+  const byGroup = {};
+  const groupOrder = [];
   for (const s of schedule) {
-    if (!byMatchday[s.matchday]) byMatchday[s.matchday] = [];
-    byMatchday[s.matchday].push(s);
+    const dateKey = s.scheduled_date ? s.scheduled_date.substring(0, 10) : ('md_' + s.matchday);
+    if (!byGroup[dateKey]) { byGroup[dateKey] = { games: [], matchday: s.matchday, date: s.scheduled_date ? s.scheduled_date.substring(0, 10) : null }; groupOrder.push(dateKey); }
+    byGroup[dateKey].games.push(s);
   }
   return `<div class="card" style="padding:16px">
-    ${Object.entries(byMatchday).map(([md, games]) => `
-      <div class="matchday-group">
-        <div class="matchday-header">Matchday ${md} · ${fmtDate(games[0].scheduled_date)}</div>
-        ${games.map(g => {
+    ${groupOrder.map(key => {
+      const grp = byGroup[key];
+      const isToday = grp.date === today;
+      const headerLabel = grp.date
+        ? `${fmtDate(grp.date)}${isToday ? ' 📍 Сегодня' : ''}`
+        : `Тур ${grp.matchday}`;
+      return `
+      <div class="matchday-group${isToday ? ' matchday-today' : ''}">
+        <div class="matchday-header">${headerLabel}</div>
+        ${grp.games.map(g => {
           const played = g.match_id && g.home_score !== null;
           return `<div class="matchday-item" ${g.match_id?`onclick="navigate('/matches/${g.match_id}')"`:''}>
             <div class="mi-team home">${escHtml(g.home_team_name||'–')}</div>
@@ -2118,32 +2150,33 @@ function renderLeagueSchedule(schedule) {
             <div class="mi-team">${escHtml(g.away_team_name||'–')}</div>
           </div>`;
         }).join('')}
-      </div>`).join('')}
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
 function renderLeagueTopScorers(scorers) {
-  if (!scorers || !scorers.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>No goals scored yet</p></div>`;
+  if (!scorers || !scorers.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>Голов пока нет</p></div>`;
   return `<div class="card" style="padding:16px">
     ${scorers.map((p,i) => `
       <div class="scorers-row clickable-row" onclick="navigate('/players/${p.player_id}')">
         <div class="sr-rank">${i+1}</div>
         ${avatarEl(p.image_url,p.player_name)}
         <div style="flex:1"><div class="font-bold">${escHtml(p.player_name)}</div><div class="text-muted" style="font-size:11px">${escHtml(p.team_name||'–')}</div></div>
-        <div class="sr-goals">${p.total_goals}</div><div style="font-size:11px;color:var(--text-muted)">goals</div>
+        <div class="sr-goals">${p.total_goals}</div><div style="font-size:11px;color:var(--text-muted)">голов</div>
       </div>`).join('')}
   </div>`;
 }
 
 function renderLeagueTopAssists(assists) {
-  if (!assists || !assists.length) return `<div class="empty-state"><div class="empty-icon">🎯</div><p>No assists recorded yet</p></div>`;
+  if (!assists || !assists.length) return `<div class="empty-state"><div class="empty-icon">🎯</div><p>Передач пока нет</p></div>`;
   return `<div class="card" style="padding:16px">
     ${assists.map((p,i) => `
       <div class="scorers-row clickable-row" onclick="navigate('/players/${p.player_id}')">
         <div class="sr-rank">${i+1}</div>
         ${avatarEl(p.image_url,p.player_name)}
         <div style="flex:1"><div class="font-bold">${escHtml(p.player_name)}</div><div class="text-muted" style="font-size:11px">${escHtml(p.team_name||'–')}</div></div>
-        <div class="sr-assists">${p.total_assists}</div><div style="font-size:11px;color:var(--text-muted)">assists</div>
+        <div class="sr-assists">${p.total_assists}</div><div style="font-size:11px;color:var(--text-muted)">передач</div>
       </div>`).join('')}
   </div>`;
 }
@@ -2187,27 +2220,27 @@ async function renderCoachDashboard(app) {
         <div class="coach-team-badge">
           ${teamLogoXL(team.logo_url, team.name)}
           <div class="team-name">${escHtml(team.name)}</div>
-          <div class="budget-label">${fmtValue(team.market_value)} squad value</div>
+          <div class="budget-label">${fmtValue(team.market_value)} стоимость состава</div>
         </div>
         <div style="margin-left:8px">
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:12px" onclick="showCoachEditForm(${JSON.stringify(coach).replace(/"/g,'&quot;')})">Edit Profile</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:12px" onclick="showCoachEditForm(${JSON.stringify(coach).replace(/"/g,'&quot;')})">Редактировать профиль</button>
         </div>
       </div>
       ${budget?`
       <div class="card mb-2" style="padding:16px">
-        <div class="card-header" style="margin:-16px -16px 12px;border-radius:10px 10px 0 0">Season Budget</div>
+        <div class="card-header" style="margin:-16px -16px 12px;border-radius:10px 10px 0 0">Бюджет сезона</div>
         <div class="budget-bar"><div class="budget-bar-fill${(budget.spent||0)>budget.total_budget?' over':''}" style="width:${Math.min(100,Math.round(((budget.spent||0)/Math.max(budget.total_budget,1))*100))}%"></div></div>
         <div class="budget-stats">
-          <div class="budget-stat"><div class="bs-val">${fmtValue(budget.total_budget)}</div><div class="bs-label">Total Budget</div></div>
-          <div class="budget-stat"><div class="bs-val spent">${fmtValue(budget.spent||0)}</div><div class="bs-label">Spent</div></div>
-          <div class="budget-stat"><div class="bs-val">${fmtValue((budget.total_budget||0)+(budget.income||0)-(budget.spent||0))}</div><div class="bs-label">Available</div></div>
+          <div class="budget-stat"><div class="bs-val">${fmtValue(budget.total_budget)}</div><div class="bs-label">Всего бюджет</div></div>
+          <div class="budget-stat"><div class="bs-val spent">${fmtValue(budget.spent||0)}</div><div class="bs-label">Потрачено</div></div>
+          <div class="budget-stat"><div class="bs-val">${fmtValue((budget.total_budget||0)+(budget.income||0)-(budget.spent||0))}</div><div class="bs-label">Доступно</div></div>
         </div>
       </div>` : ''}
       <div class="detail-tabs">
-        <button class="detail-tab active" data-tab="lineup">Lineup</button>
-        <button class="detail-tab" data-tab="offers">Transfer Offers ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
-        <button class="detail-tab" data-tab="post-news">Post News</button>
-        <button class="detail-tab" data-tab="squad">Full Squad</button>
+        <button class="detail-tab active" data-tab="lineup">Состав</button>
+        <button class="detail-tab" data-tab="offers">Трансферные предложения ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
+        <button class="detail-tab" data-tab="post-news">Новость клуба</button>
+        <button class="detail-tab" data-tab="squad">Весь состав</button>
       </div>
       <div id="tab-lineup" class="tab-panel active"></div>
       <div id="tab-offers" class="tab-panel"></div>
@@ -2226,10 +2259,10 @@ async function renderCoachDashboard(app) {
     // Render post news
     document.getElementById('tab-post-news').innerHTML = `
       <div class="card" style="padding:20px">
-        <div class="card-header" style="margin:-20px -20px 16px;border-radius:10px 10px 0 0">Post Club News</div>
-        <div class="form-group"><label>Title *</label><input type="text" id="cn-title" placeholder="News headline…"/></div>
-        <div class="form-group"><label>Body</label><textarea id="cn-body" rows="5" placeholder="Write your club news here…" style="resize:vertical"></textarea></div>
-        <button class="btn btn-green" onclick="postCoachNews(${coach.team_id})">Publish News</button>
+        <div class="card-header" style="margin:-20px -20px 16px;border-radius:10px 10px 0 0">Новость клуба</div>
+        <div class="form-group"><label>Заголовок *</label><input type="text" id="cn-title" placeholder="Заголовок новости…"/></div>
+        <div class="form-group"><label>Текст</label><textarea id="cn-body" rows="5" placeholder="Напишите текст новости…" style="resize:vertical"></textarea></div>
+        <button class="btn btn-green" onclick="postCoachNews(${coach.team_id})">Опубликовать</button>
       </div>`;
 
     // Render squad tab
@@ -2246,6 +2279,18 @@ function renderLineupEditor(team, lineup) {
   const assignedIds = new Set(slots.map(s=>s.player_id));
   const unassigned = allPlayers.filter(p=>!assignedIds.has(p.id));
 
+  // Position groups for visual block layout (FWD→MID→DEF→GK top to bottom)
+  const posGroup = pos => {
+    if (!pos) return 'MID';
+    if (['Left Winger','Right Winger','Centre-Forward','Striker','Attacking Midfield'].includes(pos)) return 'FWD';
+    if (['Central Midfield','Defensive Midfield'].includes(pos)) return 'MID';
+    if (['Centre-Back','Left-Back','Right-Back'].includes(pos)) return 'DEF';
+    if (pos === 'Goalkeeper') return 'GK';
+    return 'MID';
+  };
+  const groupOrder = ['FWD','MID','DEF','GK'];
+  const groupLabels = {FWD:'Нападение',MID:'Полузащита',DEF:'Защита',GK:'Вратарь'};
+
   const playerCard = (p, slot, isStarter) => `
     <div class="player-card" data-player-id="${p.player_id||p.id}" data-slot="${slot}">
       ${avatarEl(p.image_url||p.player_image,p.player_name||p.name)}
@@ -2254,12 +2299,23 @@ function renderLineupEditor(team, lineup) {
         <div class="pc-pos">${posBadge(p.position_override||p.position)} <span class="slot-badge">#${slot}</span></div>
       </div>
       <div class="pc-btn">
-        <button class="btn-icon" onclick="movePlayerToLineup(${p.player_id||p.id},${isStarter?12:1},${team.id})" title="${isStarter?'→ Bench':'→ Start'}">
+        <button class="btn-icon" onclick="movePlayerToLineup(${p.player_id||p.id},${isStarter?12:1},${team.id})" title="${isStarter?'→ Скамейка':'→ Старт'}">
           ${isStarter?'🪑':'⚡'}
         </button>
-        <button class="btn-icon" onclick="removeFromLineup(${p.player_id||p.id},${team.id})" title="Remove">✕</button>
+        <button class="btn-icon" onclick="removeFromLineup(${p.player_id||p.id},${team.id})" title="Убрать">✕</button>
       </div>
     </div>`;
+
+  // Build grouped starters display
+  const startersByGroup = {FWD:[],MID:[],DEF:[],GK:[]};
+  for (const s of starters) { const g = posGroup(s.position_override||s.position); if (startersByGroup[g]) startersByGroup[g].push(s); else startersByGroup.MID.push(s); }
+  const startersHtml = starters.length === 0
+    ? '<div class="text-muted" style="padding:12px;font-size:13px">Основные не выбраны</div>'
+    : groupOrder.map(g => startersByGroup[g].length ? `
+        <div class="lineup-pos-group">
+          <div class="lineup-pos-label">${groupLabels[g]}</div>
+          <div class="lineup-pos-row">${startersByGroup[g].map(s=>playerCard(s,s.slot,true)).join('')}</div>
+        </div>` : '').join('');
 
   const unassignedCard = (p) => `
     <div class="player-card">
@@ -2269,32 +2325,32 @@ function renderLineupEditor(team, lineup) {
         <div class="pc-pos">${posBadge(p.position)}</div>
       </div>
       <div class="pc-btn">
-        <button class="btn btn-sm btn-green" onclick="addToLineup(${p.id},${team.id},'start')">Start</button>
-        <button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="addToLineup(${p.id},${team.id},'bench')">Bench</button>
+        <button class="btn btn-sm btn-green" onclick="addToLineup(${p.id},${team.id},'start')">Старт</button>
+        <button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="addToLineup(${p.id},${team.id},'bench')">Запас</button>
       </div>
     </div>`;
 
   return `
     <div class="lineup-editor">
       <div class="lineup-save-bar">
-        <span>Set your 11 starters and up to 11 reserves</span>
-        <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Auto-Select</button>
+        <span>Выберите 11 основных и до 11 запасных</span>
+        <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Авто-подбор</button>
       </div>
       <div class="lineup-columns">
         <div>
-          <div class="lineup-col-header">Starting XI <span class="badge badge-green">${starters.length}/11</span></div>
+          <div class="lineup-col-header">Основной состав <span class="badge badge-green">${starters.length}/11</span></div>
           <div id="starters-col">
-            ${starters.map(s=>playerCard(s,s.slot,true)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">No starters selected</div>'}
+            ${startersHtml}
           </div>
-          <div class="lineup-col-header" style="margin-top:16px">Reserves <span class="badge" style="background:rgba(255,255,255,.1)">${reserves.length}/11</span></div>
+          <div class="lineup-col-header" style="margin-top:16px">Запасные <span class="badge" style="background:rgba(255,255,255,.1)">${reserves.length}/11</span></div>
           <div id="reserves-col">
-            ${reserves.map(s=>playerCard(s,s.slot,false)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">No reserves selected</div>'}
+            ${reserves.map(s=>playerCard(s,s.slot,false)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">Запасные не выбраны</div>'}
           </div>
         </div>
         <div>
-          <div class="lineup-col-header">Unassigned Players <span class="badge" style="background:rgba(255,255,255,.1)">${unassigned.length}</span></div>
+          <div class="lineup-col-header">Нераспределённые игроки <span class="badge" style="background:rgba(255,255,255,.1)">${unassigned.length}</span></div>
           <div id="unassigned-col">
-            ${unassigned.map(p=>unassignedCard(p)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">All players assigned ✓</div>'}
+            ${unassigned.map(p=>unassignedCard(p)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">Все игроки распределены ✓</div>'}
           </div>
         </div>
       </div>
@@ -2311,15 +2367,15 @@ async function addToLineup(playerId, teamId, where) {
     let slot;
     if (where === 'start') {
       for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){slot=i;break;} }
-      if (!slot) { toast('Starters full (11/11)','error'); return; }
+      if (!slot) { toast('Основной состав заполнен (11/11)','error'); return; }
     } else {
       for (let i=12;i<=22;i++) { if(!usedSlots.has(i)){slot=i;break;} }
-      if (!slot) { toast('Bench full (11/11)','error'); return; }
+      if (!slot) { toast('Скамейка заполнена (11/11)','error'); return; }
     }
     const current = lineupArr.filter(s=>s.player_id!==playerId);
     current.push({slot, player_id:playerId});
     await PUT('/lineups/'+teamId, {lineup:current});
-    toast('Lineup updated'); navigate('/coach');
+    toast('Состав обновлён'); navigate('/coach');
   } catch(e) { toast(e.message,'error'); }
 }
 
@@ -2334,11 +2390,11 @@ async function movePlayerToLineup(playerId, targetSlotBase, teamId) {
     } else {
       for (let i=12;i<=22;i++) { if(!usedSlots.has(i)){slot=i;break;} }
     }
-    if (!slot) { toast('Section full','error'); return; }
+    if (!slot) { toast('Секция заполнена','error'); return; }
     const current = lineupArr.filter(s=>s.player_id!==playerId);
     current.push({slot, player_id:playerId});
     await PUT('/lineups/'+teamId, {lineup:current});
-    toast('Moved'); navigate('/coach');
+    toast('Перемещено'); navigate('/coach');
   } catch(e) { toast(e.message,'error'); }
 }
 
@@ -2347,25 +2403,25 @@ async function removeFromLineup(playerId, teamId) {
     const lineupResp = await GET('/lineups/'+teamId);
     const current = (lineupResp.lineup||[]).filter(s=>s.player_id!==playerId);
     await PUT('/lineups/'+teamId, {lineup:current});
-    toast('Removed'); navigate('/coach');
+    toast('Убрано'); navigate('/coach');
   } catch(e) { toast(e.message,'error'); }
 }
 
 async function autoLineup(teamId) {
-  if (!confirm('Auto-assign all players to starter/reserve slots?')) return;
+  if (!confirm('Автоматически распределить всех игроков?')) return;
   try {
     await POST('/lineups/'+teamId+'/auto', {});
-    toast('Lineup auto-generated!'); navigate('/coach');
+    toast('Состав автоматически сформирован!'); navigate('/coach');
   } catch(e) { toast(e.message,'error'); }
 }
 
 async function postCoachNews(teamId) {
   const title = document.getElementById('cn-title').value.trim();
   const body = document.getElementById('cn-body').value.trim();
-  if (!title) { toast('Title required','error'); return; }
+  if (!title) { toast('Заголовок обязателен','error'); return; }
   try {
     await POST('/coaches/me/news', {title, body});
-    toast('News published!');
+    toast('Новость опубликована!');
     document.getElementById('cn-title').value = '';
     document.getElementById('cn-body').value = '';
   } catch(e) { toast(e.message,'error'); }
@@ -2374,7 +2430,7 @@ async function postCoachNews(teamId) {
 function renderTransferOffersTab(offers, myTeamId) {
   const received = offers.filter(o=>o.to_team_id===myTeamId&&o.status==='pending');
   const sent = offers.filter(o=>o.from_team_id===myTeamId);
-  const fmtStatus = s => ({pending:'🕐 Pending',accepted:'✅ Accepted',rejected:'❌ Rejected',cancelled:'⚫ Cancelled'}[s]||s);
+  const fmtStatus = s => ({pending:'🕐 В ожидании',accepted:'✅ Принято',rejected:'❌ Отклонено',cancelled:'⚫ Отменено'}[s]||s);
 
   const offerCard = (o, isReceived) => `
     <div class="offer-card offer-${o.status}">
@@ -2385,38 +2441,38 @@ function renderTransferOffersTab(offers, myTeamId) {
         <span class="ml-auto">${fmtStatus(o.status)}</span>
       </div>
       <div class="offer-amount">${fmtValue(o.amount)}</div>
-      ${o.offer_type==='loan'?`<div class="offer-meta">Loan duration: ${o.loan_months} months</div>`:''}
+      ${o.offer_type==='loan'?`<div class="offer-meta">Срок аренды: ${o.loan_months} мес.</div>`:''}
       ${o.message?`<div class="offer-meta" style="margin-top:6px;font-style:italic">"${escHtml(o.message)}"</div>`:''}
       <div class="offer-meta">${fmtDate(o.created_at)}</div>
       ${isReceived&&o.status==='pending'?`
         <div class="offer-actions">
-          <button class="btn btn-green" onclick="respondOffer(${o.id},'accept')">✓ Accept</button>
-          <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="respondOffer(${o.id},'reject')">✗ Reject</button>
+          <button class="btn btn-green" onclick="respondOffer(${o.id},'accept')">✓ Принять</button>
+          <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="respondOffer(${o.id},'reject')">✗ Отклонить</button>
         </div>` : ''}
       ${!isReceived&&o.status==='pending'?`
         <div class="offer-actions">
-          <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c;font-size:12px" onclick="respondOffer(${o.id},'cancel')">Cancel Offer</button>
+          <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c;font-size:12px" onclick="respondOffer(${o.id},'cancel')">Отменить предложение</button>
         </div>` : ''}
     </div>`;
 
   return `
     <div class="card" style="padding:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div class="font-bold">Transfer Offers</div>
-        <button class="btn btn-green" onclick="showSendOfferForm()">+ Send Offer</button>
+        <div class="font-bold">Трансферные предложения</div>
+        <button class="btn btn-green" onclick="showSendOfferForm()">+ Отправить предложение</button>
       </div>
-      ${received.length?`<div style="font-size:12px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin-bottom:8px">Received (${received.length})</div>${received.map(o=>offerCard(o,true)).join('')}`:''}
-      ${sent.length?`<div style="font-size:12px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin-bottom:8px;margin-top:${received.length?16:0}px">Sent (${sent.length})</div>${sent.map(o=>offerCard(o,false)).join('')}`:''}
-      ${!received.length&&!sent.length?`<div class="empty-state" style="padding:30px"><div class="empty-icon">📨</div><p>No transfer offers yet</p></div>`:''}
+      ${received.length?`<div style="font-size:12px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin-bottom:8px">Получено (${received.length})</div>${received.map(o=>offerCard(o,true)).join('')}`:''}
+      ${sent.length?`<div style="font-size:12px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin-bottom:8px;margin-top:${received.length?16:0}px">Отправлено (${sent.length})</div>${sent.map(o=>offerCard(o,false)).join('')}`:''}
+      ${!received.length&&!sent.length?`<div class="empty-state" style="padding:30px"><div class="empty-icon">📨</div><p>Предложений ещё нет</p></div>`:''}
     </div>`;
 }
 
 async function respondOffer(id, action) {
-  const labels = {accept:'Accept this offer?',reject:'Reject this offer?',cancel:'Cancel this offer?'};
+  const labels = {accept:'Принять предложение?',reject:'Отклонить предложение?',cancel:'Отменить предложение?'};
   if (!confirm(labels[action])) return;
   try {
     await PUT('/transfer-offers/'+id+'/'+action, {});
-    toast(action==='accept'?'Transfer completed!':action==='reject'?'Offer rejected':'Offer cancelled');
+    toast(action==='accept'?'Трансфер завершён!':action==='reject'?'Предложение отклонено':'Предложение отменено');
     navigate('/coach');
   } catch(e) { toast(e.message,'error'); }
 }
@@ -2426,22 +2482,22 @@ async function showSendOfferForm() {
   const coach = State.coachProfile;
   const myTeamId = coach?.team_id;
   const otherTeams = teams.filter(t=>t.id!==myTeamId);
-  mkModal('Send Transfer Offer', `
-    <div class="form-group"><label>Target Team *</label>
+  mkModal('Отправить трансферное предложение', `
+    <div class="form-group"><label>Команда-получатель *</label>
       <select id="sof-team" onchange="loadTeamPlayersForOffer()">
-        <option value="">Select team…</option>
+        <option value="">Выберите команду…</option>
         ${otherTeams.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}
       </select>
     </div>
-    <div class="form-group"><label>Player *</label><select id="sof-player"><option value="">Select team first…</option></select></div>
+    <div class="form-group"><label>Игрок *</label><select id="sof-player"><option value="">Сначала выберите команду…</option></select></div>
     <div class="form-row">
-      <div class="form-group"><label>Type</label>
-        <select id="sof-type"><option value="buy">Buy</option><option value="loan">Loan</option></select>
+      <div class="form-group"><label>Тип</label>
+        <select id="sof-type"><option value="buy">Покупка</option><option value="loan">Аренда</option></select>
       </div>
-      <div class="form-group"><label>Amount (€) *</label><input type="number" id="sof-amount" step="100000" min="0"/></div>
+      <div class="form-group"><label>Сумма (€) *</label><input type="number" id="sof-amount" step="100000" min="0"/></div>
     </div>
-    <div class="form-group"><label>Loan Duration (months)</label><input type="number" id="sof-months" value="6" min="1" max="24"/></div>
-    <div class="form-group"><label>Message (optional)</label><textarea id="sof-msg" rows="2"></textarea></div>
+    <div class="form-group"><label>Срок аренды (мес.)</label><input type="number" id="sof-months" value="6" min="1" max="24"/></div>
+    <div class="form-group"><label>Сообщение (необязательно)</label><textarea id="sof-msg" rows="2"></textarea></div>
   `, async () => {
     const to_team_id = parseInt(document.getElementById('sof-team').value);
     const player_id = parseInt(document.getElementById('sof-player').value);
@@ -2449,34 +2505,34 @@ async function showSendOfferForm() {
     const amount = parseFloat(document.getElementById('sof-amount').value)||0;
     const loan_months = parseInt(document.getElementById('sof-months').value)||6;
     const message = document.getElementById('sof-msg').value.trim()||null;
-    if (!to_team_id||!player_id||!amount) { toast('Fill all required fields','error'); return false; }
+    if (!to_team_id||!player_id||!amount) { toast('Заполните все обязательные поля','error'); return false; }
     await POST('/transfer-offers', {to_team_id,player_id,offer_type,amount,loan_months,message});
-    toast('Offer sent!');
+    toast('Предложение отправлено!');
   });
 }
 
 async function loadTeamPlayersForOffer() {
   const teamId = document.getElementById('sof-team').value;
   const sel = document.getElementById('sof-player');
-  if (!teamId) { sel.innerHTML='<option value="">Select team first…</option>'; return; }
+  if (!teamId) { sel.innerHTML='<option value="">Сначала выберите команду…</option>'; return; }
   const players = await GET('/players?team_id='+teamId).catch(()=>[]);
   sel.innerHTML = players.map(p=>`<option value="${p.id}">${escHtml(p.name)} (${fmtValue(p.market_value)})</option>`).join('');
 }
 
 async function showCoachEditForm(coach) {
-  mkModal('Edit Coach Profile', `
+  mkModal('Редактировать профиль тренера', `
     <div class="form-row">
-      <div class="form-group"><label>Name *</label><input type="text" id="ce-name" value="${escHtml(coach.name||'')}"/></div>
-      <div class="form-group"><label>Avatar URL</label><input type="text" id="ce-avatar" value="${escHtml(coach.avatar_url||'')}"/></div>
+      <div class="form-group"><label>Имя *</label><input type="text" id="ce-name" value="${escHtml(coach.name||'')}"/></div>
+      <div class="form-group"><label>URL аватара</label><input type="text" id="ce-avatar" value="${escHtml(coach.avatar_url||'')}"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Age</label><input type="number" id="ce-age" value="${coach.age||''}"/></div>
-      <div class="form-group"><label>Height (cm)</label><input type="number" id="ce-height" value="${coach.height||''}"/></div>
+      <div class="form-group"><label>Возраст</label><input type="number" id="ce-age" value="${coach.age||''}"/></div>
+      <div class="form-group"><label>Рост (см)</label><input type="number" id="ce-height" value="${coach.height||''}"/></div>
     </div>
-    <div class="form-group"><label>Playing Style / Preferred Formation</label>
+    <div class="form-group"><label>Игровой стиль / Предпочтительная расстановка</label>
       <input type="text" id="ce-style" value="${escHtml(coach.playing_style||'')}" placeholder="e.g. 4-3-3 High Press"/>
     </div>
-    <div class="form-group"><label>Description</label><textarea id="ce-desc" rows="3">${escHtml(coach.description||'')}</textarea></div>
+    <div class="form-group"><label>Описание</label><textarea id="ce-desc" rows="3">${escHtml(coach.description||'')}</textarea></div>
   `, async () => {
     await PUT('/coaches/'+coach.id, {
       name: document.getElementById('ce-name').value.trim(),
@@ -2487,7 +2543,7 @@ async function showCoachEditForm(coach) {
       description: document.getElementById('ce-desc').value.trim()||null,
     });
     State.coachProfile = null;
-    toast('Profile updated');
+    toast('Профиль обновлён');
   });
 }
 
