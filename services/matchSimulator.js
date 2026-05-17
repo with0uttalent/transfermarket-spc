@@ -3,6 +3,7 @@
 const {
   commentaryGoal, commentaryYellow, commentaryRed,
   commentaryInjury, commentarySub, commentaryOwnGoal, commentaryDangerousPlay,
+  commentaryPenaltyMiss, commentaryBigSave, commentaryNearMiss,
 } = require('./commentaryEngine');
 
 const ATTACK_POSITIONS = new Set(['Centre-Forward','Striker','Left Winger','Right Winger','Attacking Midfield']);
@@ -140,7 +141,7 @@ function simulateMatchCore(
       const og = pick(defenders);
       track(og.id); stats[og.id].rating -= 1.8;
       isHome ? homeScore++ : awayScore++;
-      const desc = `⚽ OWN GOAL! ${og.name} puts it into his own net! ${commentaryOwnGoal(og.name)}`;
+      const desc = `⚽ АВТОГОЛ! ${og.name} забивает в свои ворота! ${commentaryOwnGoal(og.name)}`;
       addEvent(minute, 'own_goal', defTeam, og.id, null, desc);
       return;
     }
@@ -148,10 +149,10 @@ function simulateMatchCore(
     track(scorer.id); stats[scorer.id].goals++; stats[scorer.id].rating += 1.5;
     if (assister) { track(assister.id); stats[assister.id].assists++; stats[assister.id].rating += 0.8; }
     isHome ? homeScore++ : awayScore++;
-    const assistStr = assister ? ` (Assist: ${assister.name})` : '';
+    const assistStr = assister ? ` (Ассист: ${assister.name})` : '';
     const goalComm = commentaryGoal(scorer.name, assister ? assister.name : null);
     addEvent(minute, 'goal', teamId, scorer.id, assister?.id||null,
-      `⚽ GOAL! ${scorer.name} scores!${assistStr} ${goalComm}`);
+      `⚽ ГОЛ! ${scorer.name} забивает!${assistStr} ${goalComm}`);
   }
 
   function removePlayer(player, isHome) {
@@ -171,14 +172,14 @@ function simulateMatchCore(
     if (yellows[player.id] >= 2) {
       stats[player.id].red_cards++; stats[player.id].rating -= 2.5;
       addEvent(minute, 'red_card', teamId, player.id, null,
-        `🟥 RED CARD! ${player.name} receives a second yellow! ${commentaryRed(player.name)}`);
+        `🟥 КРАСНАЯ КАРТОЧКА! ${player.name} получает вторую жёлтую! ${commentaryRed(player.name)}`);
       removePlayer(player, isHome);
       isHome ? homeRed++ : awayRed++;
       delete yellows[player.id];
     } else {
       stats[player.id].yellow_cards++; stats[player.id].rating -= 0.4;
       addEvent(minute, 'yellow_card', teamId, player.id, null,
-        `🟨 Yellow card for ${player.name}. ${commentaryYellow(player.name)}`);
+        `🟨 Жёлтая карточка: ${player.name}. ${commentaryYellow(player.name)}`);
     }
   }
 
@@ -189,7 +190,7 @@ function simulateMatchCore(
     const player = pick(field);
     track(player.id); stats[player.id].red_cards++; stats[player.id].rating -= 3;
     addEvent(minute, 'red_card', teamId, player.id, null,
-      `🟥 RED CARD! ${player.name} is sent off for dangerous play! ${commentaryDangerousPlay(player.name)}`);
+      `🟥 КРАСНАЯ КАРТОЧКА! ${player.name} удалён за грубую игру! ${commentaryDangerousPlay(player.name)}`);
     removePlayer(player, isHome);
     isHome ? homeRed++ : awayRed++;
   }
@@ -201,7 +202,7 @@ function simulateMatchCore(
     const player = pick(field);
     track(player.id); stats[player.id].injured = true; stats[player.id].rating -= 1.5;
     addEvent(minute, 'injury', teamId, player.id, null,
-      `🚑 ${player.name} is down! ${commentaryInjury(player.name)}`);
+      `🚑 ${player.name} травмирован! ${commentaryInjury(player.name)}`);
     injuredPlayers.push(player.id);
     removePlayer(player, isHome);
   }
@@ -212,8 +213,50 @@ function simulateMatchCore(
   const homeReserves = allHomePlayers.filter(p => !activeHome.find(f => f.id === p.id));
   const awayReserves = allAwayPlayers.filter(p => !activeAway.find(f => f.id === p.id));
 
-  const RATE   = useSkillRate ? 0.016  : 0.0115;
+  const RATE   = useSkillRate ? 0.018  : 0.013;
   const OFFSET = useSkillRate ? 0.5    : 4.5;
+
+  function tryPenalty(minute, isHome) {
+    const attackers = isHome ? activeHome : activeAway;
+    const teamId    = isHome ? homeTeamId : awayTeamId;
+    if (!attackers.length) return;
+    const fwd = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
+    const taker = fwd.length ? pick(fwd) : pick(attackers);
+    track(taker.id);
+    const scored = rand() < 0.76;
+    if (scored) {
+      stats[taker.id].goals++; stats[taker.id].rating += 1.2;
+      isHome ? homeScore++ : awayScore++;
+      addEvent(minute, 'goal', teamId, taker.id, null,
+        `⚽ ПЕНАЛЬТИ! ${taker.name} уверенно реализует! ${commentaryGoal(taker.name, null)}`);
+    } else {
+      stats[taker.id].rating -= 0.8;
+      addEvent(minute, 'penalty_miss', teamId, taker.id, null,
+        `❌ Пенальти не забит! ${taker.name} — промах! ${commentaryPenaltyMiss(taker.name)}`);
+    }
+  }
+
+  function tryBigSave(minute, isHome) {
+    const defenders = isHome ? activeAway : activeHome;
+    const teamId    = isHome ? awayTeamId : homeTeamId;
+    const gks = defenders.filter(p => GK_POSITIONS.has(p.position||''));
+    const gk = gks.length ? gks[0] : null;
+    if (!gk) return;
+    track(gk.id); stats[gk.id].rating += 0.5;
+    addEvent(minute, 'save', teamId, gk.id, null,
+      `🧤 ${gk.name} делает блестящий сейв! ${commentaryBigSave(gk.name)}`);
+  }
+
+  function tryNearMiss(minute, isHome) {
+    const attackers = isHome ? activeHome : activeAway;
+    const teamId    = isHome ? homeTeamId : awayTeamId;
+    if (!attackers.length) return;
+    const fwd = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
+    const p = fwd.length ? pick(fwd) : pick(attackers);
+    track(p.id);
+    addEvent(minute, 'near_miss', teamId, p.id, null,
+      `🎯 Почти гол! ${p.name} — удар в штангу/перекладину! ${commentaryNearMiss(p.name)}`);
+  }
 
   for (let m = 1; m <= 90; m++) {
     const hAtkEff = homeStr.attack  * Math.pow(0.88, homeRed) * 1.08;
@@ -223,28 +266,31 @@ function simulateMatchCore(
 
     if (rand() < RATE * (hAtkEff / (aDefEff + OFFSET))) tryGoal(m, true);
     if (rand() < RATE * (aAtkEff / (hDefEff + OFFSET))) tryGoal(m, false);
-    if (rand() < 0.022) tryCard(m, rand() < 0.5);
-    if (rand() < 0.0008) tryDirectRed(m, rand() < 0.5);
-    if (m % 15 === 0 && rand() < 0.20) tryInjury(m, rand() < 0.5);
+    if (rand() < 0.008) tryPenalty(m, rand() < 0.5);
+    if (rand() < 0.028) tryCard(m, rand() < 0.5);
+    if (rand() < 0.0012) tryDirectRed(m, rand() < 0.5);
+    if (m % 10 === 0 && rand() < 0.30) tryInjury(m, rand() < 0.5);
+    if (rand() < 0.022) tryBigSave(m, rand() < 0.5);
+    if (rand() < 0.018) tryNearMiss(m, rand() < 0.5);
 
     if (m >= 55 && m <= 82) {
-      if (subsDone.home < 3 && rand() < 0.045 && activeHome.length > 8) {
+      if (subsDone.home < 3 && rand() < 0.055 && activeHome.length > 8) {
         const off = pick(activeHome);
         const bench = homeReserves.filter(p => !activeHome.find(f => f.id === p.id));
         if (bench.length) {
           const on = pick(bench);
           addEvent(m, 'substitution', homeTeamId, on.id, off.id,
-            `🔄 Substitution: ${commentarySub(on.name, off.name)}`);
+            `🔄 Замена: ${commentarySub(on.name, off.name)}`);
           removePlayer(off, true); activeHome.push(on); subsDone.home++;
         }
       }
-      if (subsDone.away < 3 && rand() < 0.045 && activeAway.length > 8) {
+      if (subsDone.away < 3 && rand() < 0.055 && activeAway.length > 8) {
         const off = pick(activeAway);
         const bench = awayReserves.filter(p => !activeAway.find(f => f.id === p.id));
         if (bench.length) {
           const on = pick(bench);
           addEvent(m, 'substitution', awayTeamId, on.id, off.id,
-            `🔄 Substitution: ${commentarySub(on.name, off.name)}`);
+            `🔄 Замена: ${commentarySub(on.name, off.name)}`);
           removePlayer(off, false); activeAway.push(on); subsDone.away++;
         }
       }

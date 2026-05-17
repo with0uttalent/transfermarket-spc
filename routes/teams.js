@@ -86,14 +86,14 @@ router.post('/', requireAuth, (req, res) => {
 });
 
 router.put('/:id', requireAuth, (req, res) => {
-  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value } = req.body;
+  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value, stadium_url } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
   const result = db.prepare(`
-    UPDATE teams SET name=?, short_name=?, country_id=?, competition_id=?, founded=?, stadium=?, logo_url=?, market_value=?
+    UPDATE teams SET name=?, short_name=?, country_id=?, competition_id=?, founded=?, stadium=?, logo_url=?, market_value=?, stadium_url=?
     WHERE id=?
   `).run(name, short_name || null, country_id || null, competition_id || null,
-    founded || null, stadium || null, logo_url || null, market_value || 0, req.params.id);
+    founded || null, stadium || null, logo_url || null, market_value || 0, stadium_url || null, req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ id: Number(req.params.id), name });
 });

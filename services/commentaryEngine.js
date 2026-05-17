@@ -5,145 +5,170 @@ function pick(arr) {
 }
 
 const SHOT_TYPES = [
-  'a powerful right-footed drive into the bottom-left corner',
-  'a delicate left-footed chip over the keeper',
-  'a thunderous header from six yards out',
-  'a precise low strike that nestled into the far post',
-  'a stunning volley struck on the half-turn',
-  'a curling effort with the outside of the boot',
-  'a clinical near-post finish with his weaker foot',
-  'an audacious backheel flick that wrong-footed the goalkeeper',
-  'a fierce rising shot that flew into the top-right corner',
-  'a composed side-footed slot into an empty net',
-  'a thumping downward header that bounced past the keeper',
-  'a venomous left-footed sidefoot finish from the edge of the box',
+  'мощным ударом правой в нижний левый угол',
+  'изящной подсечкой левой ногой над вратарём',
+  'сокрушительным ударом головой с шести метров',
+  'точным низовым ударом в дальний угол',
+  'потрясающим ударом с лёту в развороте',
+  'закрученным ударом внешней стороной бутсы',
+  'хладнокровным ударом в ближний угол слабейшей ногой',
+  'наглым ударом пяткой, обманувшим вратаря',
+  'мощным восходящим ударом в верхний правый угол',
+  'хладнокровным ударом в угол пустых ворот',
+  'тяжёлым ударом головой вниз, от которого мяч отскочил мимо вратаря',
+  'злым ударом с края штрафной боковой частью бутсы',
 ];
 
 const BUILD_UP = [
-  'After a slick one-two on the edge of the area,',
-  'Breaking clear of the offside trap with blistering pace,',
-  'Collecting a defence-splitting through ball,',
-  'Latching onto a loose clearance,',
-  'Spinning brilliantly away from his marker,',
-  'Drifting inside from the left flank,',
-  'Exploiting a massive gap in the defensive line,',
-  'Controlling a long ball brilliantly on his chest,',
-  'Ghosting into the penalty area unmarked,',
-  'Picking the ball up deep and driving forward with purpose,',
-  'Combining with a quick exchange in the box,',
-  'Surging onto a perfectly weighted pass,',
+  'После изящной «стенки» на краю штрафной,',
+  'Уйдя из-под офсайда на бешеной скорости,',
+  'Подобрав выверенный пас в разрез,',
+  'Подхватив небрежный подбор после выноса,',
+  'Блестяще уйдя от своего опекуна,',
+  'Смещаясь внутрь с левого фланга,',
+  'Воспользовавшись огромной брешью в обороне,',
+  'Элегантно приняв длинный пас на грудь,',
+  'Незаметно проскользнув в штрафную зону,',
+  'Подобрав мяч в глубине поля и устремившись вперёд,',
+  'Завязав быструю комбинацию в штрафной,',
+  'Выбежав на идеально взвешенный пас,',
 ];
 
 const ASSIST_DESCRIPTIONS = [
-  '{assister} played a perfectly-timed through ball splitting two defenders.',
-  '{assister} whipped in a dangerous low cross from the right that asked all the right questions.',
-  '{assister} delivered a floated ball into the box that was begging to be finished.',
-  '{assister} picked out {scorer} with an inch-perfect cutback from the byline.',
-  '{assister} played a pinpoint diagonal that unlocked the entire defensive structure.',
-  '{assister} slid the ball into the corridor with a first-time deft touch.',
-  '{assister} drove to the byline and squared it to {scorer} at the back post.',
-  '{assister} chipped an exquisite ball over the defence for {scorer} to run onto.',
+  '{assister} отдал идеально рассчитанный пас в разрез, разрезав двух защитников.',
+  '{assister} навесил острый низовой прострел справа, задав вратарю множество вопросов.',
+  '{assister} подал навесной мяч в штрафную, словно специально созданный для удара.',
+  '{assister} выложил мяч на {scorer} с идеальным обратным пасом от лицевой.',
+  '{assister} выдал точный диагональный пас, вскрывший всю оборонительную структуру.',
+  '{assister} пробросил мяч в коридор первым касанием с изящной дугой.',
+  '{assister} дошёл до лицевой и откатил {scorer} на дальнюю стойку.',
+  '{assister} перебросил мяч чипом через оборону для {scorer}.',
 ];
 
 const GOAL_CLOSERS = [
-  'The crowd erupts! What a moment for {scorer}!',
-  'The stadium shakes with noise! Pure quality from {scorer}!',
-  'Absolutely unstoppable! The goalkeeper didn\'t stand a chance!',
-  'A brilliant goal — the technique was simply outstanding!',
-  'That\'s a world-class finish! The fans are on their feet!',
-  'Clinical! Ice in his veins! {scorer} doesn\'t miss those!',
-  'An emphatic strike — the kind that will be replayed for years!',
-  'Pure instinct from {scorer} — a truly sublime finish!',
+  'Трибуны взрываются! Вот это момент для {scorer}!',
+  'Стадион дрожит от шума! Высший класс от {scorer}!',
+  'Абсолютно неудержимо! У вратаря не было ни малейшего шанса!',
+  'Блестящий гол — техника просто выше всяких похвал!',
+  'Удар мирового класса! Болельщики вскочили с мест!',
+  'Клинично! Лёд в жилах! {scorer} такие не промахивается!',
+  'Могучий удар — из тех, что будут показывать долгие годы!',
+  'Чистый инстинкт от {scorer} — поистине великолепное завершение!',
 ];
 
 const YELLOW_REASONS = [
-  '{player} lunged in from behind with his studs showing — the referee had no choice.',
-  '{player} cynically hauled down the attacker just outside the box, killing a dangerous counter.',
-  '{player} reacted furiously to a decision, waving his arms and getting in the referee\'s face.',
-  '{player} stamped on his opponent\'s ankle — reckless and completely unnecessary.',
-  '{player} blatantly handled the ball on the edge of the area to stop a clear through ball.',
-  '{player} time-wasted flagrantly on the ground after a routine challenge.',
-  '{player} caught the striker high with an outstretched elbow.',
-  '{player} deliberately blocked a quick free-kick restart, earning the inevitable caution.',
+  '{player} нырнул сзади с поднятыми шипами — у арбитра не было выбора.',
+  '{player} цинично сбил атакующего за штрафной, остановив опасную контратаку.',
+  '{player} взбеленился из-за решения судьи, замахал руками и налетел на рефери.',
+  '{player} наступил на лодыжку соперника — безрассудно и совершенно ни к чему.',
+  '{player} нагло сыграл рукой на краю штрафной, прервав очевидный прорыв.',
+  '{player} демонстративно тянул время, лёжа на земле после рядового столкновения.',
+  '{player} встретил нападающего высоко поднятым локтём.',
+  '{player} намеренно заблокировал быстрый розыгрыш штрафного, заработав предупреждение.',
 ];
 
 const YELLOW_CLOSERS = [
-  'He has been warned. One more and he walks.',
-  'The referee reaches into his pocket without hesitation.',
-  'No complaints from the player — he knows what he did.',
-  'The manager on the touchline buries his head in his hands.',
-  'He will need to calm down significantly if he wants to stay on the pitch.',
+  'Предупреждение. Ещё одно — и он уйдёт досрочно.',
+  'Рефери без колебаний лезет в карман.',
+  'Игрок не возражает — он знает, что сделал.',
+  'Тренер на бровке хватается за голову.',
+  'Ему нужно будет успокоиться, если он хочет остаться на поле.',
 ];
 
 const RED_REASONS = [
-  '{player} launched himself into the tackle with two feet, catching his opponent above the knee — a horrific challenge.',
-  '{player} raised both hands and struck his opponent in the face — the referee had no option but to dismiss him.',
-  '{player} made a last-man challenge, wiping out the attacker when he was clean through on goal.',
-  '{player} received a second yellow, having been warned just fifteen minutes earlier for dissent.',
-  '{player} lost his composure entirely and shoved an opponent in the chest after a mistimed tackle.',
-  '{player} raked his studs down an opponent\'s calf in a completely needless moment of madness.',
+  '{player} прыгнул в подкат двумя ногами, угодив сопернику выше колена — ужасающий удар.',
+  '{player} поднял обе руки и ударил соперника в лицо — у арбитра не было иного выхода.',
+  '{player} пошёл на последнего защитника и снёс атакующего, вышедшего один на один.',
+  '{player} получил вторую жёлтую, будучи предупреждён всего пятнадцать минут назад.',
+  '{player} полностью потерял контроль над собой и толкнул соперника в грудь.',
+  '{player} провёл шипами по икре соперника в совершенно ненужный момент безумия.',
 ];
 
 const RED_CLOSERS = [
-  'Ten men now. This changes everything.',
-  'The manager will be furious — and rightly so. An inexcusable decision.',
-  'There can be absolutely no complaints. That was dangerous and reckless.',
-  'The crowd reacts with gasps. His teammates are stunned.',
-  'A huge turning point in this match. His team will have to dig deep.',
+  'Десять человек. Это меняет всё.',
+  'Тренер будет в ярости — и вполне заслуженно. Непростительное решение.',
+  'Жаловаться совершенно не на что. Это было опасно и безрассудно.',
+  'Трибуны ахают. Партнёры ошеломлены.',
+  'Огромный перелом в матче. Команде придётся собраться из последних сил.',
 ];
 
 const INJURY_DESCRIPTIONS = [
-  '{player} went down clutching his hamstring after stretching for a loose ball — a worrying sign for the medical staff.',
-  '{player} collided knee-first with the advertising board chasing down a hopeless cause and is now writhing on the turf.',
-  '{player} twisted his ankle awkwardly after landing badly from a challenge, and the physios are rushing on.',
-  '{player} pulled up suddenly mid-sprint with what looks like a calf problem, grabbing the back of his leg.',
-  '{player} took a firm elbow to the ribs and is now doubled over, receiving attention from the medical team.',
-  '{player} landed heavily after an aerial challenge and is struggling to get to his feet.',
+  '{player} упал, схватившись за бедро, потянувшись к уходящему мячу — тревожный знак для медштаба.',
+  '{player} столкнулся коленом с рекламным щитом в погоне за мячом и теперь корчится на газоне.',
+  '{player} неловко подвернул лодыжку, плохо приземлившись после единоборства.',
+  '{player} резко остановился на полном ходу, схватившись за икроножную мышцу.',
+  '{player} получил крепкий локоть в рёбра и теперь согнулся пополам, получая помощь медиков.',
+  '{player} тяжело упал после воздушного единоборства и с трудом поднимается на ноги.',
 ];
 
 const INJURY_CLOSERS = [
-  'He is signalling to the bench — he cannot continue. A significant blow for his side.',
-  'The physio gestures to the touchline. This player is coming off.',
-  'There are genuine looks of concern from his teammates. A cruel moment in the match.',
-  'A worrying development. The crowd applauds as he is helped towards the tunnel.',
+  'Он машет скамейке — продолжать не может. Серьёзный удар по команде.',
+  'Физиотерапевт жестом указывает на бровку. Этот игрок покидает поле.',
+  'Партнёры смотрят с искренним беспокойством. Жестокий момент в матче.',
+  'Тревожный поворот событий. Трибуны аплодируют, пока его ведут к тоннелю.',
 ];
 
 const SUB_DESCRIPTIONS = [
-  '{in} comes on to inject some fresh energy as {out} trudges off having given his all.',
-  'A tactical switch from the dugout: {in} on for {out}, changing the shape of the midfield.',
-  '{out} receives a warm round of applause as he makes way; {in} sprints onto the pitch eager to impress.',
-  'The manager makes his move: {in} replaces {out}, looking to add pace on the flank.',
-  'With the game in the balance, {in} enters for {out} — a decision that could define the outcome.',
-  '{out} has run himself into the ground; {in} comes on with a point to prove.',
+  '{in} выходит, чтобы добавить свежей энергии, пока {out} уходит с поля, отдав всё.',
+  'Тактическая замена: {in} вместо {out}, меняя рисунок игры в средней линии.',
+  '{out} получает тёплые аплодисменты; {in} с нетерпением рвётся в бой.',
+  'Тренер делает свой ход: {in} вместо {out}, добавляя скорость на фланге.',
+  'При равной игре {in} выходит за {out} — решение, способное определить исход.',
+  '{out} выложился до конца; {in} выходит с желанием доказать своё.',
 ];
 
 const OWN_GOAL_DESCRIPTIONS = [
-  '{player} stretched desperately to cut out a low cross and diverted the ball into his own net — a cruel, deflected finish.',
-  '{player} rose to head clear a dangerous corner but could only direct it over his own goalkeeper and into the goal.',
-  '{player} got his angles horribly wrong attempting to shepherd the ball back to his keeper, and it trickled inside the post.',
-  '{player} lunged to block a shot at close range and the ball cannoned off his knee and into the net.',
-  '{player} slipped at the crucial moment, and his clearance flew past a helpless goalkeeper into the top corner.',
+  '{player} потянулся за низовым прострелом и срезал мяч в собственные ворота.',
+  '{player} поднялся на угловой, но сумел лишь направить мяч через собственного вратаря в сетку.',
+  '{player} ужасно рассчитал траекторию, пытаясь откатить мяч вратарю, и тот закатился в угол.',
+  '{player} бросился блокировать удар в упор, и мяч рикошетом от колена влетел в сетку.',
+  '{player} поскользнулся в решающий момент, и попытка выбить мяч пролетела мимо вратаря.',
 ];
 
 const OWN_GOAL_CLOSERS = [
-  'A nightmare moment for {player}. The stadium falls silent in disbelief.',
-  'He will want to forget that one very quickly. A desperately unlucky own goal.',
-  'Truly unfortunate — {player} could do little in that impossible position.',
-  'The crowd doesn\'t know whether to laugh or cry. Neither does the goalkeeper.',
+  'Кошмарный момент для {player}. Стадион застывает в оцепенении.',
+  'Это он захочет поскорее забыть. Отчаянно невезучий автогол.',
+  'Воистину несчастливое стечение — {player} мало что мог сделать в той ситуации.',
+  'Трибуны не знают, смеяться или плакать. Вратарь — тоже.',
 ];
 
 const DANGEROUS_PLAY_DESCRIPTIONS = [
-  '{player} lunged in with both feet raised, endangering his opponent\'s safety — the referee saw it immediately.',
-  '{player} elbowed his marker deliberately off the ball, away from the referee\'s line of sight — but the linesman flagged.',
-  '{player} reacted to the challenge with a violent stamp on his opponent\'s trailing leg. An ugly moment.',
-  '{player} kicked out in frustration after losing the ball, making contact with his opponent\'s thigh.',
-  '{player} blocked his opponent\'s path with an outstretched forearm, sending him clattering to the ground.',
+  '{player} нырнул с поднятыми ногами, угрожая безопасности соперника — арбитр увидел мгновенно.',
+  '{player} преднамеренно ударил локтём опекуна вне поля зрения рефери — но лайнсмен поднял флаг.',
+  '{player} в отчаянии топнул по голеностопу соперника после потери мяча.',
+  '{player} в сердцах ударил ногой после потери, задев бедро соперника.',
+  '{player} перекрыл путь сопернику вытянутым предплечьем, отправив того в полёт.',
 ];
 
 const DANGEROUS_PLAY_CLOSERS = [
-  'The referee consults the assistant and produces the red card. No debate whatsoever.',
-  'Dangerous and needless. His teammates are left shaking their heads.',
-  'The crowd reacts immediately — that was over the line and everyone in the ground knew it.',
+  'Судья советуется с ассистентом и достаёт красную карточку. Никаких дискуссий.',
+  'Опасно и бессмысленно. Партнёры лишь покачивают головой.',
+  'Трибуны реагируют мгновенно — черта была перейдена, и все на стадионе это поняли.',
+];
+
+const PENALTY_MISS_DESCRIPTIONS = [
+  '{player} разбежался и пробил прямо в перекладину — невероятный промах с одиннадцати метров!',
+  '{player} чётко пробил в угол, но вратарь угадал направление и парировал!',
+  '{player} поскользнулся в момент удара, и мяч улетел в сторону от ворот.',
+  '{player} пробил слишком слабо — вратарь хладнокровно поймал мяч в руки.',
+  '{player} направил мяч в ближний угол, но вратарь выбрал правильную сторону и потряс его!',
+];
+
+const BIG_SAVE_DESCRIPTIONS = [
+  '{gk} среагировал молниеносно на удар в упор — фантастический рефлекс!',
+  '{gk} вытянулся в полный рост и кончиками пальцев перевёл удар на штангу!',
+  '{gk} прочёл ситуацию идеально и намертво поймал злой удар с линии штрафной.',
+  '{gk} бросился в ноги атакующему в последний момент и спас команду!',
+  '{gk} отреагировал с потрясающей быстротой на рикошет и накрыл мяч.',
+  '{gk} в великолепном прыжке потянулся в дальний угол и отвёл неминуемый гол.',
+];
+
+const NEAR_MISS_DESCRIPTIONS = [
+  '{player} пробил в самую крестовину — сантиметр, и был бы гол!',
+  '{player} пробил чуть выше угла — ещё бы чуть ниже, и вратарь был бы бессилен.',
+  'Удар {player} прошёл в считанных сантиметрах от дальней стойки.',
+  '{player} пробил после изящного дриблинга, но мяч прошёл над перекладиной.',
+  '{player} попал в штангу после великолепного удара головой — невероятное невезение!',
 ];
 
 function n(p) { return (typeof p === 'string') ? p : (p && p.name) ? p.name : String(p); }
@@ -159,9 +184,9 @@ function commentaryGoal(scorer, assister) {
   const closer = fillTemplate(pick(GOAL_CLOSERS), { scorer: sn });
   if (assister) {
     const assistDesc = fillTemplate(pick(ASSIST_DESCRIPTIONS), { assister: n(assister), scorer: sn });
-    return `${assistDesc} ${build} ${sn} finished with ${shot}. ${closer}`;
+    return `${assistDesc} ${build} ${sn} завершил ${shot}. ${closer}`;
   }
-  return `${build} ${sn} finished with ${shot}. ${closer}`;
+  return `${build} ${sn} завершил ${shot}. ${closer}`;
 }
 
 function commentaryYellow(player) {
@@ -199,6 +224,18 @@ function commentaryDangerousPlay(player) {
   return `${desc} ${closer}`;
 }
 
+function commentaryPenaltyMiss(player) {
+  return fillTemplate(pick(PENALTY_MISS_DESCRIPTIONS), { player: n(player) });
+}
+
+function commentaryBigSave(gk) {
+  return fillTemplate(pick(BIG_SAVE_DESCRIPTIONS), { gk: n(gk) });
+}
+
+function commentaryNearMiss(player) {
+  return fillTemplate(pick(NEAR_MISS_DESCRIPTIONS), { player: n(player) });
+}
+
 module.exports = {
   commentaryGoal,
   commentaryYellow,
@@ -207,4 +244,7 @@ module.exports = {
   commentarySub,
   commentaryOwnGoal,
   commentaryDangerousPlay,
+  commentaryPenaltyMiss,
+  commentaryBigSave,
+  commentaryNearMiss,
 };

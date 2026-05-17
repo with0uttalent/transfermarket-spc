@@ -105,7 +105,16 @@ router.put('/:id', requireAuth, async (req, res) => {
   }
 
   const { name, age, height, playing_style, description, avatar_url,
-          team_name, team_logo_url } = req.body;
+          team_id, team_name, team_logo_url } = req.body;
+
+  // Admin can reassign coach to any team
+  if (isAdmin && team_id !== undefined) {
+    const newTeam = db.prepare('SELECT id FROM teams WHERE id=?').get(team_id);
+    if (!newTeam) return res.status(400).json({ error: 'Team not found' });
+    // Remove old assignment for any other coach on this team
+    db.prepare("UPDATE coaches SET team_id=NULL WHERE team_id=? AND id!=?").run(team_id, coach.id);
+    db.prepare("UPDATE coaches SET team_id=? WHERE id=?").run(team_id, coach.id);
+  }
 
   // Handle team name change (coach only, during transfer window)
   if ((team_name !== undefined || team_logo_url !== undefined) && coach.team_id) {

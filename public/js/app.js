@@ -49,7 +49,7 @@ function fmtValue(v) {
 }
 function fmtDate(d) {
   if (!d) return '–';
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 function calcAge(dob) {
   if (!dob) return null;
@@ -140,7 +140,7 @@ const PITCH_SVG = `<svg viewBox="0 0 280 400" xmlns="http://www.w3.org/2000/svg"
   <path d="M 252 390 A 18 18 0 0 0 270 372" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
 </svg>`;
 function renderPitch(players, isAway = false) {
-  if (!players || !players.length) return `<div class="empty-state"><p>No player data</p></div>`;
+  if (!players || !players.length) return `<div class="empty-state"><p>Нет данных об игроках</p></div>`;
   const rows = {};
   for (const p of players) {
     const cat = posCategory(p.position);
@@ -207,11 +207,11 @@ async function doLogin() {
     localStorage.setItem('tm_token', data.token);
     document.getElementById('login-modal').classList.add('hidden');
     document.getElementById('login-password').value = '';
-    updateAuthUI(); await loadCoachProfile(); toast('Logged in as ' + data.username); router();
+    updateAuthUI(); await loadCoachProfile(); toast('Вход выполнен: ' + data.username); router();
   } catch (err) { errEl.textContent = err.message; errEl.style.display = 'block'; }
 }
 document.getElementById('btn-logout').addEventListener('click', () => {
-  State.token = null; State.role = null; State.coachProfile = null; localStorage.removeItem('tm_token'); updateAuthUI(); toast('Logged out','info'); navigate('/');
+  State.token = null; State.role = null; State.coachProfile = null; localStorage.removeItem('tm_token'); updateAuthUI(); toast('Выход выполнен','info'); navigate('/');
 });
 
 // ─── Global Search ────────────────────────────────────────────
@@ -295,7 +295,7 @@ window.addEventListener('load', async () => { updateAuthUI(); await loadCoachPro
 //  HOME
 // ═══════════════════════════════════════════════════════════
 async function renderHome(app) {
-  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const [stats, newsData] = await Promise.all([GET('/stats'), GET('/news?limit=3')]);
     app.innerHTML = `
@@ -379,7 +379,7 @@ async function renderHome(app) {
 //  NEWS PAGE
 // ═══════════════════════════════════════════════════════════
 async function renderNewsPage(app) {
-  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const data = await GET('/news?limit=50');
     app.innerHTML = `
@@ -410,7 +410,7 @@ async function renderNewsPage(app) {
 const POSITIONS = ['Goalkeeper','Centre-Back','Left-Back','Right-Back','Defensive Midfield','Central Midfield','Attacking Midfield','Left Winger','Right Winger','Centre-Forward','Striker'];
 
 async function renderTeams(app, params) {
-  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const [teams, competitions] = await Promise.all([GET('/teams'), GET('/competitions')]);
     app.innerHTML = `
@@ -490,7 +490,7 @@ async function deleteTeam(id, name) {
 }
 
 async function renderTeamDetail(app, id) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const team = await GET('/teams/'+id);
     app.innerHTML=`
@@ -527,7 +527,7 @@ async function renderTeamDetail(app, id) {
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
       <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Loading matches…</p></div></div>
-      <div id="tab-team-news" class="tab-panel"><div class="empty-state"><p>Loading…</p></div></div>
+      <div id="tab-team-news" class="tab-panel"><div class="empty-state"><p>Загрузка…</p></div></div>
     `;
     setupTabs(app);
     app.querySelector('[data-tab="matches"]').addEventListener('click', async () => {
@@ -644,7 +644,7 @@ function setupTabs(container) {
 //  PLAYERS
 // ═══════════════════════════════════════════════════════════
 async function renderPlayers(app, params) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const [players, teams] = await Promise.all([GET('/players'), GET('/teams')]);
     app.innerHTML=`
@@ -734,7 +734,7 @@ async function deletePlayer(id, name) {
 }
 
 async function renderPlayerDetail(app, id) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const player = await GET('/players/'+id);
     const age = calcAge(player.date_of_birth);
@@ -1012,7 +1012,7 @@ async function showLoanForm(player) {
 //  COMPETITIONS
 // ═══════════════════════════════════════════════════════════
 async function renderCompetitions(app, params) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const [competitions, countries] = await Promise.all([GET('/competitions'), GET('/countries')]);
     app.innerHTML=`
@@ -1050,7 +1050,7 @@ async function renderCompetitions(app, params) {
 }
 
 async function renderCompetitionDetail(app, id) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const comp = await GET('/competitions/'+id);
     app.innerHTML=`
@@ -1107,7 +1107,7 @@ async function deleteComp(id,name){if(!confirm(`Delete "${name}"?`))return;try{a
 //  TRANSFERS PAGE
 // ═══════════════════════════════════════════════════════════
 async function renderTransfers(app, params) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const [transfers, teams, loans] = await Promise.all([GET('/transfers?limit=100'), GET('/teams'), GET('/loans')]);
     app.innerHTML=`
@@ -1228,7 +1228,7 @@ async function deleteTransfer(id){if(!confirm('Delete transfer?'))return;try{awa
 //  MATCHES
 // ═══════════════════════════════════════════════════════════
 async function renderMatches(app, params) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const [matches, teams] = await Promise.all([GET('/matches?limit=50'), GET('/teams')]);
     app.innerHTML=`
@@ -1274,7 +1274,7 @@ function renderMatchList(matches, highlightTeamId) {
 }
 
 async function renderMatchDetail(app, id) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const match = await GET('/matches/'+id);
     const isFinished = match.status === 'finished';
@@ -1519,7 +1519,7 @@ async function showMatchForm() {
 //  TOURNAMENTS
 // ═══════════════════════════════════════════════════════════
 async function renderTournaments(app) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const tournaments = await GET('/tournaments');
     app.innerHTML=`
@@ -1547,7 +1547,7 @@ async function renderTournaments(app) {
 }
 
 async function renderTournamentDetail(app, id) {
-  app.innerHTML='<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const [tour, teams] = await Promise.all([GET('/tournaments/'+id), GET('/teams')]);
     const inSetup = tour.status === 'setup';
@@ -1954,7 +1954,7 @@ async function renderSearch(app, query) {
 //  LEAGUES
 // ═══════════════════════════════════════════════════════════
 async function renderLeagues(app) {
-  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const leagues = await GET('/leagues');
     app.innerHTML = `
@@ -2030,7 +2030,7 @@ async function deleteLeague(id, name) {
 }
 
 async function renderLeagueDetail(app, id) {
-  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const lg = await GET('/leagues/'+id);
     const statusBadge = `<span class="season-badge season-${lg.status}">${lg.status.replace('_',' ')}</span>`;
@@ -2153,10 +2153,10 @@ function renderLeagueTopAssists(assists) {
 // ═══════════════════════════════════════════════════════════
 async function renderCoachDashboard(app) {
   if (!isCoach() && !isAdmin()) {
-    app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><p>Coach login required</p></div>`;
+    app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><p>Требуется вход как тренер</p></div>`;
     return;
   }
-  app.innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const coach = State.coachProfile || await GET('/coaches/me');
     if (!coach) { app.innerHTML = `<div class="empty-state"><div class="empty-icon">⚽</div><p>No coach profile found. Contact admin.</p></div>`; return; }
@@ -2503,8 +2503,8 @@ function mkModal(title, bodyHtml, onSave) {
       <div class="modal-body">
         ${bodyHtml}
         <div class="form-actions">
-          <button class="btn btn-outline modal-cancel">Cancel</button>
-          <button class="btn btn-green modal-save">Save</button>
+          <button class="btn btn-outline modal-cancel">Отмена</button>
+          <button class="btn btn-green modal-save">Сохранить</button>
         </div>
       </div>
     </div>`;

@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireCoach } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -126,6 +126,30 @@ router.put('/:id', requireAuth, (req, res) => {
   }
 
   res.json({ id: Number(req.params.id), name });
+});
+
+// ─── PATCH /:id — coach edits name/nationality of own team's player ───────────
+router.patch('/:id', requireCoach, (req, res) => {
+  const db = getDb();
+  const player = db.prepare('SELECT * FROM players WHERE id=?').get(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Not found' });
+
+  if (req.user.role !== 'admin') {
+    const coach = db.prepare('SELECT team_id FROM coaches WHERE user_id=?').get(req.user.id);
+    if (!coach || coach.team_id !== player.team_id) {
+      return res.status(403).json({ error: 'You can only edit players on your own team' });
+    }
+  }
+
+  const { name, nationality_id } = req.body;
+  if (name !== undefined && !name) return res.status(400).json({ error: 'Name cannot be empty' });
+  const newName = name !== undefined ? name : player.name;
+  const newNat  = nationality_id !== undefined ? (nationality_id || null) : player.nationality_id;
+  db.prepare('UPDATE players SET name=?, nationality_id=? WHERE id=?').run(newName, newNat, player.id);
+
+  // Re-fetch to return updated record
+  const updated = db.prepare(`SELECT p.*, co.name as nationality_name, co.flag_emoji FROM players p LEFT JOIN countries co ON p.nationality_id=co.id WHERE p.id=?`).get(player.id);
+  res.json(updated);
 });
 
 router.delete('/:id', requireAuth, (req, res) => {
