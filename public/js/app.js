@@ -114,6 +114,43 @@ function pitchCoords(pos, idxInRow, countInRow, isAway) {
   const x = countInRow === 1 ? 50 : 10 + 80 * (idxInRow / (countInRow - 1));
   return { x, y };
 }
+// ─── Formation slot definitions for interactive pitch builder ────────────────
+const FORMATION_SLOTS = {
+  '4-4-2': [
+    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:16,y:66,label:'ЛЗ'},{slot:3,x:36,y:66,label:'ЦЗ'},
+    {slot:4,x:64,y:66,label:'ЦЗ'},{slot:5,x:84,y:66,label:'ПЗ'},{slot:6,x:16,y:44,label:'ЛП'},
+    {slot:7,x:38,y:44,label:'ЦП'},{slot:8,x:62,y:44,label:'ЦП'},{slot:9,x:84,y:44,label:'ПП'},
+    {slot:10,x:38,y:19,label:'НАП'},{slot:11,x:62,y:19,label:'НАП'},
+  ],
+  '4-3-3': [
+    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:14,y:66,label:'ЛЗ'},{slot:3,x:38,y:66,label:'ЦЗ'},
+    {slot:4,x:62,y:66,label:'ЦЗ'},{slot:5,x:86,y:66,label:'ПЗ'},{slot:6,x:26,y:44,label:'ЦП'},
+    {slot:7,x:50,y:44,label:'ОПМ'},{slot:8,x:74,y:44,label:'ЦП'},
+    {slot:9,x:14,y:19,label:'ЛВ'},{slot:10,x:50,y:19,label:'ЦФ'},{slot:11,x:86,y:19,label:'ПВ'},
+  ],
+  '4-2-3-1': [
+    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:14,y:66,label:'ЛЗ'},{slot:3,x:38,y:66,label:'ЦЗ'},
+    {slot:4,x:62,y:66,label:'ЦЗ'},{slot:5,x:86,y:66,label:'ПЗ'},{slot:6,x:35,y:54,label:'ОПМ'},
+    {slot:7,x:65,y:54,label:'ОПМ'},{slot:8,x:16,y:34,label:'ЛВ'},{slot:9,x:50,y:34,label:'АПМ'},
+    {slot:10,x:84,y:34,label:'ПВ'},{slot:11,x:50,y:16,label:'ЦФ'},
+  ],
+  '3-5-2': [
+    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:24,y:66,label:'ЦЗ'},{slot:3,x:50,y:66,label:'ЦЗ'},
+    {slot:4,x:76,y:66,label:'ЦЗ'},{slot:5,x:9,y:44,label:'ЛМ'},{slot:6,x:28,y:44,label:'ЦП'},
+    {slot:7,x:50,y:44,label:'ОПМ'},{slot:8,x:72,y:44,label:'ЦП'},{slot:9,x:91,y:44,label:'ПМ'},
+    {slot:10,x:38,y:19,label:'НАП'},{slot:11,x:62,y:19,label:'НАП'},
+  ],
+  '5-3-2': [
+    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:10,y:66,label:'ЛЗ'},{slot:3,x:28,y:66,label:'ЦЗ'},
+    {slot:4,x:50,y:66,label:'ЦЗ'},{slot:5,x:72,y:66,label:'ЦЗ'},{slot:6,x:90,y:66,label:'ПЗ'},
+    {slot:7,x:26,y:41,label:'ЦП'},{slot:8,x:50,y:41,label:'ЦП'},{slot:9,x:74,y:41,label:'ЦП'},
+    {slot:10,x:38,y:19,label:'НАП'},{slot:11,x:62,y:19,label:'НАП'},
+  ],
+};
+
+// Interactive pitch builder state
+let _pitchState = { teamId: null, lineup: [], players: [], selectedPlayerId: null, formation: '4-4-2' };
+
 const PITCH_SVG = `<svg viewBox="0 0 280 400" xmlns="http://www.w3.org/2000/svg" class="pitch-svg">
   <rect width="280" height="400" fill="#2d8a4e" rx="6"/>
   <rect x="0" y="0" width="280" height="50" fill="#2a8548" opacity=".45"/>
@@ -394,9 +431,9 @@ async function renderNewsPage(app) {
                 ${n.body ? `<div class="news-meta" style="margin-top:4px">${escHtml(n.body)}</div>` : ''}
                 <div class="news-meta" style="margin-top:4px">
                   <span class="badge badge-green" style="font-size:10px">${n.type}</span>
-                  ${fmtDate(n.created_at)}
-                  ${n.match_id?`<a href="#/matches/${n.match_id}" style="color:var(--green)">View match</a>`:''}
-                  ${n.tournament_id?`<a href="#/tournaments/${n.tournament_id}" style="color:var(--green)">View tournament</a>`:''}
+                  ${n.author_name ? `✍️ ${escHtml(n.author_name)} · ` : ''}${fmtDate(n.created_at)}
+                  ${n.match_id?`<a href="#/matches/${n.match_id}" style="color:var(--green)">Матч</a>`:''}
+                  ${n.tournament_id?`<a href="#/tournaments/${n.tournament_id}" style="color:var(--green)">Турнир</a>`:''}
                 </div>
               </div>
             </div>`).join('')}
@@ -521,17 +558,26 @@ async function renderTeamDetail(app, id) {
         <button class="detail-tab" data-tab="team-news">Новости</button>
       </div>
       <div id="tab-squad" class="tab-panel active">${renderSquadTab(team)}</div>
-      <div id="tab-formation" class="tab-panel">
-        <div class="pitch-section" style="padding:20px">
-          ${renderPitch(team.players.filter(p=>p.status==='active'||!p.status))}
-        </div>
-      </div>
+      <div id="tab-formation" class="tab-panel"><div class="pitch-section" style="padding:20px"><div class="empty-state"><p>Загрузка…</p></div></div></div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
       <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Загрузка матчей…</p></div></div>
       <div id="tab-team-news" class="tab-panel"><div class="empty-state"><p>Загрузка…</p></div></div>
     `;
     setupTabs(app);
+    // Lazy-load formation tab with lineup data (11 starters only)
+    app.querySelector('[data-tab="formation"]').addEventListener('click', async () => {
+      const panel = document.getElementById('tab-formation');
+      if (panel.dataset.loaded) return;
+      panel.dataset.loaded = '1';
+      try {
+        const ld = await GET('/lineups/'+id).catch(()=>({lineup:[]}));
+        const starters = (ld.lineup||[]).filter(s=>s.slot<=11).map(s=>({
+          id: s.player_id, name: s.player_name||'?', position: s.position_override||s.position, image_url: null
+        }));
+        panel.querySelector('.pitch-section').innerHTML = renderPitch(starters.length ? starters : team.players.filter((_,i)=>i<11));
+      } catch { panel.querySelector('.pitch-section').innerHTML = '<div class="empty-state"><p>Ошибка загрузки</p></div>'; }
+    }, { once: true });
     app.querySelector('[data-tab="matches"]').addEventListener('click', async () => {
       const panel = document.getElementById('tab-matches');
       if (panel.dataset.loaded) return;
@@ -554,7 +600,7 @@ async function renderTeamDetail(app, id) {
             <div class="news-body">
               <div class="news-title">${escHtml(n.title)}</div>
               ${n.body ? `<div class="news-meta">${escHtml(n.body.substring(0,150))}${n.body.length>150?'…':''}</div>` : ''}
-              <div class="news-meta">${fmtDate(n.created_at)}</div>
+              <div class="news-meta">${n.author_name ? `✍️ ${escHtml(n.author_name)} · ` : ''}${fmtDate(n.created_at)}</div>
             </div>
           </div>`).join('')}</div>`;
       } catch { panel.innerHTML = '<div class="empty-state"><p>Error loading news</p></div>'; }
@@ -1355,22 +1401,25 @@ async function renderMatchDetail(app, id) {
         if (panel.dataset.loaded) return;
         panel.dataset.loaded = '1';
         try {
-          const [homePl, awayPl] = await Promise.all([
-            GET('/players?team_id='+match.home_team_id+'&status=active'),
-            GET('/players?team_id='+match.away_team_id+'&status=active'),
+          const [homeLineup, awayLineup] = await Promise.all([
+            GET('/lineups/'+match.home_team_id).catch(()=>({lineup:[]})),
+            GET('/lineups/'+match.away_team_id).catch(()=>({lineup:[]})),
           ]);
+          const toPlayers = ld => (ld.lineup||[]).filter(s=>s.slot<=11).map(s=>({
+            id: s.player_id, name: s.player_name||'?', position: s.position_override||s.position, image_url: s.image_url||null
+          }));
           panel.innerHTML = `
             <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:16px">
               <div class="pitch-section">
                 <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.home_team_name)}</div>
-                ${renderPitch(homePl, false)}
+                ${renderPitch(toPlayers(homeLineup), false)}
               </div>
               <div class="pitch-section">
                 <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.away_team_name)}</div>
-                ${renderPitch(awayPl, true)}
+                ${renderPitch(toPlayers(awayLineup), true)}
               </div>
             </div>`;
-        } catch { panel.innerHTML = '<div class="empty-state"><p>Error loading formations</p></div>'; }
+        } catch { panel.innerHTML = '<div class="empty-state"><p>Ошибка загрузки составов</p></div>'; }
       }, { once: true });
     }
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
@@ -1465,7 +1514,7 @@ async function startMatchReplay(matchId) {
   if (badge) { badge.textContent = 'LIVE'; badge.className = 'match-status-badge match-status-live'; }
 
   let hScore = 0, aScore = 0;
-  const TOTAL_MS = 18000; // 18 seconds for full 90 min
+  const TOTAL_MS = 108000; // 108 seconds (≈1.2 s per match minute)
   const MS_PER_MIN = TOTAL_MS / 90;
   const clockEl = document.getElementById('match-clock');
 
@@ -2122,12 +2171,16 @@ function renderLeagueStandings(standings) {
 }
 
 function renderLeagueSchedule(schedule) {
-  if (!schedule || !schedule.length) return `<div class="empty-state"><div class="empty-icon">📅</div><p>Расписание пока не составлено</p></div>`;
+  // schedule may be an object {matchday: [rows]} or an array
+  const allRows = Array.isArray(schedule)
+    ? schedule
+    : Object.values(schedule || {}).flat();
+  if (!allRows.length) return `<div class="empty-state"><div class="empty-icon">📅</div><p>Расписание пока не составлено</p></div>`;
   const today = new Date().toISOString().substring(0, 10);
   // Group by calendar date (fall back to matchday if no date)
   const byGroup = {};
   const groupOrder = [];
-  for (const s of schedule) {
+  for (const s of allRows) {
     const dateKey = s.scheduled_date ? s.scheduled_date.substring(0, 10) : ('md_' + s.matchday);
     if (!byGroup[dateKey]) { byGroup[dateKey] = { games: [], matchday: s.matchday, date: s.scheduled_date ? s.scheduled_date.substring(0, 10) : null }; groupOrder.push(dateKey); }
     byGroup[dateKey].games.push(s);
@@ -2271,93 +2324,120 @@ async function renderCoachDashboard(app) {
   } catch(err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
 }
 
+// ─── Interactive Pitch Builder ───────────────────────────────────────────────
 function renderLineupEditor(team, lineup) {
   const slots = lineup.slots || [];
-  const starters = slots.filter(s=>s.slot<=11).sort((a,b)=>a.slot-b.slot);
-  const reserves = slots.filter(s=>s.slot>11).sort((a,b)=>a.slot-b.slot);
   const allPlayers = team.players || [];
-  const assignedIds = new Set(slots.map(s=>s.player_id));
-  const unassigned = allPlayers.filter(p=>!assignedIds.has(p.id));
+  const reserves = slots.filter(s => s.slot > 11).sort((a,b)=>a.slot-b.slot);
+  const starterCount = slots.filter(s => s.slot <= 11).length;
+  _pitchState = { teamId: team.id, lineup: slots, players: allPlayers, selectedPlayerId: null, formation: '4-4-2' };
 
-  // Position groups for visual block layout (FWD→MID→DEF→GK top to bottom)
-  const posGroup = pos => {
-    if (!pos) return 'MID';
-    if (['Left Winger','Right Winger','Centre-Forward','Striker','Attacking Midfield'].includes(pos)) return 'FWD';
-    if (['Central Midfield','Defensive Midfield'].includes(pos)) return 'MID';
-    if (['Centre-Back','Left-Back','Right-Back'].includes(pos)) return 'DEF';
-    if (pos === 'Goalkeeper') return 'GK';
-    return 'MID';
+  const reserveCard = (s) => {
+    const p = allPlayers.find(pl => pl.id === s.player_id);
+    if (!p) return '';
+    return `<div class="player-card">
+      ${avatarEl(p.image_url, p.name)}
+      <div class="pc-info"><div class="pc-name">${escHtml(p.name)}</div><div class="pc-pos">${posBadge(p.position)}</div></div>
+      <div class="pc-btn">
+        <button class="btn-icon" onclick="movePlayerToLineup(${p.id},1,${team.id})" title="→ Старт">⚡</button>
+        <button class="btn-icon" onclick="removeFromLineup(${p.id},${team.id})" title="Убрать">✕</button>
+      </div>
+    </div>`;
   };
-  const groupOrder = ['FWD','MID','DEF','GK'];
-  const groupLabels = {FWD:'Нападение',MID:'Полузащита',DEF:'Защита',GK:'Вратарь'};
-
-  const playerCard = (p, slot, isStarter) => `
-    <div class="player-card" data-player-id="${p.player_id||p.id}" data-slot="${slot}">
-      ${avatarEl(p.image_url||p.player_image,p.player_name||p.name)}
-      <div class="pc-info">
-        <div class="pc-name">${escHtml(p.player_name||p.name)}</div>
-        <div class="pc-pos">${posBadge(p.position_override||p.position)} <span class="slot-badge">#${slot}</span></div>
-      </div>
-      <div class="pc-btn">
-        <button class="btn-icon" onclick="movePlayerToLineup(${p.player_id||p.id},${isStarter?12:1},${team.id})" title="${isStarter?'→ Скамейка':'→ Старт'}">
-          ${isStarter?'🪑':'⚡'}
-        </button>
-        <button class="btn-icon" onclick="removeFromLineup(${p.player_id||p.id},${team.id})" title="Убрать">✕</button>
-      </div>
-    </div>`;
-
-  // Build grouped starters display
-  const startersByGroup = {FWD:[],MID:[],DEF:[],GK:[]};
-  for (const s of starters) { const g = posGroup(s.position_override||s.position); if (startersByGroup[g]) startersByGroup[g].push(s); else startersByGroup.MID.push(s); }
-  const startersHtml = starters.length === 0
-    ? '<div class="text-muted" style="padding:12px;font-size:13px">Основные не выбраны</div>'
-    : groupOrder.map(g => startersByGroup[g].length ? `
-        <div class="lineup-pos-group">
-          <div class="lineup-pos-label">${groupLabels[g]}</div>
-          <div class="lineup-pos-row">${startersByGroup[g].map(s=>playerCard(s,s.slot,true)).join('')}</div>
-        </div>` : '').join('');
-
-  const unassignedCard = (p) => `
-    <div class="player-card">
-      ${avatarEl(p.image_url,p.name)}
-      <div class="pc-info">
-        <div class="pc-name">${escHtml(p.name)}</div>
-        <div class="pc-pos">${posBadge(p.position)}</div>
-      </div>
-      <div class="pc-btn">
-        <button class="btn btn-sm btn-green" onclick="addToLineup(${p.id},${team.id},'start')">Старт</button>
-        <button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="addToLineup(${p.id},${team.id},'bench')">Запас</button>
-      </div>
-    </div>`;
 
   return `
     <div class="lineup-editor">
-      <div class="lineup-save-bar">
-        <span>Выберите 11 основных и до 11 запасных</span>
+      <div class="lineup-save-bar" style="flex-wrap:wrap;gap:8px">
+        <span>Расстановка: <select id="pb-formation" onchange="changePitchFormation(this.value)" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:2px 6px">
+          ${Object.keys(FORMATION_SLOTS).map(f=>`<option value="${f}">${f}</option>`).join('')}
+        </select></span>
+        <span style="font-size:12px;color:var(--text-muted)">${starterCount}/11 основных</span>
         <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Авто-подбор</button>
       </div>
-      <div class="lineup-columns">
-        <div>
-          <div class="lineup-col-header">Основной состав <span class="badge badge-green">${starters.length}/11</span></div>
-          <div id="starters-col">
-            ${startersHtml}
-          </div>
-          <div class="lineup-col-header" style="margin-top:16px">Запасные <span class="badge" style="background:rgba(255,255,255,.1)">${reserves.length}/11</span></div>
-          <div id="reserves-col">
-            ${reserves.map(s=>playerCard(s,s.slot,false)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">Запасные не выбраны</div>'}
-          </div>
+      <div class="pb-layout">
+        <div class="pb-pitch-wrap" id="pb-pitch">${renderPitchSlots(slots, '4-4-2')}</div>
+        <div class="pb-sidebar">
+          <div class="pb-sidebar-header">👆 Кликните игрока → затем позицию на поле</div>
+          <div id="pb-player-list">${renderPitchSidebar(allPlayers, slots, null)}</div>
         </div>
-        <div>
-          <div class="lineup-col-header">Нераспределённые игроки <span class="badge" style="background:rgba(255,255,255,.1)">${unassigned.length}</span></div>
-          <div id="unassigned-col">
-            ${unassigned.map(p=>unassignedCard(p)).join('') || '<div class="text-muted" style="padding:12px;font-size:13px">Все игроки распределены ✓</div>'}
-          </div>
-        </div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="lineup-col-header">Запасные <span class="badge" style="background:rgba(255,255,255,.1)">${reserves.length}/11</span></div>
+        <div id="pb-reserves" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${reserves.map(reserveCard).join('')}</div>
       </div>
     </div>`;
 }
 
-function bindLineupEditor() { /* interactions handled by global functions */ }
+function renderPitchSlots(lineupSlots, formation) {
+  const defs = FORMATION_SLOTS[formation] || FORMATION_SLOTS['4-4-2'];
+  const slotMap = {};
+  for (const s of lineupSlots) { if (s.slot <= 11) slotMap[s.slot] = s; }
+  const dots = defs.map(fd => {
+    const asgn = slotMap[fd.slot];
+    const p = asgn ? (_pitchState.players||[]).find(pl=>pl.id===asgn.player_id) : null;
+    if (p) {
+      const ini = p.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+      return `<div class="pb-slot pb-slot-filled" style="left:${fd.x}%;top:${fd.y}%" onclick="pitchSlotClick(${fd.slot})" title="${escHtml(p.name)}">
+        <div class="pb-slot-av">${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}</div>
+        <div class="pb-slot-name">${escHtml(p.name.split(' ')[0])}</div>
+      </div>`;
+    }
+    return `<div class="pb-slot pb-slot-empty" style="left:${fd.x}%;top:${fd.y}%" onclick="pitchSlotClick(${fd.slot})"><div class="pb-slot-label">${fd.label}</div></div>`;
+  }).join('');
+  return `<div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${dots}</div></div>`;
+}
+
+function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
+  const inStarters = new Set(lineupSlots.filter(s=>s.slot<=11).map(s=>s.player_id));
+  const available = allPlayers.filter(p => !inStarters.has(p.id));
+  if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все расставлены ✓</div>';
+  return available.map(p => {
+    const sel = p.id === selectedId;
+    return `<div class="pb-player-row${sel?' pb-selected':''}" onclick="pitchPlayerClick(${p.id})">
+      ${avatarEl(p.image_url,p.name)}
+      <div style="flex:1"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
+    </div>`;
+  }).join('');
+}
+
+function pitchPlayerClick(playerId) {
+  _pitchState.selectedPlayerId = _pitchState.selectedPlayerId === playerId ? null : playerId;
+  const el = document.getElementById('pb-player-list');
+  if (el) el.innerHTML = renderPitchSidebar(_pitchState.players, _pitchState.lineup, _pitchState.selectedPlayerId);
+  document.querySelectorAll('.pb-slot-empty').forEach(s => s.classList.toggle('pb-slot-ready', !!_pitchState.selectedPlayerId));
+}
+
+async function pitchSlotClick(slot) {
+  const tid = _pitchState.teamId;
+  const existing = _pitchState.lineup.find(s => s.slot === slot && s.slot <= 11);
+  if (_pitchState.selectedPlayerId) {
+    const pid = _pitchState.selectedPlayerId;
+    const fd = (FORMATION_SLOTS[_pitchState.formation]||FORMATION_SLOTS['4-4-2']).find(s=>s.slot===slot);
+    try {
+      const lr = await GET('/lineups/'+tid);
+      const cur = (lr.lineup||[]).filter(s=>s.player_id!==pid && s.slot!==slot);
+      cur.push({slot, player_id:pid, position_override: fd?.posOverride||null});
+      await PUT('/lineups/'+tid, {lineup:cur});
+      _pitchState.selectedPlayerId = null;
+      toast('Состав обновлён'); navigate('/coach');
+    } catch(e) { toast(e.message,'error'); }
+  } else if (existing) {
+    try {
+      const lr = await GET('/lineups/'+tid);
+      const cur = (lr.lineup||[]).filter(s=>s.slot!==slot);
+      await PUT('/lineups/'+tid, {lineup:cur});
+      toast('Игрок убран'); navigate('/coach');
+    } catch(e) { toast(e.message,'error'); }
+  }
+}
+
+async function changePitchFormation(formation) {
+  _pitchState.formation = formation;
+  const el = document.getElementById('pb-pitch');
+  if (el) el.innerHTML = renderPitchSlots(_pitchState.lineup, formation);
+}
+
+function bindLineupEditor() { /* interactions via global pitchPlayerClick/pitchSlotClick */ }
 
 async function addToLineup(playerId, teamId, where) {
   try {

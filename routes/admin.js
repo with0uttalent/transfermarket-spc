@@ -67,6 +67,32 @@ function marketValueForPosition(role, avgMv, isStarter) {
   return Math.round(raw / 50000) * 50000;  // round to nearest 50K
 }
 
+const NATIONALITIES_BY_REGION = [
+  // Europe
+  'Испания','Германия','Франция','Англия','Италия','Португалия','Нидерланды',
+  'Бельгия','Хорватия','Австрия','Швейцария','Дания','Швеция','Норвегия','Польша',
+  // South America
+  'Бразилия','Аргентина','Уругвай','Колумбия','Чили','Эквадор',
+  // Africa
+  'Сенегал','Нигерия','Камерун','Кот-д\'Ивуар','Марокко','Гана','Египет',
+  // Other
+  'США','Мексика','Япония','Южная Корея','Австралия',
+];
+
+function ageForRole(role) {
+  if (role === 'GK')  return ri(22, 35);
+  if (role === 'DEF') return ri(20, 32);
+  if (role === 'MID') return ri(19, 31);
+  return ri(18, 29); // FWD
+}
+
+function heightForRole(role) {
+  if (role === 'GK')  return ri(185, 198);
+  if (role === 'DEF') return ri(178, 193);
+  if (role === 'MID') return ri(170, 185);
+  return ri(170, 188); // FWD
+}
+
 // ─── POST /admin/generate-team ──────────────────────────────────────────────
 router.post('/generate-team', requireAdmin, (req, res) => {
   const { name, short_name, avg_market_value_m = 5, country_id } = req.body;
@@ -91,9 +117,12 @@ router.post('/generate-team', requireAdmin, (req, res) => {
     ...RESERVE_TEMPLATE.map(r => ({ role: r, isStarter: false })),
   ];
 
+  // Load countries for random nationality assignment
+  const countries = db.prepare('SELECT id FROM countries').all();
+
   const insertPlayer = db.prepare(`
-    INSERT INTO players (name, position, team_id, market_value, status)
-    VALUES (?, ?, ?, ?, 'active')
+    INSERT INTO players (name, position, team_id, market_value, status, date_of_birth, height, nationality_id)
+    VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
   `);
   const insertSkills = db.prepare(`
     INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical)
@@ -110,7 +139,15 @@ router.post('/generate-team', requireAdmin, (req, res) => {
     const mv = marketValueForPosition(role, avg_market_value_m, isStarter);
     totalValue += mv;
 
-    const pr = insertPlayer.run(pname, pos, teamId, mv);
+    const age = ageForRole(role);
+    const birthYear = new Date().getFullYear() - age;
+    const birthMonth = ri(1, 12).toString().padStart(2, '0');
+    const birthDay = ri(1, 28).toString().padStart(2, '0');
+    const dob = `${birthYear}-${birthMonth}-${birthDay}`;
+    const height = heightForRole(role);
+    const natId = countries.length ? pick(countries).id : null;
+
+    const pr = insertPlayer.run(pname, pos, teamId, mv, dob, height, natId);
     const playerId = pr.lastInsertRowid;
 
     // Generate skills based on position and value
@@ -126,7 +163,7 @@ router.post('/generate-team', requireAdmin, (req, res) => {
     insertLineup.run(teamId, playerId, slot);
     slot++;
 
-    players.push({ id: playerId, name: pname, position: pos, market_value: mv, slot: slot - 1 });
+    players.push({ id: playerId, name: pname, position: pos, market_value: mv, slot: slot - 1, age, height });
   }
 
   // Update team market value

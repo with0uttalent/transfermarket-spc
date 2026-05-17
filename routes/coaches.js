@@ -203,9 +203,9 @@ router.post('/me/news', requireCoach, (req, res) => {
   if (!title || !body) return res.status(400).json({ error: 'title and body are required' });
 
   const result = db.prepare(`
-    INSERT INTO news (title, body, type, team_id)
-    VALUES (?,?,'team',?)
-  `).run(title, body, coach.team_id);
+    INSERT INTO news (title, body, type, team_id, author_name)
+    VALUES (?,?,'team',?,?)
+  `).run(title, body, coach.team_id, coach.name);
 
   res.status(201).json({
     id: result.lastInsertRowid,
@@ -213,6 +213,7 @@ router.post('/me/news', requireCoach, (req, res) => {
     body,
     type: 'team',
     team_id: coach.team_id,
+    author_name: coach.name,
   });
 });
 

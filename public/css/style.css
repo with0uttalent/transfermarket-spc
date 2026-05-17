@@ -1257,3 +1257,23 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .coach-card .cc-name { font-size: 16px; font-weight: 700; margin: 10px 0 4px; }
 .coach-card .cc-team { font-size: 13px; color: var(--green); }
 .coach-card .cc-style { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Interactive Pitch Builder ──────────────────────────────── */
+.pb-layout { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.pb-pitch-wrap { flex: 0 0 auto; width: 280px; position: relative; }
+.pb-sidebar { flex: 1; min-width: 200px; max-width: 280px; background: var(--bg-card); border-radius: 8px; overflow: hidden; }
+.pb-sidebar-header { padding: 10px 12px; background: var(--bg-darker); font-size: 12px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.pb-player-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .12s; }
+.pb-player-row:hover { background: rgba(255,255,255,.05); }
+.pb-player-row.pb-selected { background: rgba(52,152,219,.25); border-left: 3px solid var(--blue,#3498db); }
+.pb-slot { position: absolute; transform: translate(-50%,-50%); cursor: pointer; text-align: center; transition: all .15s; z-index: 2; }
+.pb-slot-filled { width: 46px; }
+.pb-slot-filled .pb-slot-av { width: 36px; height: 36px; border-radius: 50%; background: var(--green); border: 2px solid #fff; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
+.pb-slot-filled .pb-slot-av img { width: 100%; height: 100%; object-fit: cover; }
+.pb-slot-filled .pb-slot-name { font-size: 9px; color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,.8); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
+.pb-slot-empty { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.15); border: 2px dashed rgba(255,255,255,.5); display: flex; align-items: center; justify-content: center; }
+.pb-slot-empty .pb-slot-label { font-size: 9px; font-weight: 700; color: rgba(255,255,255,.8); }
+.pb-slot-empty.pb-slot-ready { background: rgba(46,204,113,.3); border-color: #2ecc71; animation: pulse-slot .8s ease-in-out infinite; }
+.pb-slot-filled:hover { transform: translate(-50%,-50%) scale(1.12); }
+.pb-slot-empty:hover { background: rgba(255,255,255,.25); }
+@keyframes pulse-slot { 0%,100%{box-shadow:0 0 0 0 rgba(46,204,113,.4)} 50%{box-shadow:0 0 0 6px rgba(46,204,113,0)} }
