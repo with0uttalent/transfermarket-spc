@@ -557,7 +557,7 @@ async function renderTeamDetail(app, id) {
         <button class="detail-tab" data-tab="matches">Матчи</button>
         <button class="detail-tab" data-tab="team-news">Новости</button>
       </div>
-      <div id="tab-squad" class="tab-panel active">${renderSquadTab(team)}</div>
+      <div id="tab-squad" class="tab-panel active">${renderSquadTab(team, isCoach() && State.coachProfile?.team_id === team.id)}</div>
       <div id="tab-formation" class="tab-panel"><div class="pitch-section" style="padding:20px"><div class="empty-state"><p>Загрузка…</p></div></div></div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
@@ -608,9 +608,9 @@ async function renderTeamDetail(app, id) {
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
 }
 
-function renderSquadTab(team) {
+function renderSquadTab(team, isOwnTeam = false) {
   if (!team.players.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>Игроки отсутствуют</p></div>`;
-  const showActions = isAdmin() || isCoach();
+  const showActions = isAdmin() || (isCoach() && isOwnTeam);
   return `<div class="card">
     <div class="card-header">Состав ${isAdmin()?`<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showPlayerForm(null,${team.id})">+ Добавить игрока</button>`:''}  </div>
     <div class="table-wrap"><table>
@@ -629,7 +629,7 @@ function renderSquadTab(team) {
               <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
               <button class="btn-icon" onclick="showLoanForm(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Loan out">🔗</button>
               <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
-            </td>`:isCoach()?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button></td>`:''}
+            </td>`:(isCoach()&&isOwnTeam)?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button></td>`:''}
           </tr>`).join('')}
       </tbody>
     </table></div>
@@ -2330,7 +2330,7 @@ async function renderCoachDashboard(app) {
       </div>`;
 
     // Render squad tab
-    document.getElementById('tab-squad').innerHTML = renderSquadTab(team);
+    document.getElementById('tab-squad').innerHTML = renderSquadTab(team, true);
 
     // Render settings tab
     document.getElementById('tab-settings').innerHTML = `
