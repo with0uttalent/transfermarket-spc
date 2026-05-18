@@ -77,6 +77,15 @@ function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
   );
   for (const [pid, s] of Object.entries(playerStats)) insertStat.run(pid, matchId, s.goals, s.assists, s.yellow_cards, s.red_cards, s.rating);
 
+  // Record base stats for all lineup players not already tracked
+  const insertBaseStat = db.prepare(
+    `INSERT OR IGNORE INTO player_match_stats (player_id, match_id, goals, assists, yellow_cards, red_cards, rating) VALUES (?,?,0,0,0,0,6.0)`
+  );
+  for (const tid of [homeTeamId, awayTeamId]) {
+    const lineupPl = db.prepare(`SELECT player_id FROM team_lineups WHERE team_id=?`).all(tid);
+    for (const lp of lineupPl) insertBaseStat.run(lp.player_id, matchId);
+  }
+
   const insertAch = db.prepare(`INSERT INTO player_achievements (player_id, achievement_type, description, match_id) VALUES (?,?,?,?)`);
   for (const [pid, s] of Object.entries(playerStats)) {
     if (s.goals >= 3) insertAch.run(pid, 'hat_trick', `Hat-trick in match #${matchId}`, matchId);
