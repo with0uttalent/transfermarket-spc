@@ -82,7 +82,7 @@ function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
     `INSERT OR IGNORE INTO player_match_stats (player_id, match_id, goals, assists, yellow_cards, red_cards, rating) VALUES (?,?,0,0,0,0,6.0)`
   );
   for (const tid of [homeTeamId, awayTeamId]) {
-    const lineupPl = db.prepare(`SELECT player_id FROM team_lineups WHERE team_id=?`).all(tid);
+    const lineupPl = db.prepare(`SELECT player_id FROM team_lineups WHERE team_id=? AND slot <= 11`).all(tid);
     for (const lp of lineupPl) insertBaseStat.run(lp.player_id, matchId);
   }
 
