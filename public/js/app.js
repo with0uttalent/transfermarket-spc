@@ -2309,7 +2309,6 @@ async function renderCoachDashboard(app) {
 
     // Render lineup tab
     document.getElementById('tab-lineup').innerHTML = renderLineupEditor(team, lineup);
-    bindLineupEditor(team, lineup);
 
     // Render offers tab
     document.getElementById('tab-offers').innerHTML = renderTransferOffersTab(offers, coach.team_id);
