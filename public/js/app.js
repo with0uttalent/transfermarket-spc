@@ -1423,15 +1423,23 @@ async function renderMatches(app, params) {
 function matchCardHtml(m) {
   const statusCls = m.status==='finished'?'match-status-finished':m.status==='in_progress'?'match-status-live':'match-status-scheduled';
   const scoreStr = m.status==='finished' ? `${m.home_score} – ${m.away_score}` : m.status==='scheduled' ? 'vs' : `${m.home_score} – ${m.away_score}`;
-  return `<div class="match-card" onclick="navigate('/matches/${m.id}')">
-    <div class="mc-team"><div class="flex-center gap-2">${teamLogoEl(m.home_logo,m.home_team_name)}<span>${escHtml(m.home_team_name)}</span></div></div>
-    <div class="mc-score">
-      <div>${scoreStr}</div>
-      <div><span class="match-status-badge ${statusCls}">${m.status}</span></div>
-      ${m.match_date?`<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${fmtDate(m.match_date)}</div>`:''}
+  const stadiumBg = m.home_stadium_url ? `background-image:url('${escHtml(m.home_stadium_url)}')` : '';
+  return `<div class="match-card${m.home_stadium_url?' mc-has-stadium':''}" onclick="navigate('/matches/${m.id}')" style="${stadiumBg}">
+    ${m.home_stadium_url?'<div class="mc-stadium-overlay"></div>':''}
+    <div class="mc-team">
+      ${teamLogoXL(m.home_logo,m.home_team_name)}
+      <span class="mc-team-name">${escHtml(m.home_team_name)}</span>
     </div>
-    <div class="mc-team right" style="text-align:right"><div class="flex-center gap-2" style="justify-content:flex-end"><span>${escHtml(m.away_team_name)}</span>${teamLogoEl(m.away_logo,m.away_team_name)}</div></div>
-    <div class="mc-info">${m.tournament_name?`<span class="badge badge-gold">${escHtml(m.tournament_name)}</span>`:''}</div>
+    <div class="mc-score">
+      ${m.tournament_name?`<div style="margin-bottom:4px"><span class="badge badge-gold">${escHtml(m.tournament_name)}</span></div>`:''}
+      <div class="mc-score-val">${scoreStr}</div>
+      <div><span class="match-status-badge ${statusCls}">${m.status}</span></div>
+      ${m.match_date?`<div class="mc-date">${fmtDate(m.match_date)}</div>`:''}
+    </div>
+    <div class="mc-team mc-team-right">
+      ${teamLogoXL(m.away_logo,m.away_team_name)}
+      <span class="mc-team-name">${escHtml(m.away_team_name)}</span>
+    </div>
   </div>`;
 }
 
@@ -1446,11 +1454,14 @@ async function renderMatchDetail(app, id) {
     const match = await GET('/matches/'+id);
     const isFinished = match.status === 'finished';
 
+    const stadiumStyle = match.home_stadium_url
+      ? `background-image:linear-gradient(rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url('${escHtml(match.home_stadium_url)}');background-size:cover;background-position:center;`
+      : '';
     app.innerHTML=`
-      <div class="scoreboard" id="scoreboard">
+      <div class="scoreboard" id="scoreboard" style="${stadiumStyle}">
         <div class="score-teams">
           <div class="score-team">
-            ${teamLogoEl(match.home_logo,match.home_team_name)}
+            ${teamLogoXL(match.home_logo,match.home_team_name)}
             <div class="score-team-name">${escHtml(match.home_team_name)}</div>
           </div>
           <div class="score-center">
@@ -1462,7 +1473,7 @@ async function renderMatchDetail(app, id) {
             <span class="match-status-badge ${isFinished?'match-status-finished':'match-status-scheduled'}" id="match-status-badge">${match.status}</span>
           </div>
           <div class="score-team">
-            ${teamLogoEl(match.away_logo,match.away_team_name)}
+            ${teamLogoXL(match.away_logo,match.away_team_name)}
             <div class="score-team-name">${escHtml(match.away_team_name)}</div>
           </div>
         </div>

@@ -174,6 +174,23 @@ function generateTeamMatchNews(matchId, homeTeamId, awayTeamId, homeTeamName, aw
     .run(`${awayTeamName}: match result`, awayMsg, 'team', matchId, awayTeamId);
 }
 
+function getLineupStarters(db, teamId) {
+  const starters = db.prepare(`
+    SELECT p.* FROM team_lineups tl
+    JOIN players p ON tl.player_id = p.id
+    WHERE tl.team_id = ? AND tl.slot <= 11 AND p.status = 'active'
+      AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
+    ORDER BY tl.slot ASC
+    LIMIT 11
+  `).all(teamId);
+  if (starters.length > 0) return starters;
+  return db.prepare(`
+    SELECT p.* FROM players p
+    WHERE p.team_id = ? AND p.status = 'active'
+      AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
+  `).all(teamId);
+}
+
 function simulateScheduledMatches() {
   const db = getDb();
   const today = new Date().toISOString().slice(0, 10);
@@ -186,16 +203,8 @@ function simulateScheduledMatches() {
   `).all(today);
 
   for (const match of scheduled) {
-    const homePl = db.prepare(`
-      SELECT p.* FROM players p
-      WHERE p.team_id=? AND p.status='active'
-        AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
-    `).all(match.home_team_id);
-    const awayPl = db.prepare(`
-      SELECT p.* FROM players p
-      WHERE p.team_id=? AND p.status='active'
-        AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
-    `).all(match.away_team_id);
+    const homePl = getLineupStarters(db, match.home_team_id);
+    const awayPl = getLineupStarters(db, match.away_team_id);
     const result = simulateMatch(match.home_team_id, match.away_team_id, homePl, awayPl);
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
     const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
@@ -225,8 +234,8 @@ function generateRandomMatch() {
   const matchR = db.prepare(`INSERT INTO matches (home_team_id, away_team_id, match_date, status) VALUES (?,?,?,'scheduled')`).run(homeTeam.id, awayTeam.id, today);
   const matchId = matchR.lastInsertRowid;
 
-  const homePl = db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(homeTeam.id);
-  const awayPl = db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(awayTeam.id);
+  const homePl = getLineupStarters(db, homeTeam.id);
+  const awayPl = getLineupStarters(db, awayTeam.id);
 
   const result = simulateMatch(homeTeam.id, awayTeam.id, homePl, awayPl);
   applyMatchResults(matchId, homeTeam.id, awayTeam.id, result);

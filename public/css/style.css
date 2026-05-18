@@ -934,27 +934,49 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .match-card {
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
-  background: #fff;
-  padding: 14px 18px;
+  background: #1a2c23;
+  background-size: cover;
+  background-position: center;
+  padding: 16px 18px;
   margin-bottom: 8px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr auto;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
   cursor: pointer;
   transition: box-shadow .15s, border-color .15s;
+  position: relative;
+  overflow: hidden;
+  color: #fff;
 }
 .match-card:hover { box-shadow: var(--shadow); border-color: var(--green); }
-.match-card .mc-team { font-weight: 700; font-size: 14px; }
-.match-card .mc-team.right { text-align: right; }
+.mc-stadium-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 0;
+}
+.match-card > * { position: relative; z-index: 1; }
+.match-card .mc-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+}
+.match-card .mc-team-right { align-items: center; }
+.match-card .mc-team-name { text-align: center; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
 .match-card .mc-score {
   font-size: 22px;
   font-weight: 900;
-  color: var(--green);
+  color: var(--gold);
   text-align: center;
-  min-width: 60px;
+  min-width: 80px;
 }
-.match-card .mc-info { font-size: 11px; color: var(--text-muted); text-align: right; }
+.match-card .mc-score-val { font-size: 28px; font-weight: 900; margin-bottom: 4px; }
+.match-card .mc-date { font-size: 11px; color: rgba(255,255,255,.65); margin-top: 4px; }
 
 
 /* ── Pitch / Formation ──────────────────────────────────────── */

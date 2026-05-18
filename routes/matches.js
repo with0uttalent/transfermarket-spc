@@ -7,7 +7,7 @@ const router = express.Router();
 
 const BASE = `
   SELECT m.*,
-    ht.name as home_team_name, ht.logo_url as home_logo,
+    ht.name as home_team_name, ht.logo_url as home_logo, ht.stadium_url as home_stadium_url,
     at.name as away_team_name, at.logo_url as away_logo,
     t.name as tournament_name
   FROM matches m
@@ -69,14 +69,31 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: r.lastInsertRowid });
 });
 
+function getLineupStarters(db, teamId) {
+  const starters = db.prepare(`
+    SELECT p.* FROM team_lineups tl
+    JOIN players p ON tl.player_id = p.id
+    WHERE tl.team_id = ? AND tl.slot <= 11 AND p.status = 'active'
+      AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
+    ORDER BY tl.slot ASC
+    LIMIT 11
+  `).all(teamId);
+  if (starters.length > 0) return starters;
+  return db.prepare(`
+    SELECT p.* FROM players p
+    WHERE p.team_id = ? AND p.status = 'active'
+      AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
+  `).all(teamId);
+}
+
 router.post('/:id/simulate', requireAuth, (req, res) => {
   const db = getDb();
   const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(req.params.id);
   if (!match) return res.status(404).json({ error: 'Not found' });
   if (match.status === 'finished') return res.status(400).json({ error: 'Match already simulated' });
 
-  const homePl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.home_team_id);
-  const awayPl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.away_team_id);
+  const homePl = getLineupStarters(db, match.home_team_id);
+  const awayPl = getLineupStarters(db, match.away_team_id);
   const result = simulateMatch(match.home_team_id, match.away_team_id, homePl, awayPl);
 
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
