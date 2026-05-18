@@ -1552,7 +1552,7 @@ function renderEventLog(events) {
 
 function renderMatchPlayerRatings(stats, homeId, awayId) {
   if (!stats.length) return '<div class="empty-state"><p>No rating data</p></div>';
-  const top = stats.slice(0, 15);
+  const top = stats;
   return `<div class="card"><div class="card-header">Player Ratings</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Player</th><th>G</th><th>A</th><th>YC</th><th>RC</th><th>Rating</th></tr></thead>
