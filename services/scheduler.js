@@ -3,13 +3,6 @@ const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
 
-function fmtV(v) {
-  if (!v || v === 0) return 'undisclosed';
-  if (v >= 1e9) return '€' + (v / 1e9).toFixed(2) + 'B';
-  if (v >= 1e6) return '€' + (v / 1e6).toFixed(2) + 'M';
-  if (v >= 1e3) return '€' + (v / 1e3).toFixed(0) + 'K';
-  return '€' + v;
-}
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -243,41 +236,6 @@ function generateRandomMatch() {
   console.log(`[Scheduler] Auto-match: ${homeTeam.name} ${result.homeScore}–${result.awayScore} ${awayTeam.name}`);
 }
 
-function generateRandomTransfer() {
-  const db = getDb();
-  const eligible = db.prepare(`
-    SELECT t.id, t.name, COUNT(p.id) as pc
-    FROM teams t JOIN players p ON p.team_id=t.id AND p.status='active'
-    GROUP BY t.id HAVING pc >= 4
-  `).all();
-  if (eligible.length < 2) return;
-  const shuffled = [...eligible].sort(() => Math.random() - 0.5);
-  const srcTeam = shuffled[0], tgtTeam = shuffled[1];
-
-  const player = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active' ORDER BY RANDOM() LIMIT 1`).get(srcTeam.id);
-  if (!player) return;
-  const onLoan = db.prepare(`SELECT id FROM loans WHERE player_id=? AND status='active'`).get(player.id);
-  if (onLoan) return;
-
-  // Fee must be >= market value (100%–145%)
-  const feePct = 1.0 + Math.random() * 0.45;
-  const fee    = Math.round((player.market_value || 500000) * feePct / 10000) * 10000;
-  const today  = new Date().toISOString().slice(0, 10);
-
-  db.prepare('UPDATE players SET team_id=? WHERE id=?').run(tgtTeam.id, player.id);
-  db.prepare(`INSERT INTO transfers (player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type) VALUES (?,?,?,?,?,'permanent')`).run(player.id, srcTeam.id, tgtTeam.id, fee, today);
-
-  for (const tid of [srcTeam.id, tgtTeam.id]) {
-    const tot = db.prepare('SELECT COALESCE(SUM(market_value),0) as t FROM players WHERE team_id=?').get(tid);
-    db.prepare('UPDATE teams SET market_value=? WHERE id=?').run(tot.t, tid);
-  }
-  db.prepare(`INSERT INTO news (title, body, type, player_id) VALUES (?,?,?,?)`).run(
-    `Transfer: ${player.name} joins ${tgtTeam.name}`,
-    `${player.name} has completed a move from ${srcTeam.name} to ${tgtTeam.name} for ${fmtV(fee)}.`,
-    'transfer', player.id
-  );
-  console.log(`[Scheduler] Auto-transfer: ${player.name} (${srcTeam.name}→${tgtTeam.name}) ${fmtV(fee)}`);
-}
 
 function generateRandomPlayerNews() {
   const db = getDb();
@@ -503,11 +461,6 @@ function startScheduler() {
     try { generateRandomMatch(); } catch(e) { console.warn('[Scheduler] Auto-match error:', e.message); }
   });
 
-  // Every 12 hours – auto-generate a transfer (fee >= market value)
-  cron.schedule('0 */12 * * *', () => {
-    try { generateRandomTransfer(); } catch(e) { console.warn('[Scheduler] Auto-transfer error:', e.message); }
-  });
-
   // Every 15 minutes – generate at least 2 player/team news items
   cron.schedule('*/15 * * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
@@ -528,7 +481,7 @@ function startScheduler() {
     } catch(e) { console.warn('[Scheduler] League cron error:', e.message); }
   });
 
-  console.log('[Scheduler] Crons: match/30min | transfer/12h | news/15min | daily-sim/00:05 | league-matchday/08:00.');
+  console.log('[Scheduler] Crons: match/30min | news/15min | daily-sim/00:05 | league-matchday/08:00.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };
