@@ -116,44 +116,13 @@ router.put('/:id', requireAuth, async (req, res) => {
     db.prepare("UPDATE coaches SET team_id=? WHERE id=?").run(team_id, coach.id);
   }
 
-  // Handle team name change (coach only, during transfer window)
+  // Handle team name/logo change — coaches can always change, no transfer window required
   if ((team_name !== undefined || team_logo_url !== undefined) && coach.team_id) {
-    if (!isAdmin) {
-      // Check if we're in a transfer window for any active league that includes this team
-      const activeLeague = db.prepare(`
-        SELECT l.* FROM leagues l
-        JOIN league_standings ls ON ls.league_id = l.id
-        WHERE ls.team_id = ? AND l.status = 'transfer_window'
-        LIMIT 1
-      `).get(coach.team_id);
-
-      if (!activeLeague) {
-        return res.status(403).json({ error: 'Team name/logo can only be changed during a transfer window' });
-      }
-
-      // Check how many times they've changed name this season
-      if (coach.season_name_changes >= 1) {
-        return res.status(403).json({ error: 'Team name can only be changed once per season' });
-      }
-
-      // Apply team name/logo change
-      if (team_name !== undefined) {
-        db.prepare('UPDATE teams SET name=? WHERE id=?').run(team_name, coach.team_id);
-      }
-      if (team_logo_url !== undefined) {
-        db.prepare('UPDATE teams SET logo_url=? WHERE id=?').run(team_logo_url, coach.team_id);
-      }
-
-      // Increment season_name_changes
-      db.prepare('UPDATE coaches SET season_name_changes = season_name_changes + 1 WHERE id=?').run(coach.id);
-    } else {
-      // Admin can always change team name/logo without restrictions
-      if (team_name !== undefined) {
-        db.prepare('UPDATE teams SET name=? WHERE id=?').run(team_name, coach.team_id);
-      }
-      if (team_logo_url !== undefined) {
-        db.prepare('UPDATE teams SET logo_url=? WHERE id=?').run(team_logo_url, coach.team_id);
-      }
+    if (team_name !== undefined) {
+      db.prepare('UPDATE teams SET name=? WHERE id=?').run(team_name, coach.team_id);
+    }
+    if (team_logo_url !== undefined) {
+      db.prepare('UPDATE teams SET logo_url=? WHERE id=?').run(team_logo_url, coach.team_id);
     }
   }
 

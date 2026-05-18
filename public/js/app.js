@@ -639,7 +639,10 @@ function renderSquadTab(team) {
 async function showCoachPlayerEditForm(player) {
   const countries = await GET('/countries').catch(()=>[]);
   mkModal('Редактировать игрока', `
-    <div class="form-group"><label>Имя *</label><input type="text" id="cpe-name" value="${escHtml(player.name||'')}"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Имя *</label><input type="text" id="cpe-name" value="${escHtml(player.name||'')}"/></div>
+      <div class="form-group"><label>Номер</label><input type="number" id="cpe-shirt" value="${player.shirt_number||''}" min="1" max="99" placeholder="1–99"/></div>
+    </div>
     <div class="form-group"><label>Национальность</label>
       <select id="cpe-nat">
         <option value="">—</option>
@@ -649,8 +652,13 @@ async function showCoachPlayerEditForm(player) {
   `, async () => {
     const name = document.getElementById('cpe-name').value.trim();
     const nationality_id = document.getElementById('cpe-nat').value||null;
+    const shirt_number = parseInt(document.getElementById('cpe-shirt').value)||null;
     if (!name) { toast('Имя обязательно','error'); return false; }
-    await fetch('/api/players/'+player.id, {method:'PATCH', headers:{'Content-Type':'application/json','Authorization':'Bearer '+State.token}, body:JSON.stringify({name,nationality_id})}).then(r=>{if(!r.ok) throw new Error('Ошибка'); return r.json();});
+    await fetch('/api/players/'+player.id, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+State.token},
+      body:JSON.stringify({name, nationality_id, shirt_number}),
+    }).then(r=>{if(!r.ok) throw new Error('Ошибка сохранения'); return r.json();});
     toast('Игрок обновлён');
   });
 }
@@ -2275,8 +2283,9 @@ async function renderCoachDashboard(app) {
           <div class="team-name">${escHtml(team.name)}</div>
           <div class="budget-label">${fmtValue(team.market_value)} стоимость состава</div>
         </div>
-        <div style="margin-left:8px">
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:12px" onclick="showCoachEditForm(${JSON.stringify(coach).replace(/"/g,'&quot;')})">Редактировать профиль</button>
+        <div style="margin-left:8px;display:flex;flex-direction:column;gap:6px">
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:12px" onclick="showCoachEditForm(${JSON.stringify(coach).replace(/"/g,'&quot;')})">✏️ Профиль</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:12px" onclick="showCoachClubForm(${JSON.stringify(coach).replace(/"/g,'&quot;')},${JSON.stringify(team).replace(/"/g,'&quot;')})">🏟️ Клуб</button>
         </div>
       </div>
       ${budget?`
@@ -2291,14 +2300,16 @@ async function renderCoachDashboard(app) {
       </div>` : ''}
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="lineup">Состав</button>
-        <button class="detail-tab" data-tab="offers">Трансферные предложения ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
+        <button class="detail-tab" data-tab="offers">Трансферы ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
         <button class="detail-tab" data-tab="post-news">Новость клуба</button>
         <button class="detail-tab" data-tab="squad">Весь состав</button>
+        <button class="detail-tab" data-tab="settings">⚙️ Настройки</button>
       </div>
       <div id="tab-lineup" class="tab-panel active"></div>
       <div id="tab-offers" class="tab-panel"></div>
       <div id="tab-post-news" class="tab-panel"></div>
       <div id="tab-squad" class="tab-panel"></div>
+      <div id="tab-settings" class="tab-panel"></div>
     `;
     setupTabs(app);
 
@@ -2320,6 +2331,16 @@ async function renderCoachDashboard(app) {
 
     // Render squad tab
     document.getElementById('tab-squad').innerHTML = renderSquadTab(team);
+
+    // Render settings tab
+    document.getElementById('tab-settings').innerHTML = `
+      <div class="card" style="padding:20px;max-width:480px">
+        <div class="card-header" style="margin:-20px -20px 16px;border-radius:10px 10px 0 0">🔑 Изменить пароль</div>
+        <div class="form-group"><label>Текущий пароль</label><input type="password" id="coach-pw-cur" autocomplete="current-password"/></div>
+        <div class="form-group"><label>Новый пароль</label><input type="password" id="coach-pw-new" autocomplete="new-password"/></div>
+        <div class="form-group"><label>Повторите новый пароль</label><input type="password" id="coach-pw-cf" autocomplete="new-password"/></div>
+        <button class="btn btn-green" onclick="coachChangePassword()">Сохранить пароль</button>
+      </div>`;
 
   } catch(err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
 }
@@ -2625,6 +2646,41 @@ async function showCoachEditForm(coach) {
     State.coachProfile = null;
     toast('Профиль обновлён');
   });
+}
+
+async function showCoachClubForm(coach, team) {
+  mkModal('🏟️ Редактировать клуб', `
+    <div class="form-group"><label>Название клуба *</label><input type="text" id="ccf-name" value="${escHtml(team.name||'')}"/></div>
+    <div class="form-group"><label>URL логотипа</label><input type="text" id="ccf-logo" value="${escHtml(team.logo_url||'')}" placeholder="https://…"/></div>
+    <div class="form-group"><label>URL фото стадиона</label><input type="text" id="ccf-stadium" value="${escHtml(team.stadium_url||'')}" placeholder="https://…"/></div>
+  `, async () => {
+    const team_name = document.getElementById('ccf-name').value.trim();
+    const team_logo_url = document.getElementById('ccf-logo').value.trim()||null;
+    const stadium_url = document.getElementById('ccf-stadium').value.trim()||null;
+    if (!team_name) { toast('Название клуба обязательно','error'); return false; }
+    await PUT('/coaches/'+coach.id, { team_name, team_logo_url });
+    if (stadium_url !== team.stadium_url) {
+      await PUT('/teams/'+team.id, { ...team, name: team_name, logo_url: team_logo_url||team.logo_url, stadium_url });
+    }
+    State.coachProfile = null;
+    toast('Клуб обновлён');
+  });
+}
+
+async function coachChangePassword() {
+  const cur = document.getElementById('coach-pw-cur').value;
+  const nw  = document.getElementById('coach-pw-new').value;
+  const cf  = document.getElementById('coach-pw-cf').value;
+  if (!cur || !nw) { toast('Заполните все поля','error'); return; }
+  if (nw !== cf) { toast('Пароли не совпадают','error'); return; }
+  if (nw.length < 8) { toast('Пароль: мин. 8 символов','error'); return; }
+  try {
+    await POST('/auth/change-password', { currentPassword: cur, newPassword: nw });
+    toast('Пароль изменён');
+    document.getElementById('coach-pw-cur').value = '';
+    document.getElementById('coach-pw-new').value = '';
+    document.getElementById('coach-pw-cf').value = '';
+  } catch(e) { toast(e.message,'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════
