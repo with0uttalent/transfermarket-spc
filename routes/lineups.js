@@ -150,10 +150,18 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
       VALUES (?,?,?,?)
     `);
 
+    function posToZone(position) {
+      if (!position) return 'MID';
+      if (position === 'Goalkeeper') return 'GK';
+      if (['Centre-Back','Left-Back','Right-Back'].includes(position)) return 'DEF';
+      if (['Left Winger','Right Winger','Centre-Forward','Striker'].includes(position)) return 'FWD';
+      return 'MID';
+    }
     let slot = 1;
     for (const player of players) {
       if (slot > 22) break;
-      insert.run(teamId, player.id, slot, null);
+      const zone = slot <= 11 ? posToZone(player.position) : null;
+      insert.run(teamId, player.id, slot, zone);
       slot++;
     }
   });

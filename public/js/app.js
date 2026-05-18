@@ -234,6 +234,42 @@ function renderPitch(players, isAway = false) {
   }
   return `<div class="pitch-container"><div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${dots}</div></div></div>`;
 }
+
+// Zone-aware pitch renderer — uses coach lineup's position_override (GK/DEF/MID/FWD)
+// Falls back to posToZone(player.position) when position_override is absent
+function renderPitchFromLineup(lineupSlots, isAway = false) {
+  const starters = lineupSlots.filter(s => s.slot >= 1 && s.slot <= 11);
+  if (!starters.length) return `<div class="empty-state"><p>Нет игроков в стартовом составе</p></div>`;
+
+  const ZONE_Y_HOME = { GK: 82, DEF: 65, MID: 43, FWD: 17 };
+  const ZONE_Y_AWAY = { GK: 18, DEF: 35, MID: 57, FWD: 83 };
+  const yMap = isAway ? ZONE_Y_AWAY : ZONE_Y_HOME;
+
+  const zones = { GK: [], DEF: [], MID: [], FWD: [] };
+  for (const s of starters) {
+    const z = ['GK','DEF','MID','FWD'].includes(s.position_override)
+      ? s.position_override
+      : posToZone(s.position);
+    zones[z].push(s);
+  }
+
+  let dots = '';
+  for (const [zoneId, zPlayers] of Object.entries(zones)) {
+    if (!zPlayers.length) continue;
+    const y = yMap[zoneId];
+    zPlayers.forEach((s, i) => {
+      const x = zPlayers.length === 1 ? 50 : 10 + 80 * (i / (zPlayers.length - 1));
+      const name = s.player_name || s.name || '?';
+      const firstName = name.split(' ')[0];
+      const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+      dots += `<div class="pitch-player${isAway?' away':''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" title="${escHtml(name)} (${s.position||zoneId})">
+        <div class="pc-av"><div class="pc-ini">${escHtml(initials)}</div></div>
+        <div class="pl">${escHtml(firstName)}</div>
+      </div>`;
+    });
+  }
+  return `<div class="pitch-container"><div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${dots}</div></div></div>`;
+}
 function ratingColor(r) { return r >= 7.5 ? 'high' : r >= 6 ? 'mid' : 'low'; }
 function achIcon(type) {
   return {hat_trick:'🎩',brace:'⚽⚽',man_of_the_match:'🌟',clean_sheet:'🧤',tournament_winner:'🏆'}[type]||'🏅';
@@ -605,10 +641,10 @@ async function renderTeamDetail(app, id) {
       panel.dataset.loaded = '1';
       try {
         const ld = await GET('/lineups/'+id).catch(()=>({lineup:[]}));
-        const starters = (ld.lineup||[]).filter(s=>s.slot<=11).map(s=>({
-          id: s.player_id, name: s.player_name||'?', position: s.position_override||s.position, image_url: null
-        }));
-        panel.querySelector('.pitch-section').innerHTML = renderPitch(starters.length ? starters : team.players.filter((_,i)=>i<11));
+        const slots = (ld.lineup||[]).filter(s=>s.slot<=11);
+        panel.querySelector('.pitch-section').innerHTML = slots.length
+          ? renderPitchFromLineup(slots, false)
+          : renderPitch(team.players.filter((_,i)=>i<11));
       } catch { panel.querySelector('.pitch-section').innerHTML = '<div class="empty-state"><p>Ошибка загрузки</p></div>'; }
     }, { once: true });
     app.querySelector('[data-tab="matches"]').addEventListener('click', async () => {
@@ -1468,18 +1504,17 @@ async function renderMatchDetail(app, id) {
             GET('/lineups/'+match.home_team_id).catch(()=>({lineup:[]})),
             GET('/lineups/'+match.away_team_id).catch(()=>({lineup:[]})),
           ]);
-          const toPlayers = ld => (ld.lineup||[]).filter(s=>s.slot<=11).map(s=>({
-            id: s.player_id, name: s.player_name||'?', position: s.position_override||s.position, image_url: s.image_url||null
-          }));
+          const homeSlots = (homeLineup.lineup||[]).filter(s=>s.slot<=11);
+          const awaySlots = (awayLineup.lineup||[]).filter(s=>s.slot<=11);
           panel.innerHTML = `
             <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:16px">
               <div class="pitch-section">
                 <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.home_team_name)}</div>
-                ${renderPitch(toPlayers(homeLineup), false)}
+                ${renderPitchFromLineup(homeSlots, false)}
               </div>
               <div class="pitch-section">
                 <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.away_team_name)}</div>
-                ${renderPitch(toPlayers(awayLineup), true)}
+                ${renderPitchFromLineup(awaySlots, true)}
               </div>
             </div>`;
         } catch { panel.innerHTML = '<div class="empty-state"><p>Ошибка загрузки составов</p></div>'; }
