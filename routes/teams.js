@@ -41,9 +41,11 @@ router.get('/:id', (req, res) => {
   if (!team) return res.status(404).json({ error: 'Not found' });
 
   const players = db.prepare(`
-    SELECT p.*, co.name as nationality_name, co.flag_emoji
+    SELECT p.*, co.name as nationality_name, co.flag_emoji,
+      ps.pace, ps.shooting, ps.passing, ps.defending, ps.physical
     FROM players p
     LEFT JOIN countries co ON p.nationality_id = co.id
+    LEFT JOIN player_skills ps ON ps.player_id = p.id
     WHERE p.team_id = ?
     ORDER BY p.market_value DESC
   `).all(req.params.id);

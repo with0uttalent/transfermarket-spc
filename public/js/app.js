@@ -140,6 +140,47 @@ function computeFormation(lineup) {
   return [cnt.DEF, cnt.MID, cnt.FWD].filter(c=>c>0).join('-') || '–';
 }
 
+// Position penalty factor (1.0 = no penalty)
+const ZONE_PENALTY = {
+  GK:  { GK: 1.00, DEF: 0.82, MID: 0.68, FWD: 0.58 },
+  DEF: { GK: 0.82, DEF: 1.00, MID: 0.85, FWD: 0.72 },
+  MID: { GK: 0.68, DEF: 0.85, MID: 1.00, FWD: 0.85 },
+  FWD: { GK: 0.58, DEF: 0.72, MID: 0.85, FWD: 1.00 },
+};
+
+function positionPenalty(naturalZone, assignedZone) {
+  return (ZONE_PENALTY[naturalZone] || {})[assignedZone] ?? 0.70;
+}
+
+// Weighted overall rating from skills, optionally with out-of-position penalty
+const OVR_WEIGHTS = {
+  GK:  [0.10, 0.05, 0.15, 0.40, 0.30],
+  DEF: [0.20, 0.10, 0.15, 0.35, 0.20],
+  MID: [0.15, 0.20, 0.30, 0.15, 0.20],
+  FWD: [0.30, 0.35, 0.20, 0.05, 0.10],
+};
+
+function calcOverall(player, assignedZone) {
+  const { pace, shooting, passing, defending, physical } = player;
+  if (!pace && !shooting && !passing && !defending && !physical) return null;
+  const naturalZone = posToZone(player.position);
+  const w = OVR_WEIGHTS[naturalZone] || OVR_WEIGHTS.MID;
+  const base = Math.round(
+    w[0]*(pace||50) + w[1]*(shooting||50) + w[2]*(passing||50) +
+    w[3]*(defending||50) + w[4]*(physical||50)
+  );
+  if (!assignedZone || assignedZone === naturalZone) return base;
+  return Math.round(base * positionPenalty(naturalZone, assignedZone));
+}
+
+function ovrBadge(ovr, assignedZone, naturalZone) {
+  if (ovr === null || ovr === undefined) return '';
+  const outOfPos = assignedZone && naturalZone && assignedZone !== naturalZone;
+  const color = ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+  const style = `background:${color};color:#000;font-weight:700;font-size:11px;padding:1px 5px;border-radius:3px;${outOfPos?'opacity:0.75':''}`;
+  return `<span style="${style}" title="${outOfPos?'Не на своей позиции (-штраф)':'Рейтинг'}">${ovr}${outOfPos?'⚠':''}</span>`;
+}
+
 // Interactive pitch builder state
 let _pitchState = { teamId: null, lineup: [], players: [], selectedPlayerId: null };
 
@@ -606,7 +647,7 @@ function renderSquadTab(team, isOwnTeam = false) {
   return `<div class="card">
     <div class="card-header">Состав ${isAdmin()?`<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showPlayerForm(null,${team.id})">+ Добавить игрока</button>`:''}  </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>#</th><th>Игрок</th><th>Нац.</th><th>Поз</th><th>Возраст</th><th>Нога</th><th class="text-right">Ценность</th>${showActions?'<th></th>':''}</tr></thead>
+      <thead><tr><th>#</th><th>Игрок</th><th>Нац.</th><th>Поз</th><th>Возраст</th><th>Нога</th><th class="text-right">OVR</th><th class="text-right">Ценность</th>${showActions?'<th></th>':''}</tr></thead>
       <tbody>
         ${team.players.map(p=>`
           <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
@@ -616,6 +657,7 @@ function renderSquadTab(team, isOwnTeam = false) {
             <td>${posBadge(p.position)}</td>
             <td class="text-muted">${calcAge(p.date_of_birth)||'–'}</td>
             <td class="text-muted">${p.foot||'–'}</td>
+            <td class="text-right">${ovrBadge(calcOverall(p), null, null)||'–'}</td>
             <td class="text-right mv">${fmtValue(p.market_value)}</td>
             ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
               <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
@@ -630,10 +672,27 @@ function renderSquadTab(team, isOwnTeam = false) {
 
 async function showCoachPlayerEditForm(player) {
   const countries = await GET('/countries').catch(()=>[]);
+  const POSITIONS = ['Goalkeeper','Centre-Back','Left-Back','Right-Back','Defensive Midfield','Central Midfield','Attacking Midfield','Left Winger','Right Winger','Centre-Forward'];
   mkModal('Редактировать игрока', `
     <div class="form-row">
       <div class="form-group"><label>Имя *</label><input type="text" id="cpe-name" value="${escHtml(player.name||'')}"/></div>
       <div class="form-group"><label>Номер</label><input type="number" id="cpe-shirt" value="${player.shirt_number||''}" min="1" max="10000" placeholder="1–10000"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Позиция</label>
+        <select id="cpe-pos">
+          <option value="">—</option>
+          ${POSITIONS.map(pos=>`<option value="${pos}"${player.position===pos?' selected':''}>${pos}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Нога</label>
+        <select id="cpe-foot">
+          <option value="">—</option>
+          <option value="Right"${player.foot==='Right'?' selected':''}>Правая</option>
+          <option value="Left"${player.foot==='Left'?' selected':''}>Левая</option>
+          <option value="Both"${player.foot==='Both'?' selected':''}>Обе</option>
+        </select>
+      </div>
     </div>
     <div class="form-group"><label>Национальность</label>
       <select id="cpe-nat">
@@ -645,12 +704,14 @@ async function showCoachPlayerEditForm(player) {
     const name = document.getElementById('cpe-name').value.trim();
     const nationality_id = document.getElementById('cpe-nat').value||null;
     const shirt_number = parseInt(document.getElementById('cpe-shirt').value)||null;
+    const position = document.getElementById('cpe-pos').value||null;
+    const foot = document.getElementById('cpe-foot').value||null;
     if (!name) { toast('Имя обязательно','error'); return false; }
     if (shirt_number !== null && (shirt_number < 1 || shirt_number > 10000)) { toast('Номер должен быть от 1 до 10000','error'); return false; }
     await fetch('/api/players/'+player.id, {
       method:'PATCH',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+State.token},
-      body:JSON.stringify({name, nationality_id, shirt_number}),
+      body:JSON.stringify({name, nationality_id, shirt_number, position, foot}),
     }).then(r=>{if(!r.ok) throw new Error('Ошибка сохранения'); return r.json();});
     toast('Игрок обновлён');
   });
@@ -2386,9 +2447,13 @@ function renderPitchZones(lineupSlots) {
       if (!p) return;
       const x = zp.length===1 ? 50 : 10 + 80*(i/(zp.length-1));
       const ini = p.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-      html += `<div class="pb-slot pb-slot-filled" style="left:${x}%;top:${zone.y}%" onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})" title="${escHtml(p.name)} — нажмите чтобы убрать в запас">
+      const ovr = calcOverall(p, zone.id);
+      const naturalZone = posToZone(p.position);
+      const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+      html += `<div class="pb-slot pb-slot-filled" style="left:${x}%;top:${zone.y}%" onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})" title="${escHtml(p.name)} (${ovr||'?'}) — нажмите чтобы убрать в запас">
         <div class="pb-slot-av">${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}</div>
-        <div class="pb-slot-name">${escHtml(p.name.split(' ')[0])}</div>
+        <div class="pb-slot-name" style="font-size:8px">${escHtml(p.name.split(' ')[0])}</div>
+        <div class="pb-slot-ovr" style="color:${ovrColor}">${ovr !== null ? ovr+(naturalZone!==zone.id?'⚠':'') : '?'}</div>
         <div class="pb-slot-remove-badge">✕</div>
       </div>`;
     });
@@ -2402,10 +2467,13 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
   if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все расставлены в основе ✓</div>';
   return available.map(p => {
     const sel = p.id === selectedId;
+    const ovr = calcOverall(p);
+    const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
     return `<div class="pb-player-row${sel?' pb-selected':''}" onclick="pitchPlayerClick(${p.id})">
       ${avatarEl(p.image_url,p.name)}
       <div style="flex:1;min-width:0"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
-      ${sel?`<span style="color:var(--green,#2ecc71);font-size:14px;font-weight:700">✓</span>`:''}
+      <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr ?? '?'}</span>
+      ${sel?`<span style="color:var(--green,#2ecc71);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
     </div>`;
   }).join('');
 }

@@ -149,7 +149,7 @@ router.patch('/:id', requireCoach, (req, res) => {
     }
   }
 
-  const { name, nationality_id, shirt_number } = req.body;
+  const { name, nationality_id, shirt_number, position, foot } = req.body;
   if (name !== undefined && !name) return res.status(400).json({ error: 'Name cannot be empty' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
     const sn = parseInt(shirt_number);
@@ -158,7 +158,9 @@ router.patch('/:id', requireCoach, (req, res) => {
   const newName   = name !== undefined ? name : player.name;
   const newNat    = nationality_id !== undefined ? (nationality_id || null) : player.nationality_id;
   const newShirt  = shirt_number !== undefined ? (shirt_number || null) : player.shirt_number;
-  db.prepare('UPDATE players SET name=?, nationality_id=?, shirt_number=? WHERE id=?').run(newName, newNat, newShirt, player.id);
+  const newPos    = position !== undefined ? (position || null) : player.position;
+  const newFoot   = foot !== undefined ? (foot || null) : player.foot;
+  db.prepare('UPDATE players SET name=?, nationality_id=?, shirt_number=?, position=?, foot=? WHERE id=?').run(newName, newNat, newShirt, newPos, newFoot, player.id);
 
   // Re-fetch to return updated record
   const updated = db.prepare(`SELECT p.*, co.name as nationality_name, co.flag_emoji FROM players p LEFT JOIN countries co ON p.nationality_id=co.id WHERE p.id=?`).get(player.id);
