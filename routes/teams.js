@@ -102,8 +102,15 @@ router.put('/:id', requireAuth, (req, res) => {
 
 router.delete('/:id', requireAuth, (req, res) => {
   const db = getDb();
-  const result = db.prepare('DELETE FROM teams WHERE id=?').run(req.params.id);
-  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  const id = req.params.id;
+  if (!db.prepare('SELECT id FROM teams WHERE id=?').get(id)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  db.transaction(() => {
+    // league_schedule has no ON DELETE CASCADE for team references
+    db.prepare('DELETE FROM league_schedule WHERE home_team_id=? OR away_team_id=?').run(id, id);
+    db.prepare('DELETE FROM teams WHERE id=?').run(id);
+  })();
   res.json({ message: 'Deleted' });
 });
 
