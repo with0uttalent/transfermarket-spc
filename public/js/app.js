@@ -1423,9 +1423,10 @@ async function renderMatches(app, params) {
 function matchCardHtml(m) {
   const statusCls = m.status==='finished'?'match-status-finished':m.status==='in_progress'?'match-status-live':'match-status-scheduled';
   const scoreStr = m.status==='finished' ? `${m.home_score} – ${m.away_score}` : m.status==='scheduled' ? 'vs' : `${m.home_score} – ${m.away_score}`;
-  const stadiumBg = m.home_stadium_url ? `background-image:url('${escHtml(m.home_stadium_url)}')` : '';
-  return `<div class="match-card${m.home_stadium_url?' mc-has-stadium':''}" onclick="navigate('/matches/${m.id}')" style="${stadiumBg}">
-    ${m.home_stadium_url?'<div class="mc-stadium-overlay"></div>':''}
+  const stadiumBg = m.home_stadium_url
+    ? `background-image:linear-gradient(rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url('${escHtml(m.home_stadium_url)}');background-size:cover;background-position:center;`
+    : '';
+  return `<div class="match-card" onclick="navigate('/matches/${m.id}')" style="${stadiumBg}">
     <div class="mc-team">
       ${teamLogoXL(m.home_logo,m.home_team_name)}
       <span class="mc-team-name">${escHtml(m.home_team_name)}</span>

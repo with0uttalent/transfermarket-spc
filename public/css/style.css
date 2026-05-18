@@ -950,13 +950,6 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
   color: #fff;
 }
 .match-card:hover { box-shadow: var(--shadow); border-color: var(--green); }
-.mc-stadium-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,0.55);
-  z-index: 0;
-}
-.match-card > * { position: relative; z-index: 1; }
 .match-card .mc-team {
   display: flex;
   flex-direction: column;
