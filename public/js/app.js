@@ -704,7 +704,7 @@ function renderSquadTab(team, isOwnTeam = false) {
             <td class="text-right mv">${fmtValue(p.market_value)}</td>
             ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
               <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
-              <button class="btn-icon" onclick="showLoanForm(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Loan out">🔗</button>
+              <button class="btn-icon" onclick="showQuickTransfer(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Transfer">→</button>
               <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
             </td>`:(isCoach()&&isOwnTeam)?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button></td>`:''}
           </tr>`).join('')}
@@ -849,7 +849,7 @@ async function renderPlayers(app, params) {
           <td class="text-right mv">${fmtValue(p.market_value)}</td>
           ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
             <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
-            <button class="btn-icon" onclick="showLoanForm(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Loan">🔗</button>
+            <button class="btn-icon" onclick="showQuickTransfer(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Transfer">→</button>
             <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
           </td>`:''}
         </tr>`).join('');
@@ -934,8 +934,9 @@ async function renderPlayerDetail(app, id) {
         <div class="hero-mv"><div class="mv-label">Рыночная стоимость</div><div class="mv-value">${fmtValue(player.market_value)}</div></div>
         ${isAdmin()?`<div style="margin-left:16px;display:flex;flex-direction:column;gap:8px">
           <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showPlayerForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Редактировать</button>
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showTransferForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Трансфер</button>
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showLoanForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Аренда</button>
+          <button class="btn btn-green" onclick="showQuickTransfer(${JSON.stringify(player).replace(/"/g,'&quot;')})">→ Перевести</button>
+        </div>`:isCoach()&&player.team_id!==State.coachProfile?.team_id?`<div style="margin-left:16px">
+          <button class="btn btn-green" onclick="showQuickOffer(${JSON.stringify(player).replace(/"/g,'&quot;')})">📨 Предложить трансфер</button>
         </div>`:''}
       </div>
       <div class="detail-tabs">
@@ -1121,24 +1122,135 @@ function renderMarketHistoryTab(player) {
   </div>`;
 }
 
-async function showTransferForm(player) {
+async function showQuickTransfer(player) {
   const teams = await GET('/teams');
-  mkModal('Record Transfer: '+escHtml(player.name), `
-    <div class="form-row">
-      <div class="form-group"><label>From Team</label><select id="trf-from"><option value="">– None –</option>${teams.map(t=>`<option value="${t.id}"${player?.team_id==t.id?' selected':''}>${escHtml(t.name)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>To Team</label><select id="trf-to"><option value="">– Free Agent –</option>${teams.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select></div>
+  const otherTeams = teams.filter(t => t.id !== player.team_id);
+  mkModal('Перевод игрока', `
+    <div class="player-card" style="margin-bottom:16px;background:var(--bg-card);border-radius:8px;padding:12px">
+      ${avatarEl(player.image_url, player.name)}
+      <div class="pc-info">
+        <div class="pc-name">${escHtml(player.name)}</div>
+        <div>${posBadge(player.position)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${fmtValue(player.market_value)}${player.team_name?' · '+escHtml(player.team_name):''}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Назначение в новой команде</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button id="role-starter" onclick="selectQtRole('starter')" class="qt-role-btn" style="padding:14px 8px;border:2px solid var(--border);border-radius:8px;background:none;cursor:pointer;transition:all .15s;text-align:center">
+          <div style="font-size:22px">🏟</div>
+          <div style="font-weight:700;font-size:13px;margin-top:4px">Основной состав</div>
+          <div style="font-size:11px;color:var(--text-muted)">Постоянный трансфер</div>
+        </button>
+        <button id="role-reserve" onclick="selectQtRole('reserve')" class="qt-role-btn" style="padding:14px 8px;border:2px solid var(--border);border-radius:8px;background:none;cursor:pointer;transition:all .15s;text-align:center">
+          <div style="font-size:22px">📋</div>
+          <div style="font-weight:700;font-size:13px;margin-top:4px">Запасные</div>
+          <div style="font-size:11px;color:var(--text-muted)">Аренда / резерв</div>
+        </button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Команда назначения *</label>
+      <select id="qt-team"><option value="">Выберите команду…</option>${otherTeams.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Fee (€)</label><input type="number" id="trf-fee" value="0" step="100000"/></div>
-      <div class="form-group"><label>Date</label><input type="date" id="trf-date" value="${new Date().toISOString().substring(0,10)}"/></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Type</label><select id="trf-type"><option value="permanent">Permanent</option><option value="loan">Loan</option><option value="free">Free Transfer</option><option value="youth">Youth</option></select></div>
-      <div class="form-group"><label>Notes</label><input type="text" id="trf-notes"/></div>
+      <div class="form-group"><label>Сумма (€)</label><input type="number" id="qt-fee" value="${player.market_value||0}" step="100000" min="0"/></div>
+      <div class="form-group"><label>Дата</label><input type="date" id="qt-date" value="${new Date().toISOString().substring(0,10)}"/></div>
     </div>
   `, async () => {
-    await POST('/transfers', { player_id:player.id, from_team_id:document.getElementById('trf-from').value||null, to_team_id:document.getElementById('trf-to').value||null, transfer_fee:parseFloat(document.getElementById('trf-fee').value)||0, transfer_date:document.getElementById('trf-date').value||null, transfer_type:document.getElementById('trf-type').value, notes:document.getElementById('trf-notes').value.trim()||null });
-    toast('Transfer recorded');
+    const toTeamId = parseInt(document.getElementById('qt-team').value);
+    const fee = parseFloat(document.getElementById('qt-fee').value)||0;
+    const date = document.getElementById('qt-date').value;
+    const role = window._qtRole;
+    if (!toTeamId) { toast('Выберите команду назначения', 'error'); return false; }
+    if (!role) { toast('Выберите назначение: основной состав или запасные', 'error'); return false; }
+    const transferType = role === 'reserve' ? 'loan' : 'permanent';
+    await PUT('/players/'+player.id, { ...player, team_id: toTeamId });
+    await POST('/transfers', { player_id: player.id, from_team_id: player.team_id||null, to_team_id: toTeamId, transfer_fee: fee, transfer_date: date, transfer_type: transferType });
+    try {
+      const lineupData = await GET('/lineups/'+toTeamId);
+      const existing = lineupData.lineup || [];
+      const starters = existing.filter(s => s.slot >= 1 && s.slot <= 11);
+      const reserves = existing.filter(s => s.slot >= 12 && s.slot <= 22);
+      if (role === 'starter' && starters.length < 11) {
+        const used = new Set(starters.map(s => s.slot));
+        let slot = 1; while (used.has(slot)) slot++;
+        await PUT('/lineups/'+toTeamId, { lineup: [...existing, { slot, player_id: player.id, position_override: posToZone(player.position) }] });
+      } else if (reserves.length < 11) {
+        const used = new Set(reserves.map(s => s.slot));
+        let slot = 12; while (used.has(slot)) slot++;
+        await PUT('/lineups/'+toTeamId, { lineup: [...existing, { slot, player_id: player.id, position_override: null }] });
+      }
+    } catch {}
+    toast('Трансфер завершён!'); window._qtRole = null; navigate('/players/'+player.id);
+  });
+  window._qtRole = null;
+}
+
+function selectQtRole(role) {
+  window._qtRole = role;
+  ['starter','reserve'].forEach(r => {
+    const el = document.getElementById('role-'+r);
+    if (!el) return;
+    el.style.borderColor = r === role ? 'var(--green)' : 'var(--border)';
+    el.style.background  = r === role ? 'rgba(46,204,113,.12)' : 'none';
+    el.style.color       = r === role ? 'var(--green)' : '';
+  });
+}
+
+async function showQuickOffer(player) {
+  mkModal('Предложить трансфер', `
+    <div class="player-card" style="margin-bottom:16px;background:var(--bg-card);border-radius:8px;padding:12px">
+      ${avatarEl(player.image_url, player.name)}
+      <div class="pc-info">
+        <div class="pc-name">${escHtml(player.name)}</div>
+        <div>${posBadge(player.position)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${fmtValue(player.market_value)}${player.team_name?' · '+escHtml(player.team_name):''}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Роль в вашей команде</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button id="qo-role-starter" onclick="selectQoRole('buy')" class="qt-role-btn" style="padding:14px 8px;border:2px solid var(--border);border-radius:8px;background:none;cursor:pointer;transition:all .15s;text-align:center">
+          <div style="font-size:22px">🏟</div>
+          <div style="font-weight:700;font-size:13px;margin-top:4px">Основной состав</div>
+          <div style="font-size:11px;color:var(--text-muted)">Покупка</div>
+        </button>
+        <button id="qo-role-reserve" onclick="selectQoRole('loan')" class="qt-role-btn" style="padding:14px 8px;border:2px solid var(--border);border-radius:8px;background:none;cursor:pointer;transition:all .15s;text-align:center">
+          <div style="font-size:22px">📋</div>
+          <div style="font-weight:700;font-size:13px;margin-top:4px">Запасные</div>
+          <div style="font-size:11px;color:var(--text-muted)">Аренда</div>
+        </button>
+      </div>
+    </div>
+    <div class="form-group"><label>Сумма предложения (€) *</label>
+      <input type="number" id="qo-amount" value="${player.market_value||0}" step="100000" min="0"/>
+    </div>
+    <div class="form-group"><label>Сообщение (необязательно)</label>
+      <textarea id="qo-msg" rows="2" placeholder="Добавьте сообщение тренеру…"></textarea>
+    </div>
+  `, async () => {
+    const amount = parseFloat(document.getElementById('qo-amount').value)||0;
+    const offer_type = window._qoOfferType || 'buy';
+    const message = document.getElementById('qo-msg').value.trim()||null;
+    if (!amount) { toast('Укажите сумму предложения', 'error'); return false; }
+    if (!window._qoOfferType) { toast('Выберите роль игрока в команде', 'error'); return false; }
+    await POST('/transfer-offers', { to_team_id: player.team_id, player_id: player.id, offer_type, amount, loan_months: 6, message });
+    toast('Предложение отправлено!'); window._qoOfferType = null;
+  });
+  window._qoOfferType = null;
+}
+
+function selectQoRole(type) {
+  window._qoOfferType = type;
+  const ids = { buy: 'qo-role-starter', loan: 'qo-role-reserve' };
+  Object.entries(ids).forEach(([t, id]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const active = t === type;
+    el.style.borderColor = active ? 'var(--green)' : 'var(--border)';
+    el.style.background  = active ? 'rgba(46,204,113,.12)' : 'none';
+    el.style.color       = active ? 'var(--green)' : '';
   });
 }
 
