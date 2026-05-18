@@ -84,7 +84,7 @@ router.post('/', requireAuth, (req, res) => {
   if (!name) return res.status(400).json({ error: 'Name required' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
     const sn = parseInt(shirt_number);
-    if (isNaN(sn) || sn < 1 || sn > 99) return res.status(400).json({ error: 'Номер должен быть от 1 до 99' });
+    if (isNaN(sn) || sn < 1 || sn > 10000) return res.status(400).json({ error: "Номер должен быть от 1 до 10000" });
   }
   const db = getDb();
   const result = db.prepare(`
@@ -106,7 +106,7 @@ router.put('/:id', requireAuth, (req, res) => {
   if (!name) return res.status(400).json({ error: 'Name required' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
     const sn = parseInt(shirt_number);
-    if (isNaN(sn) || sn < 1 || sn > 99) return res.status(400).json({ error: 'Номер должен быть от 1 до 99' });
+    if (isNaN(sn) || sn < 1 || sn > 10000) return res.status(400).json({ error: "Номер должен быть от 1 до 10000" });
   }
   const db = getDb();
 
@@ -153,7 +153,7 @@ router.patch('/:id', requireCoach, (req, res) => {
   if (name !== undefined && !name) return res.status(400).json({ error: 'Name cannot be empty' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
     const sn = parseInt(shirt_number);
-    if (isNaN(sn) || sn < 1 || sn > 99) return res.status(400).json({ error: 'Номер должен быть от 1 до 99' });
+    if (isNaN(sn) || sn < 1 || sn > 10000) return res.status(400).json({ error: "Номер должен быть от 1 до 10000" });
   }
   const newName   = name !== undefined ? name : player.name;
   const newNat    = nationality_id !== undefined ? (nationality_id || null) : player.nationality_id;

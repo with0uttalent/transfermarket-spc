@@ -633,7 +633,7 @@ async function showCoachPlayerEditForm(player) {
   mkModal('Редактировать игрока', `
     <div class="form-row">
       <div class="form-group"><label>Имя *</label><input type="text" id="cpe-name" value="${escHtml(player.name||'')}"/></div>
-      <div class="form-group"><label>Номер</label><input type="number" id="cpe-shirt" value="${player.shirt_number||''}" min="1" max="99" placeholder="1–99"/></div>
+      <div class="form-group"><label>Номер</label><input type="number" id="cpe-shirt" value="${player.shirt_number||''}" min="1" max="10000" placeholder="1–10000"/></div>
     </div>
     <div class="form-group"><label>Национальность</label>
       <select id="cpe-nat">
@@ -646,7 +646,7 @@ async function showCoachPlayerEditForm(player) {
     const nationality_id = document.getElementById('cpe-nat').value||null;
     const shirt_number = parseInt(document.getElementById('cpe-shirt').value)||null;
     if (!name) { toast('Имя обязательно','error'); return false; }
-    if (shirt_number !== null && (shirt_number < 1 || shirt_number > 99)) { toast('Номер должен быть от 1 до 99','error'); return false; }
+    if (shirt_number !== null && (shirt_number < 1 || shirt_number > 10000)) { toast('Номер должен быть от 1 до 10000','error'); return false; }
     await fetch('/api/players/'+player.id, {
       method:'PATCH',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+State.token},
@@ -779,7 +779,7 @@ async function showPlayerForm(player, defaultTeamId) {
     </div>
     <div class="form-row">
       <div class="form-group"><label>Команда</label><select id="pf-team"><option value="">Free Agent</option>${teams.map(t=>`<option value="${t.id}"${(player?.team_id||defaultTeamId)==t.id?' selected':''}>${escHtml(t.name)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Номер</label><input type="number" id="pf-shirt" value="${player?.shirt_number||''}" min="1" max="99"/></div>
+      <div class="form-group"><label>Номер</label><input type="number" id="pf-shirt" value="${player?.shirt_number||''}" min="1" max="10000"/></div>
     </div>
     <div class="form-row-3">
       <div class="form-group"><label>Нога</label><select id="pf-foot"><option value="">–</option><option value="Right"${player?.foot==='Right'?' selected':''}>Right</option><option value="Left"${player?.foot==='Left'?' selected':''}>Left</option><option value="Both"${player?.foot==='Both'?' selected':''}>Both</option></select></div>
@@ -793,7 +793,7 @@ async function showPlayerForm(player, defaultTeamId) {
   `, async () => {
     const payload = { name:document.getElementById('pf-name').value.trim(), date_of_birth:document.getElementById('pf-dob').value||null, nationality_id:document.getElementById('pf-nat').value||null, position:document.getElementById('pf-pos').value||null, foot:document.getElementById('pf-foot').value||null, height:parseInt(document.getElementById('pf-height').value)||null, team_id:document.getElementById('pf-team').value||null, shirt_number:parseInt(document.getElementById('pf-shirt').value)||null, market_value:parseFloat(document.getElementById('pf-mv').value)||0, image_url:document.getElementById('pf-img').value.trim()||null, status:document.getElementById('pf-status').value };
     if (!payload.name){toast('Имя обязательно','error');return false;}
-    if (payload.shirt_number !== null && (payload.shirt_number < 1 || payload.shirt_number > 99)){toast('Номер должен быть от 1 до 99','error');return false;}
+    if (payload.shirt_number !== null && (payload.shirt_number < 1 || payload.shirt_number > 10000)){toast('Номер должен быть от 1 до 10000','error');return false;}
     if (isEdit) await PUT('/players/'+player.id, payload); else await POST('/players', payload);
     toast(isEdit?'Игрок обновлён':'Игрок добавлен');
   });
