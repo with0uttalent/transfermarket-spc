@@ -82,6 +82,10 @@ router.get('/:id', (req, res) => {
 router.post('/', requireAuth, (req, res) => {
   const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
+  if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
+    const sn = parseInt(shirt_number);
+    if (isNaN(sn) || sn < 1 || sn > 99) return res.status(400).json({ error: 'Номер должен быть от 1 до 99' });
+  }
   const db = getDb();
   const result = db.prepare(`
     INSERT INTO players (name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status)
@@ -100,6 +104,10 @@ router.post('/', requireAuth, (req, res) => {
 router.put('/:id', requireAuth, (req, res) => {
   const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
+  if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
+    const sn = parseInt(shirt_number);
+    if (isNaN(sn) || sn < 1 || sn > 99) return res.status(400).json({ error: 'Номер должен быть от 1 до 99' });
+  }
   const db = getDb();
 
   const existing = db.prepare('SELECT market_value FROM players WHERE id = ?').get(req.params.id);
@@ -143,6 +151,10 @@ router.patch('/:id', requireCoach, (req, res) => {
 
   const { name, nationality_id, shirt_number } = req.body;
   if (name !== undefined && !name) return res.status(400).json({ error: 'Name cannot be empty' });
+  if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
+    const sn = parseInt(shirt_number);
+    if (isNaN(sn) || sn < 1 || sn > 99) return res.status(400).json({ error: 'Номер должен быть от 1 до 99' });
+  }
   const newName   = name !== undefined ? name : player.name;
   const newNat    = nationality_id !== undefined ? (nationality_id || null) : player.nationality_id;
   const newShirt  = shirt_number !== undefined ? (shirt_number || null) : player.shirt_number;

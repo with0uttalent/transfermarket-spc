@@ -114,42 +114,34 @@ function pitchCoords(pos, idxInRow, countInRow, isAway) {
   const x = countInRow === 1 ? 50 : 10 + 80 * (idxInRow / (countInRow - 1));
   return { x, y };
 }
-// ─── Formation slot definitions for interactive pitch builder ────────────────
-const FORMATION_SLOTS = {
-  '4-4-2': [
-    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:16,y:66,label:'ЛЗ'},{slot:3,x:36,y:66,label:'ЦЗ'},
-    {slot:4,x:64,y:66,label:'ЦЗ'},{slot:5,x:84,y:66,label:'ПЗ'},{slot:6,x:16,y:44,label:'ЛП'},
-    {slot:7,x:38,y:44,label:'ЦП'},{slot:8,x:62,y:44,label:'ЦП'},{slot:9,x:84,y:44,label:'ПП'},
-    {slot:10,x:38,y:19,label:'НАП'},{slot:11,x:62,y:19,label:'НАП'},
-  ],
-  '4-3-3': [
-    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:14,y:66,label:'ЛЗ'},{slot:3,x:38,y:66,label:'ЦЗ'},
-    {slot:4,x:62,y:66,label:'ЦЗ'},{slot:5,x:86,y:66,label:'ПЗ'},{slot:6,x:26,y:44,label:'ЦП'},
-    {slot:7,x:50,y:44,label:'ОПМ'},{slot:8,x:74,y:44,label:'ЦП'},
-    {slot:9,x:14,y:19,label:'ЛВ'},{slot:10,x:50,y:19,label:'ЦФ'},{slot:11,x:86,y:19,label:'ПВ'},
-  ],
-  '4-2-3-1': [
-    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:14,y:66,label:'ЛЗ'},{slot:3,x:38,y:66,label:'ЦЗ'},
-    {slot:4,x:62,y:66,label:'ЦЗ'},{slot:5,x:86,y:66,label:'ПЗ'},{slot:6,x:35,y:54,label:'ОПМ'},
-    {slot:7,x:65,y:54,label:'ОПМ'},{slot:8,x:16,y:34,label:'ЛВ'},{slot:9,x:50,y:34,label:'АПМ'},
-    {slot:10,x:84,y:34,label:'ПВ'},{slot:11,x:50,y:16,label:'ЦФ'},
-  ],
-  '3-5-2': [
-    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:24,y:66,label:'ЦЗ'},{slot:3,x:50,y:66,label:'ЦЗ'},
-    {slot:4,x:76,y:66,label:'ЦЗ'},{slot:5,x:9,y:44,label:'ЛМ'},{slot:6,x:28,y:44,label:'ЦП'},
-    {slot:7,x:50,y:44,label:'ОПМ'},{slot:8,x:72,y:44,label:'ЦП'},{slot:9,x:91,y:44,label:'ПМ'},
-    {slot:10,x:38,y:19,label:'НАП'},{slot:11,x:62,y:19,label:'НАП'},
-  ],
-  '5-3-2': [
-    {slot:1,x:50,y:84,label:'ВРТ'},{slot:2,x:10,y:66,label:'ЛЗ'},{slot:3,x:28,y:66,label:'ЦЗ'},
-    {slot:4,x:50,y:66,label:'ЦЗ'},{slot:5,x:72,y:66,label:'ЦЗ'},{slot:6,x:90,y:66,label:'ПЗ'},
-    {slot:7,x:26,y:41,label:'ЦП'},{slot:8,x:50,y:41,label:'ЦП'},{slot:9,x:74,y:41,label:'ЦП'},
-    {slot:10,x:38,y:19,label:'НАП'},{slot:11,x:62,y:19,label:'НАП'},
-  ],
-};
+// ─── Flexible pitch builder zones ────────────────────────────────────────────
+const PITCH_ZONES = [
+  { id: 'GK',  y: 82, label: 'ВРТ' },
+  { id: 'DEF', y: 65, label: 'ЗАЩ' },
+  { id: 'MID', y: 43, label: 'ПОЛ' },
+  { id: 'FWD', y: 17, label: 'НАП' },
+];
+
+function posToZone(position) {
+  if (!position) return 'MID';
+  if (position === 'Goalkeeper') return 'GK';
+  if (['Centre-Back','Left-Back','Right-Back'].includes(position)) return 'DEF';
+  if (['Left Winger','Right Winger','Centre-Forward','Striker'].includes(position)) return 'FWD';
+  return 'MID';
+}
+
+function computeFormation(lineup) {
+  const starters = lineup.filter(s => s.slot >= 1 && s.slot <= 11);
+  const cnt = { GK:0, DEF:0, MID:0, FWD:0 };
+  for (const s of starters) {
+    const z = ['GK','DEF','MID','FWD'].includes(s.position_override) ? s.position_override : 'MID';
+    cnt[z]++;
+  }
+  return [cnt.DEF, cnt.MID, cnt.FWD].filter(c=>c>0).join('-') || '–';
+}
 
 // Interactive pitch builder state
-let _pitchState = { teamId: null, lineup: [], players: [], selectedPlayerId: null, formation: '4-4-2' };
+let _pitchState = { teamId: null, lineup: [], players: [], selectedPlayerId: null };
 
 const PITCH_SVG = `<svg viewBox="0 0 280 400" xmlns="http://www.w3.org/2000/svg" class="pitch-svg">
   <rect width="280" height="400" fill="#2d8a4e" rx="6"/>
@@ -654,6 +646,7 @@ async function showCoachPlayerEditForm(player) {
     const nationality_id = document.getElementById('cpe-nat').value||null;
     const shirt_number = parseInt(document.getElementById('cpe-shirt').value)||null;
     if (!name) { toast('Имя обязательно','error'); return false; }
+    if (shirt_number !== null && (shirt_number < 1 || shirt_number > 99)) { toast('Номер должен быть от 1 до 99','error'); return false; }
     await fetch('/api/players/'+player.id, {
       method:'PATCH',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+State.token},
@@ -800,6 +793,7 @@ async function showPlayerForm(player, defaultTeamId) {
   `, async () => {
     const payload = { name:document.getElementById('pf-name').value.trim(), date_of_birth:document.getElementById('pf-dob').value||null, nationality_id:document.getElementById('pf-nat').value||null, position:document.getElementById('pf-pos').value||null, foot:document.getElementById('pf-foot').value||null, height:parseInt(document.getElementById('pf-height').value)||null, team_id:document.getElementById('pf-team').value||null, shirt_number:parseInt(document.getElementById('pf-shirt').value)||null, market_value:parseFloat(document.getElementById('pf-mv').value)||0, image_url:document.getElementById('pf-img').value.trim()||null, status:document.getElementById('pf-status').value };
     if (!payload.name){toast('Имя обязательно','error');return false;}
+    if (payload.shirt_number !== null && (payload.shirt_number < 1 || payload.shirt_number > 99)){toast('Номер должен быть от 1 до 99','error');return false;}
     if (isEdit) await PUT('/players/'+player.id, payload); else await POST('/players', payload);
     toast(isEdit?'Игрок обновлён':'Игрок добавлен');
   });
@@ -2349,74 +2343,87 @@ async function renderCoachDashboard(app) {
 function renderLineupEditor(team, lineup) {
   const slots = lineup.slots || [];
   const allPlayers = team.players || [];
-  const reserves = slots.filter(s => s.slot > 11).sort((a,b)=>a.slot-b.slot);
-  const starterCount = slots.filter(s => s.slot <= 11).length;
-  _pitchState = { teamId: team.id, lineup: slots, players: allPlayers, selectedPlayerId: null, formation: '4-4-2' };
-
-  const reserveCard = (s) => {
-    const p = allPlayers.find(pl => pl.id === s.player_id);
-    if (!p) return '';
-    return `<div class="player-card">
-      ${avatarEl(p.image_url, p.name)}
-      <div class="pc-info"><div class="pc-name">${escHtml(p.name)}</div><div class="pc-pos">${posBadge(p.position)}</div></div>
-      <div class="pc-btn">
-        <button class="btn-icon" onclick="movePlayerToLineup(${p.id},1,${team.id})" title="→ Старт">⚡</button>
-        <button class="btn-icon" onclick="removeFromLineup(${p.id},${team.id})" title="Убрать">✕</button>
-      </div>
-    </div>`;
-  };
+  const starterCount = slots.filter(s=>s.slot>=1&&s.slot<=11).length;
+  const reserveCount = slots.filter(s=>s.slot>11&&s.slot<=22).length;
+  _pitchState = { teamId: team.id, lineup: slots, players: allPlayers, selectedPlayerId: null };
 
   return `
     <div class="lineup-editor">
       <div class="lineup-save-bar" style="flex-wrap:wrap;gap:8px">
-        <span>Расстановка: <select id="pb-formation" onchange="changePitchFormation(this.value)" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:2px 6px">
-          ${Object.keys(FORMATION_SLOTS).map(f=>`<option value="${f}">${f}</option>`).join('')}
-        </select></span>
-        <span style="font-size:12px;color:var(--text-muted)">${starterCount}/11 основных</span>
+        <span>Схема: <strong id="pb-formation-label">${computeFormation(slots)}</strong></span>
+        <span id="pb-starter-count" style="font-size:12px;color:var(--text-muted)">${starterCount}/11 основных</span>
         <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Авто-подбор</button>
       </div>
       <div class="pb-layout">
-        <div class="pb-pitch-wrap" id="pb-pitch">${renderPitchSlots(slots, '4-4-2')}</div>
+        <div class="pb-pitch-wrap" id="pb-pitch">${renderPitchZones(slots)}</div>
         <div class="pb-sidebar">
-          <div class="pb-sidebar-header">👆 Кликните игрока → затем позицию на поле</div>
+          <div class="pb-sidebar-header">👆 Выберите игрока → нажмите зону на поле</div>
           <div id="pb-player-list">${renderPitchSidebar(allPlayers, slots, null)}</div>
         </div>
       </div>
       <div style="margin-top:12px">
-        <div class="lineup-col-header">Запасные <span class="badge" style="background:rgba(255,255,255,.1)">${reserves.length}/11</span></div>
-        <div id="pb-reserves" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${reserves.map(reserveCard).join('')}</div>
+        <div class="lineup-col-header">Запасные <span id="pb-reserve-count" class="badge" style="background:rgba(255,255,255,.1)">${reserveCount}/11</span></div>
+        <div id="pb-reserves" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${renderReservesList(slots, allPlayers, team.id)}</div>
       </div>
     </div>`;
 }
 
-function renderPitchSlots(lineupSlots, formation) {
-  const defs = FORMATION_SLOTS[formation] || FORMATION_SLOTS['4-4-2'];
-  const slotMap = {};
-  for (const s of lineupSlots) { if (s.slot <= 11) slotMap[s.slot] = s; }
-  const dots = defs.map(fd => {
-    const asgn = slotMap[fd.slot];
-    const p = asgn ? (_pitchState.players||[]).find(pl=>pl.id===asgn.player_id) : null;
-    if (p) {
+function renderPitchZones(lineupSlots) {
+  const starters = lineupSlots.filter(s=>s.slot>=1&&s.slot<=11);
+  const zoneMap = { GK:[], DEF:[], MID:[], FWD:[] };
+  for (const s of starters) {
+    const z = ['GK','DEF','MID','FWD'].includes(s.position_override) ? s.position_override : 'MID';
+    zoneMap[z].push(s);
+  }
+  const hasSel = !!_pitchState.selectedPlayerId;
+  let html = '';
+  for (const zone of PITCH_ZONES) {
+    const zp = zoneMap[zone.id];
+    html += `<div class="pb-zone-band${hasSel?' pb-zone-ready':''}" style="top:${zone.y-9}%;height:18%" onclick="pitchZoneClick('${zone.id}')">
+      <span class="${hasSel?'pb-zone-add-hint':'pb-zone-label'}">${hasSel?`+ ${zone.label}`:zone.label}</span>
+    </div>`;
+    zp.forEach((s, i) => {
+      const p = (_pitchState.players||[]).find(pl=>pl.id===s.player_id);
+      if (!p) return;
+      const x = zp.length===1 ? 50 : 10 + 80*(i/(zp.length-1));
       const ini = p.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-      return `<div class="pb-slot pb-slot-filled" style="left:${fd.x}%;top:${fd.y}%" onclick="pitchSlotClick(${fd.slot})" title="${escHtml(p.name)}">
+      html += `<div class="pb-slot pb-slot-filled" style="left:${x}%;top:${zone.y}%" onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})" title="${escHtml(p.name)} — нажмите чтобы убрать в запас">
         <div class="pb-slot-av">${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}</div>
         <div class="pb-slot-name">${escHtml(p.name.split(' ')[0])}</div>
+        <div class="pb-slot-remove-badge">✕</div>
       </div>`;
-    }
-    return `<div class="pb-slot pb-slot-empty" style="left:${fd.x}%;top:${fd.y}%" onclick="pitchSlotClick(${fd.slot})"><div class="pb-slot-label">${fd.label}</div></div>`;
-  }).join('');
-  return `<div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${dots}</div></div>`;
+    });
+  }
+  return `<div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${html}</div></div>`;
 }
 
 function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
-  const inStarters = new Set(lineupSlots.filter(s=>s.slot<=11).map(s=>s.player_id));
+  const inStarters = new Set(lineupSlots.filter(s=>s.slot>=1&&s.slot<=11).map(s=>s.player_id));
   const available = allPlayers.filter(p => !inStarters.has(p.id));
-  if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все расставлены ✓</div>';
+  if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все расставлены в основе ✓</div>';
   return available.map(p => {
     const sel = p.id === selectedId;
     return `<div class="pb-player-row${sel?' pb-selected':''}" onclick="pitchPlayerClick(${p.id})">
       ${avatarEl(p.image_url,p.name)}
-      <div style="flex:1"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
+      <div style="flex:1;min-width:0"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
+      ${sel?`<span style="color:var(--green,#2ecc71);font-size:14px;font-weight:700">✓</span>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderReservesList(lineupSlots, allPlayers, teamId) {
+  const reserves = lineupSlots.filter(s=>s.slot>11&&s.slot<=22).sort((a,b)=>a.slot-b.slot);
+  if (!reserves.length) return `<div style="color:var(--text-muted);font-size:12px;padding:4px 0">Нет запасных</div>`;
+  return reserves.map(s => {
+    const p = allPlayers.find(pl=>pl.id===s.player_id);
+    if (!p) return '';
+    return `<div class="player-card">
+      ${avatarEl(p.image_url,p.name)}
+      <div class="pc-info"><div class="pc-name">${escHtml(p.name)}</div><div class="pc-pos">${posBadge(p.position)}</div></div>
+      <div class="pc-btn">
+        <button class="btn-icon" onclick="pitchReserveToStarter(${p.id},${teamId})" title="Поставить в основу">⚡</button>
+        <button class="btn-icon danger" onclick="pitchRemoveFromLineup(${p.id},${teamId})" title="Убрать из состава">✕</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -2425,86 +2432,78 @@ function pitchPlayerClick(playerId) {
   _pitchState.selectedPlayerId = _pitchState.selectedPlayerId === playerId ? null : playerId;
   const el = document.getElementById('pb-player-list');
   if (el) el.innerHTML = renderPitchSidebar(_pitchState.players, _pitchState.lineup, _pitchState.selectedPlayerId);
-  document.querySelectorAll('.pb-slot-empty').forEach(s => s.classList.toggle('pb-slot-ready', !!_pitchState.selectedPlayerId));
+  const pitchEl = document.getElementById('pb-pitch');
+  if (pitchEl) pitchEl.innerHTML = renderPitchZones(_pitchState.lineup);
 }
 
-async function pitchSlotClick(slot) {
+async function pitchZoneClick(zoneId) {
+  const pid = _pitchState.selectedPlayerId;
+  if (!pid) return;
   const tid = _pitchState.teamId;
-  const existing = _pitchState.lineup.find(s => s.slot === slot && s.slot <= 11);
-  if (_pitchState.selectedPlayerId) {
-    const pid = _pitchState.selectedPlayerId;
-    const fd = (FORMATION_SLOTS[_pitchState.formation]||FORMATION_SLOTS['4-4-2']).find(s=>s.slot===slot);
-    try {
-      const lr = await GET('/lineups/'+tid);
-      const cur = (lr.lineup||[]).filter(s=>s.player_id!==pid && s.slot!==slot);
-      cur.push({slot, player_id:pid, position_override: fd?.posOverride||null});
-      await PUT('/lineups/'+tid, {lineup:cur});
-      _pitchState.selectedPlayerId = null;
-      toast('Состав обновлён'); navigate('/coach');
-    } catch(e) { toast(e.message,'error'); }
-  } else if (existing) {
-    try {
-      const lr = await GET('/lineups/'+tid);
-      const cur = (lr.lineup||[]).filter(s=>s.slot!==slot);
-      await PUT('/lineups/'+tid, {lineup:cur});
-      toast('Игрок убран'); navigate('/coach');
-    } catch(e) { toast(e.message,'error'); }
-  }
-}
-
-async function changePitchFormation(formation) {
-  _pitchState.formation = formation;
-  const el = document.getElementById('pb-pitch');
-  if (el) el.innerHTML = renderPitchSlots(_pitchState.lineup, formation);
-}
-
-function bindLineupEditor() { /* interactions via global pitchPlayerClick/pitchSlotClick */ }
-
-async function addToLineup(playerId, teamId, where) {
+  const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
+  if (starters.length >= 11) { toast('Основной состав заполнен (11/11)', 'error'); return; }
+  const usedSlots = new Set(starters.map(s=>s.slot));
+  let freeSlot = null;
+  for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){freeSlot=i;break;} }
   try {
-    const lineupResp = await GET('/lineups/'+teamId);
-    const lineupArr = lineupResp.lineup || [];
-    const usedSlots = new Set(lineupArr.map(s=>s.slot));
-    let slot;
-    if (where === 'start') {
-      for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){slot=i;break;} }
-      if (!slot) { toast('Основной состав заполнен (11/11)','error'); return; }
-    } else {
-      for (let i=12;i<=22;i++) { if(!usedSlots.has(i)){slot=i;break;} }
-      if (!slot) { toast('Скамейка заполнена (11/11)','error'); return; }
-    }
-    const current = lineupArr.filter(s=>s.player_id!==playerId);
-    current.push({slot, player_id:playerId});
-    await PUT('/lineups/'+teamId, {lineup:current});
-    toast('Состав обновлён'); navigate('/coach');
+    const current = _pitchState.lineup.filter(s=>s.player_id!==pid);
+    current.push({ slot: freeSlot, player_id: pid, position_override: zoneId });
+    await PUT('/lineups/'+tid, { lineup: current });
+    await refreshPitchEditor();
   } catch(e) { toast(e.message,'error'); }
 }
 
-async function movePlayerToLineup(playerId, targetSlotBase, teamId) {
+async function pitchPlayerDotClick(playerId) {
+  const tid = _pitchState.teamId;
+  const usedReserveSlots = new Set(_pitchState.lineup.filter(s=>s.slot>11&&s.slot<=22).map(s=>s.slot));
+  let reserveSlot = null;
+  for (let i=12;i<=22;i++) { if(!usedReserveSlots.has(i)){reserveSlot=i;break;} }
   try {
-    const lineupResp = await GET('/lineups/'+teamId);
-    const lineupArr = lineupResp.lineup || [];
-    const usedSlots = new Set(lineupArr.map(s=>s.slot));
-    let slot;
-    if (targetSlotBase === 1) {
-      for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){slot=i;break;} }
-    } else {
-      for (let i=12;i<=22;i++) { if(!usedSlots.has(i)){slot=i;break;} }
-    }
-    if (!slot) { toast('Секция заполнена','error'); return; }
-    const current = lineupArr.filter(s=>s.player_id!==playerId);
-    current.push({slot, player_id:playerId});
-    await PUT('/lineups/'+teamId, {lineup:current});
-    toast('Перемещено'); navigate('/coach');
+    const current = _pitchState.lineup.filter(s=>s.player_id!==playerId);
+    if (reserveSlot) current.push({ slot: reserveSlot, player_id: playerId, position_override: null });
+    await PUT('/lineups/'+tid, { lineup: current });
+    await refreshPitchEditor();
   } catch(e) { toast(e.message,'error'); }
 }
 
-async function removeFromLineup(playerId, teamId) {
+async function pitchReserveToStarter(playerId, teamId) {
+  const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
+  if (starters.length >= 11) { toast('Основной состав заполнен (11/11)', 'error'); return; }
+  const usedSlots = new Set(starters.map(s=>s.slot));
+  let freeSlot = null;
+  for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){freeSlot=i;break;} }
+  const p = _pitchState.players.find(pl=>pl.id===playerId);
   try {
-    const lineupResp = await GET('/lineups/'+teamId);
-    const current = (lineupResp.lineup||[]).filter(s=>s.player_id!==playerId);
-    await PUT('/lineups/'+teamId, {lineup:current});
-    toast('Убрано'); navigate('/coach');
+    const current = _pitchState.lineup.filter(s=>s.player_id!==playerId);
+    current.push({ slot: freeSlot, player_id: playerId, position_override: p ? posToZone(p.position) : 'MID' });
+    await PUT('/lineups/'+teamId, { lineup: current });
+    await refreshPitchEditor();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function pitchRemoveFromLineup(playerId, teamId) {
+  try {
+    const current = _pitchState.lineup.filter(s=>s.player_id!==playerId);
+    await PUT('/lineups/'+teamId, { lineup: current });
+    await refreshPitchEditor();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function refreshPitchEditor() {
+  const tid = _pitchState.teamId;
+  try {
+    const lr = await GET('/lineups/'+tid);
+    _pitchState.lineup = lr.lineup || [];
+    _pitchState.selectedPlayerId = null;
+    const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
+    const reserves = _pitchState.lineup.filter(s=>s.slot>11&&s.slot<=22);
+    const $ = id => document.getElementById(id);
+    if ($('pb-pitch')) $('pb-pitch').innerHTML = renderPitchZones(_pitchState.lineup);
+    if ($('pb-player-list')) $('pb-player-list').innerHTML = renderPitchSidebar(_pitchState.players, _pitchState.lineup, null);
+    if ($('pb-reserves')) $('pb-reserves').innerHTML = renderReservesList(_pitchState.lineup, _pitchState.players, tid);
+    if ($('pb-starter-count')) $('pb-starter-count').textContent = `${starters.length}/11 основных`;
+    if ($('pb-formation-label')) $('pb-formation-label').textContent = computeFormation(_pitchState.lineup);
+    if ($('pb-reserve-count')) $('pb-reserve-count').textContent = `${reserves.length}/11`;
   } catch(e) { toast(e.message,'error'); }
 }
 
@@ -2512,7 +2511,8 @@ async function autoLineup(teamId) {
   if (!confirm('Автоматически распределить всех игроков?')) return;
   try {
     await POST('/lineups/'+teamId+'/auto', {});
-    toast('Состав автоматически сформирован!'); navigate('/coach');
+    toast('Состав автоматически сформирован!');
+    await refreshPitchEditor();
   } catch(e) { toast(e.message,'error'); }
 }
 
