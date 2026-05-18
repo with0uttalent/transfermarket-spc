@@ -174,21 +174,27 @@ function generateTeamMatchNews(matchId, homeTeamId, awayTeamId, homeTeamName, aw
     .run(`${awayTeamName}: match result`, awayMsg, 'team', matchId, awayTeamId);
 }
 
-function getLineupStarters(db, teamId) {
-  const starters = db.prepare(`
-    SELECT p.* FROM team_lineups tl
+function getLineupInfo(db, teamId) {
+  const rows = db.prepare(`
+    SELECT p.*, tl.position_override as zone
+    FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
     WHERE tl.team_id = ? AND tl.slot <= 11 AND p.status = 'active'
       AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
     ORDER BY tl.slot ASC
     LIMIT 11
   `).all(teamId);
-  if (starters.length > 0) return starters;
-  return db.prepare(`
+  if (rows.length > 0) {
+    const zoneMap = {};
+    for (const r of rows) if (r.zone) zoneMap[r.id] = r.zone;
+    return { players: rows, zoneMap };
+  }
+  const players = db.prepare(`
     SELECT p.* FROM players p
     WHERE p.team_id = ? AND p.status = 'active'
       AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
   `).all(teamId);
+  return { players, zoneMap: {} };
 }
 
 function simulateScheduledMatches() {
@@ -203,9 +209,9 @@ function simulateScheduledMatches() {
   `).all(today);
 
   for (const match of scheduled) {
-    const homePl = getLineupStarters(db, match.home_team_id);
-    const awayPl = getLineupStarters(db, match.away_team_id);
-    const result = simulateMatch(match.home_team_id, match.away_team_id, homePl, awayPl);
+    const home = getLineupInfo(db, match.home_team_id);
+    const away = getLineupInfo(db, match.away_team_id);
+    const result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
     const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
     generateMatchNews(match.id, match.home_name, match.away_name, result.homeScore, result.awayScore, evRows);
@@ -234,10 +240,10 @@ function generateRandomMatch() {
   const matchR = db.prepare(`INSERT INTO matches (home_team_id, away_team_id, match_date, status) VALUES (?,?,?,'scheduled')`).run(homeTeam.id, awayTeam.id, today);
   const matchId = matchR.lastInsertRowid;
 
-  const homePl = getLineupStarters(db, homeTeam.id);
-  const awayPl = getLineupStarters(db, awayTeam.id);
+  const home = getLineupInfo(db, homeTeam.id);
+  const away = getLineupInfo(db, awayTeam.id);
 
-  const result = simulateMatch(homeTeam.id, awayTeam.id, homePl, awayPl);
+  const result = simulateMatch(homeTeam.id, awayTeam.id, home.players, away.players, home.zoneMap, away.zoneMap);
   applyMatchResults(matchId, homeTeam.id, awayTeam.id, result);
   const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(matchId);
   generateMatchNews(matchId, homeTeam.name, awayTeam.name, result.homeScore, result.awayScore, evRows);

@@ -154,7 +154,10 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
       if (!position) return 'MID';
       if (position === 'Goalkeeper') return 'GK';
       if (['Centre-Back','Left-Back','Right-Back'].includes(position)) return 'DEF';
-      if (['Left Winger','Right Winger','Centre-Forward','Striker'].includes(position)) return 'FWD';
+      if (position === 'Defensive Midfield') return 'DMF';
+      if (position === 'Central Midfield') return 'MID';
+      if (['Attacking Midfield','Left Winger','Right Winger'].includes(position)) return 'AMF';
+      if (['Centre-Forward','Striker'].includes(position)) return 'FWD';
       return 'MID';
     }
     let slot = 1;

@@ -78,21 +78,27 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: r.lastInsertRowid });
 });
 
-function getLineupStarters(db, teamId) {
-  const starters = db.prepare(`
-    SELECT p.* FROM team_lineups tl
+function getLineupInfo(db, teamId) {
+  const rows = db.prepare(`
+    SELECT p.*, tl.position_override as zone
+    FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
     WHERE tl.team_id = ? AND tl.slot <= 11 AND p.status = 'active'
       AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
     ORDER BY tl.slot ASC
     LIMIT 11
   `).all(teamId);
-  if (starters.length > 0) return starters;
-  return db.prepare(`
+  if (rows.length > 0) {
+    const zoneMap = {};
+    for (const r of rows) if (r.zone) zoneMap[r.id] = r.zone;
+    return { players: rows, zoneMap };
+  }
+  const players = db.prepare(`
     SELECT p.* FROM players p
     WHERE p.team_id = ? AND p.status = 'active'
       AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
   `).all(teamId);
+  return { players, zoneMap: {} };
 }
 
 router.post('/:id/simulate', requireAuth, (req, res) => {
@@ -101,9 +107,9 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
   if (!match) return res.status(404).json({ error: 'Not found' });
   if (match.status === 'finished') return res.status(400).json({ error: 'Match already simulated' });
 
-  const homePl = getLineupStarters(db, match.home_team_id);
-  const awayPl = getLineupStarters(db, match.away_team_id);
-  const result = simulateMatch(match.home_team_id, match.away_team_id, homePl, awayPl);
+  const home = getLineupInfo(db, match.home_team_id);
+  const away = getLineupInfo(db, match.away_team_id);
+  const result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
 
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 

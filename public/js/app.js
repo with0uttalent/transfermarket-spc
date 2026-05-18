@@ -116,48 +116,59 @@ function pitchCoords(pos, idxInRow, countInRow, isAway) {
 }
 // ─── Flexible pitch builder zones ────────────────────────────────────────────
 const PITCH_ZONES = [
-  { id: 'GK',  y: 82, label: 'ВРТ' },
-  { id: 'DEF', y: 65, label: 'ЗАЩ' },
-  { id: 'MID', y: 43, label: 'ПОЛ' },
-  { id: 'FWD', y: 17, label: 'НАП' },
+  { id: 'FWD', y: 10, label: 'НАП' },
+  { id: 'AMF', y: 24, label: 'АТП' },
+  { id: 'MID', y: 38, label: 'ПОЛ' },
+  { id: 'DMF', y: 53, label: 'ОПЗ' },
+  { id: 'DEF', y: 68, label: 'ЗАЩ' },
+  { id: 'GK',  y: 84, label: 'ВРТ' },
 ];
+
+const ALL_ZONES = ['GK','DEF','DMF','MID','AMF','FWD'];
 
 function posToZone(position) {
   if (!position) return 'MID';
   if (position === 'Goalkeeper') return 'GK';
   if (['Centre-Back','Left-Back','Right-Back'].includes(position)) return 'DEF';
-  if (['Left Winger','Right Winger','Centre-Forward','Striker'].includes(position)) return 'FWD';
+  if (position === 'Defensive Midfield') return 'DMF';
+  if (position === 'Central Midfield') return 'MID';
+  if (['Attacking Midfield','Left Winger','Right Winger'].includes(position)) return 'AMF';
+  if (['Centre-Forward','Striker'].includes(position)) return 'FWD';
   return 'MID';
 }
 
 function computeFormation(lineup) {
   const starters = lineup.filter(s => s.slot >= 1 && s.slot <= 11);
-  const cnt = { GK:0, DEF:0, MID:0, FWD:0 };
+  const cnt = { GK:0, DEF:0, DMF:0, MID:0, AMF:0, FWD:0 };
   for (const s of starters) {
-    const z = ['GK','DEF','MID','FWD'].includes(s.position_override) ? s.position_override : 'MID';
-    cnt[z]++;
+    const z = ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(s.position);
+    if (z in cnt) cnt[z]++;
   }
-  return [cnt.DEF, cnt.MID, cnt.FWD].filter(c=>c>0).join('-') || '–';
+  return [cnt.DEF, cnt.DMF, cnt.MID, cnt.AMF, cnt.FWD].filter(c => c > 0).join('-') || '–';
 }
 
 // Position penalty factor (1.0 = no penalty)
 const ZONE_PENALTY = {
-  GK:  { GK: 1.00, DEF: 0.82, MID: 0.68, FWD: 0.58 },
-  DEF: { GK: 0.82, DEF: 1.00, MID: 0.85, FWD: 0.72 },
-  MID: { GK: 0.68, DEF: 0.85, MID: 1.00, FWD: 0.85 },
-  FWD: { GK: 0.58, DEF: 0.72, MID: 0.85, FWD: 1.00 },
+  GK:  { GK:1.00, DEF:0.80, DMF:0.65, MID:0.55, AMF:0.50, FWD:0.45 },
+  DEF: { GK:0.80, DEF:1.00, DMF:0.88, MID:0.75, AMF:0.65, FWD:0.55 },
+  DMF: { GK:0.65, DEF:0.88, DMF:1.00, MID:0.90, AMF:0.80, FWD:0.68 },
+  MID: { GK:0.55, DEF:0.75, DMF:0.90, MID:1.00, AMF:0.90, FWD:0.75 },
+  AMF: { GK:0.50, DEF:0.65, DMF:0.80, MID:0.90, AMF:1.00, FWD:0.88 },
+  FWD: { GK:0.45, DEF:0.55, DMF:0.68, MID:0.75, AMF:0.88, FWD:1.00 },
 };
 
 function positionPenalty(naturalZone, assignedZone) {
   return (ZONE_PENALTY[naturalZone] || {})[assignedZone] ?? 0.70;
 }
 
-// Weighted overall rating from skills, optionally with out-of-position penalty
+// Weighted overall rating from skills [pace, shooting, passing, defending, physical]
 const OVR_WEIGHTS = {
-  GK:  [0.10, 0.05, 0.15, 0.40, 0.30],
-  DEF: [0.20, 0.10, 0.15, 0.35, 0.20],
-  MID: [0.15, 0.20, 0.30, 0.15, 0.20],
-  FWD: [0.30, 0.35, 0.20, 0.05, 0.10],
+  GK:  [0.05, 0.03, 0.12, 0.50, 0.30],
+  DEF: [0.18, 0.08, 0.14, 0.38, 0.22],
+  DMF: [0.12, 0.12, 0.32, 0.28, 0.16],
+  MID: [0.15, 0.20, 0.32, 0.16, 0.17],
+  AMF: [0.22, 0.28, 0.28, 0.10, 0.12],
+  FWD: [0.28, 0.40, 0.16, 0.05, 0.11],
 };
 
 function calcOverall(player, assignedZone) {
@@ -235,21 +246,17 @@ function renderPitch(players, isAway = false) {
   return `<div class="pitch-container"><div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${dots}</div></div></div>`;
 }
 
-// Zone-aware pitch renderer — uses coach lineup's position_override (GK/DEF/MID/FWD)
-// Falls back to posToZone(player.position) when position_override is absent
 function renderPitchFromLineup(lineupSlots, isAway = false) {
   const starters = lineupSlots.filter(s => s.slot >= 1 && s.slot <= 11);
   if (!starters.length) return `<div class="empty-state"><p>Нет игроков в стартовом составе</p></div>`;
 
-  const ZONE_Y_HOME = { GK: 82, DEF: 65, MID: 43, FWD: 17 };
-  const ZONE_Y_AWAY = { GK: 18, DEF: 35, MID: 57, FWD: 83 };
+  const ZONE_Y_HOME = { GK:84, DEF:68, DMF:53, MID:38, AMF:24, FWD:10 };
+  const ZONE_Y_AWAY = { GK:16, DEF:32, DMF:47, MID:62, AMF:76, FWD:90 };
   const yMap = isAway ? ZONE_Y_AWAY : ZONE_Y_HOME;
 
-  const zones = { GK: [], DEF: [], MID: [], FWD: [] };
+  const zones = { GK:[], DEF:[], DMF:[], MID:[], AMF:[], FWD:[] };
   for (const s of starters) {
-    const z = ['GK','DEF','MID','FWD'].includes(s.position_override)
-      ? s.position_override
-      : posToZone(s.position);
+    const z = ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(s.position);
     zones[z].push(s);
   }
 
@@ -2477,16 +2484,19 @@ function renderLineupEditor(team, lineup) {
 
 function renderPitchZones(lineupSlots) {
   const starters = lineupSlots.filter(s=>s.slot>=1&&s.slot<=11);
-  const zoneMap = { GK:[], DEF:[], MID:[], FWD:[] };
+  const zoneMap = {};
+  for (const z of ALL_ZONES) zoneMap[z] = [];
   for (const s of starters) {
-    const z = ['GK','DEF','MID','FWD'].includes(s.position_override) ? s.position_override : 'MID';
+    const z = ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(
+      (_pitchState.players||[]).find(pl=>pl.id===s.player_id)?.position
+    );
     zoneMap[z].push(s);
   }
   const hasSel = !!_pitchState.selectedPlayerId;
   let html = '';
   for (const zone of PITCH_ZONES) {
     const zp = zoneMap[zone.id];
-    html += `<div class="pb-zone-band${hasSel?' pb-zone-ready':''}" style="top:${zone.y-9}%;height:18%" onclick="pitchZoneClick('${zone.id}')">
+    html += `<div class="pb-zone-band${hasSel?' pb-zone-ready':''}" style="top:${zone.y-7}%;height:14%" onclick="pitchZoneClick('${zone.id}')">
       <span class="${hasSel?'pb-zone-add-hint':'pb-zone-label'}">${hasSel?`+ ${zone.label}`:zone.label}</span>
     </div>`;
     zp.forEach((s, i) => {

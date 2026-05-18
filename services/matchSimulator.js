@@ -93,6 +93,41 @@ function teamStrengthFromSkills(players, skillsMap) {
   };
 }
 
+// ─── Zone-aware strength (uses lineup zone assignments + market value) ─────────
+function teamStrengthWithZones(players, zoneMap) {
+  if (!players.length) return { attack: 6, defense: 6, midfield: 6 };
+
+  const b = p => Math.log10(Math.max(p.market_value || 500000, 100000));
+  const groups = { GK:[], DEF:[], DMF:[], MID:[], AMF:[], FWD:[] };
+  for (const p of players) {
+    const z = zoneMap[p.id] || 'MID';
+    (groups[z] = groups[z] || []).push(p);
+  }
+
+  const avgOf = arr => arr.length ? arr.reduce((s, p) => s + b(p), 0) / arr.length : null;
+  const overall = players.reduce((s, p) => s + b(p), 0) / players.length;
+
+  const G  = avgOf(groups.GK)  ?? overall * 0.70;
+  const D  = avgOf(groups.DEF) ?? overall * 0.65;
+  const DM = avgOf(groups.DMF) ?? overall * 0.85;
+  const M  = avgOf(groups.MID) ?? overall;
+  const AM = avgOf(groups.AMF) ?? overall * 0.85;
+  const F  = avgOf(groups.FWD) ?? overall * 0.65;
+
+  // Penalties for missing key zones
+  const hasGK  = groups.GK.length  > 0 ? 1.0 : 0.60;
+  const hasDef = (groups.DEF.length + groups.DMF.length) >= 2 ? 1.0
+               : (groups.DEF.length + groups.DMF.length) === 1 ? 0.80 : 0.55;
+  const hasFwd = (groups.FWD.length + groups.AMF.length) > 0 ? 1.0 : 0.50;
+  const hasMid = (groups.MID.length + groups.DMF.length + groups.AMF.length) >= 2 ? 1.0 : 0.80;
+
+  return {
+    attack:   (F*0.45 + AM*0.30 + M*0.15 + DM*0.05 + D*0.03 + G*0.02) * hasFwd * hasMid,
+    defense:  (G*0.30 + D*0.40 + DM*0.20 + M*0.10) * hasGK * hasDef,
+    midfield: DM*0.30 + M*0.40 + AM*0.30,
+  };
+}
+
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function rand() { return Math.random(); }
 function ri(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
@@ -379,17 +414,21 @@ function generateMatchFullStats(homeStr, awayStr, homeScore, awayScore) {
   };
 }
 
-// ─── simulateMatch — market-value based (original behavior) ──────────────────
-function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers) {
-  const homeStr = homePlayers.length ? teamStrength(homePlayers) : { attack: 6, defense: 6, midfield: 6 };
-  const awayStr = awayPlayers.length ? teamStrength(awayPlayers) : { attack: 6, defense: 6, midfield: 6 };
+// ─── simulateMatch — market-value based, optional zone maps ──────────────────
+function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, homeZoneMap, awayZoneMap) {
+  const homeStr = homeZoneMap && Object.keys(homeZoneMap).length
+    ? teamStrengthWithZones(homePlayers, homeZoneMap)
+    : homePlayers.length ? teamStrength(homePlayers) : { attack: 6, defense: 6, midfield: 6 };
+  const awayStr = awayZoneMap && Object.keys(awayZoneMap).length
+    ? teamStrengthWithZones(awayPlayers, awayZoneMap)
+    : awayPlayers.length ? teamStrength(awayPlayers) : { attack: 6, defense: 6, midfield: 6 };
 
   return simulateMatchCore(
     homeTeamId, awayTeamId,
     [...homePlayers], [...awayPlayers],
     homeStr, awayStr,
     homePlayers, awayPlayers,
-    false // use market-value rate
+    false
   );
 }
 
@@ -454,4 +493,5 @@ module.exports = {
   roundName,
   generateMatchFullStats,
   teamStrengthFromSkills,
+  teamStrengthWithZones,
 };
