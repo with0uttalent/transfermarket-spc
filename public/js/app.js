@@ -627,7 +627,8 @@ async function renderTeamDetail(app, id) {
       ${team.stadium_url ? `<div class="stadium-banner"><img src="${escHtml(team.stadium_url)}" alt="${escHtml(team.stadium||team.name)}" class="stadium-img"/><div class="stadium-label">🏟️ ${escHtml(team.stadium||'Стадион')}</div></div>` : ''}
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="squad">Состав (${team.players.length})</button>
-        <button class="detail-tab" data-tab="formation">Состав на поле</button>
+        <button class="detail-tab" data-tab="formation">Расстановка</button>
+        <button class="detail-tab" data-tab="about">О клубе</button>
         <button class="detail-tab" data-tab="titles">Титулы (${team.titles.length})</button>
         <button class="detail-tab" data-tab="transfers">Трансферы</button>
         <button class="detail-tab" data-tab="matches">Матчи</button>
@@ -635,6 +636,7 @@ async function renderTeamDetail(app, id) {
       </div>
       <div id="tab-squad" class="tab-panel active">${renderSquadTab(team, isCoach() && State.coachProfile?.team_id === team.id)}</div>
       <div id="tab-formation" class="tab-panel"><div class="pitch-section" style="padding:20px"><div class="empty-state"><p>Загрузка…</p></div></div></div>
+      <div id="tab-about" class="tab-panel">${renderAboutTab(team)}</div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
       <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Загрузка матчей…</p></div></div>
@@ -682,6 +684,24 @@ async function renderTeamDetail(app, id) {
       } catch { panel.innerHTML = '<div class="empty-state"><p>Error loading news</p></div>'; }
     }, { once: true });
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
+}
+
+function renderAboutTab(team) {
+  const hasContent = team.about_text || team.team_photo_url;
+  const empty = `<div class="empty-state"><div class="empty-icon">🏟️</div><p>Информация о клубе пока не заполнена</p></div>`;
+  if (!hasContent) return empty;
+  return `
+    ${team.team_photo_url ? `
+      <div class="team-photo-block">
+        <img src="${escHtml(team.team_photo_url)}" alt="${escHtml(team.name)}" class="team-panorama-img"/>
+        <div class="team-photo-caption">📸 ${escHtml(team.name)}</div>
+      </div>` : ''}
+    ${team.about_text ? `
+      <div class="card about-text-card">
+        <div class="card-header">О клубе</div>
+        <div class="card-body about-text-body">${escHtml(team.about_text).replace(/\n/g,'<br>')}</div>
+      </div>` : ''}
+  `;
 }
 
 function renderSquadTab(team, isOwnTeam = false) {
@@ -2454,9 +2474,13 @@ function renderLeagueSchedule(schedule) {
         <div class="matchday-header">${headerLabel}</div>
         ${grp.games.map(g => {
           const played = g.match_id && g.home_score !== null;
+          const timeStr = played ? '' : '<div class="mi-time">🕕 18:00 МСК</div>';
           return `<div class="matchday-item" ${g.match_id?`onclick="navigate('/matches/${g.match_id}')"`:''}>
             <div class="mi-team home">${escHtml(g.home_team_name||'–')}</div>
-            <div class="mi-score ${played?'':'pending'}">${played?`${g.home_score}–${g.away_score}`:'vs'}</div>
+            <div class="mi-score-wrap">
+              <div class="mi-score ${played?'':'pending'}">${played?`${g.home_score}–${g.away_score}`:'vs'}</div>
+              ${timeStr}
+            </div>
             <div class="mi-team">${escHtml(g.away_team_name||'–')}</div>
           </div>`;
         }).join('')}
@@ -2943,15 +2967,20 @@ async function showCoachClubForm(coach, team) {
     <div class="form-group"><label>Название клуба *</label><input type="text" id="ccf-name" value="${escHtml(team.name||'')}"/></div>
     <div class="form-group"><label>URL логотипа</label><input type="text" id="ccf-logo" value="${escHtml(team.logo_url||'')}" placeholder="https://…"/></div>
     <div class="form-group"><label>URL фото стадиона</label><input type="text" id="ccf-stadium" value="${escHtml(team.stadium_url||'')}" placeholder="https://…"/></div>
+    <div style="border-top:1px solid rgba(255,255,255,.1);margin:14px 0 10px;padding-top:10px">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📋 Вкладка «О клубе»</div>
+      <div class="form-group"><label>Панорамное фото команды</label><input type="text" id="ccf-photo" value="${escHtml(team.team_photo_url||'')}" placeholder="https://… (широкоформатная фотография)"/></div>
+      <div class="form-group"><label>Описание клуба</label><textarea id="ccf-about" rows="5" style="width:100%;background:var(--bg-darker);border:1px solid var(--border);color:#fff;border-radius:6px;padding:8px;resize:vertical;font-family:inherit" placeholder="История клуба, достижения, философия…">${escHtml(team.about_text||'')}</textarea></div>
+    </div>
   `, async () => {
     const team_name = document.getElementById('ccf-name').value.trim();
     const team_logo_url = document.getElementById('ccf-logo').value.trim()||null;
     const stadium_url = document.getElementById('ccf-stadium').value.trim()||null;
+    const team_photo_url = document.getElementById('ccf-photo').value.trim()||null;
+    const about_text = document.getElementById('ccf-about').value.trim()||null;
     if (!team_name) { toast('Название клуба обязательно','error'); return false; }
     await PUT('/coaches/'+coach.id, { team_name, team_logo_url });
-    if (stadium_url !== team.stadium_url) {
-      await PUT('/teams/'+team.id, { ...team, name: team_name, logo_url: team_logo_url||team.logo_url, stadium_url });
-    }
+    await PUT('/teams/'+team.id, { ...team, name: team_name, logo_url: team_logo_url||team.logo_url, stadium_url, about_text, team_photo_url });
     State.coachProfile = null;
     toast('Клуб обновлён');
   });

@@ -88,16 +88,31 @@ router.post('/', requireAuth, (req, res) => {
 });
 
 router.put('/:id', requireAuth, (req, res) => {
-  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value, stadium_url } = req.body;
+  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value, stadium_url, about_text, team_photo_url } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
   const result = db.prepare(`
-    UPDATE teams SET name=?, short_name=?, country_id=?, competition_id=?, founded=?, stadium=?, logo_url=?, market_value=?, stadium_url=?
+    UPDATE teams SET name=?, short_name=?, country_id=?, competition_id=?, founded=?, stadium=?, logo_url=?, market_value=?, stadium_url=?, about_text=?, team_photo_url=?
     WHERE id=?
   `).run(name, short_name || null, country_id || null, competition_id || null,
-    founded || null, stadium || null, logo_url || null, market_value || 0, stadium_url || null, req.params.id);
+    founded || null, stadium || null, logo_url || null, market_value || 0, stadium_url || null,
+    about_text || null, team_photo_url || null, req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ id: Number(req.params.id), name });
+});
+
+router.patch('/:id/about', requireAuth, (req, res) => {
+  const db = getDb();
+  const id = req.params.id;
+  const { about_text, team_photo_url } = req.body;
+  // Coaches may only edit their own team's about section
+  if (req.user.role !== 'admin') {
+    const coach = db.prepare('SELECT team_id FROM coaches WHERE user_id=?').get(req.user.id);
+    if (!coach || coach.team_id != id) return res.status(403).json({ error: 'Forbidden' });
+  }
+  db.prepare('UPDATE teams SET about_text=?, team_photo_url=? WHERE id=?')
+    .run(about_text || null, team_photo_url || null, id);
+  res.json({ ok: true });
 });
 
 router.delete('/:id', requireAuth, (req, res) => {

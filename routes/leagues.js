@@ -366,10 +366,10 @@ router.post('/:id/simulate-matchday', requireAdmin, (req, res) => {
         AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
     `).all(srow.away_team_id);
 
-    // Create match record
+    // Create match record — 18:00 Moscow = 15:00 UTC
     const matchR = db.prepare(`
-      INSERT INTO matches (home_team_id, away_team_id, match_date, status, league_id, matchday)
-      VALUES (?,?,?,'scheduled',?,?)
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
+      VALUES (?,?,?,'15:00','scheduled',?,?)
     `).run(srow.home_team_id, srow.away_team_id, today, league.id, matchday);
     const matchId = matchR.lastInsertRowid;
 

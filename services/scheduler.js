@@ -369,10 +369,10 @@ function simulateLeagueMatchday(leagueId) {
       for (const sk of skillRows) skillsMap[sk.player_id] = sk;
     }
 
-    // Create match record
+    // Create match record — 18:00 Moscow = 15:00 UTC
     const matchR = db.prepare(`
-      INSERT INTO matches (home_team_id, away_team_id, match_date, status, league_id, matchday)
-      VALUES (?,?,?,'scheduled',?,?)
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
+      VALUES (?,?,?,'15:00','scheduled',?,?)
     `).run(srow.home_team_id, srow.away_team_id, today, leagueId, matchday);
     const matchId = matchR.lastInsertRowid;
 
