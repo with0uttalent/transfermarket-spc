@@ -6,6 +6,22 @@ const {
   commentaryPenaltyMiss, commentaryBigSave, commentaryNearMiss,
 } = require('./commentaryEngine');
 
+const PASS_ACTIONS = [
+  '{from} отдаёт точный пас на {to}',
+  '{from} накрывает {to} диагональю в разрез',
+  '{from} переводит мяч на {to}',
+  '{from} выкатывает на {to} после финта',
+  '{from} первым касанием отыгрывает {to}',
+  '{from} делает передачу пяткой на {to}',
+];
+const DRIBBLE_ACTIONS = [
+  '{player} уходит от опекуна финтом',
+  '{player} прошивает через двух защитников',
+  '{player} ускоряется и уходит от прессинга',
+  '{player} элегантно обрабатывает мяч',
+  '{player} на скорости врывается в штрафную',
+];
+
 const ATTACK_POSITIONS = new Set(['Centre-Forward','Striker','Left Winger','Right Winger','Attacking Midfield']);
 const MID_POSITIONS    = new Set(['Central Midfield','Defensive Midfield']);
 const DEF_POSITIONS    = new Set(['Centre-Back','Left-Back','Right-Back']);
@@ -181,6 +197,27 @@ function simulateMatchCore(
       return;
     }
 
+    // Build-up sequence: 1-3 pass/dribble events 2-3 minutes before goal
+    const buildMinStart = Math.max(1, minute - ri(1, 3));
+    const buildCount = ri(1, 3);
+    const passers = attackers.filter(p => p.id !== scorer.id);
+    for (let b = 0; b < buildCount; b++) {
+      const bMin = buildMinStart + b;
+      if (bMin >= minute) break;
+      if (rand() < 0.5 && passers.length >= 2) {
+        const from = pick(passers);
+        const to = pick(passers.filter(p => p.id !== from.id));
+        const tmpl = pick(PASS_ACTIONS);
+        addEvent(bMin, 'buildup', teamId, from.id, to.id,
+          `🔵 ${tmpl.replace('{from}', from.name).replace('{to}', to.name)}`);
+      } else if (passers.length) {
+        const player = pick(passers);
+        const tmpl = pick(DRIBBLE_ACTIONS);
+        addEvent(bMin, 'buildup', player.team_id || teamId, player.id, null,
+          `🟡 ${tmpl.replace('{player}', player.name)}`);
+      }
+    }
+
     track(scorer.id); stats[scorer.id].goals++; stats[scorer.id].rating += 1.5;
     if (assister) { track(assister.id); stats[assister.id].assists++; stats[assister.id].rating += 0.8; }
     isHome ? homeScore++ : awayScore++;
@@ -313,7 +350,9 @@ function simulateMatchCore(
         const off = pick(activeHome);
         const bench = homeReserves.filter(p => !activeHome.find(f => f.id === p.id));
         if (bench.length) {
-          const on = pick(bench);
+          // prefer priority_sub players
+          const priority = bench.filter(p => p.priority_sub);
+          const on = priority.length ? priority[0] : pick(bench);
           addEvent(m, 'substitution', homeTeamId, on.id, off.id,
             `🔄 Замена: ${commentarySub(on.name, off.name)}`);
           removePlayer(off, true); activeHome.push(on); subsDone.home++;
@@ -323,7 +362,9 @@ function simulateMatchCore(
         const off = pick(activeAway);
         const bench = awayReserves.filter(p => !activeAway.find(f => f.id === p.id));
         if (bench.length) {
-          const on = pick(bench);
+          // prefer priority_sub players
+          const priority = bench.filter(p => p.priority_sub);
+          const on = priority.length ? priority[0] : pick(bench);
           addEvent(m, 'substitution', awayTeamId, on.id, off.id,
             `🔄 Замена: ${commentarySub(on.name, off.name)}`);
           removePlayer(off, false); activeAway.push(on); subsDone.away++;

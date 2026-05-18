@@ -29,11 +29,14 @@ router.get('/:teamId', (req, res) => {
   if (!team) return res.status(404).json({ error: 'Team not found' });
 
   const lineup = db.prepare(`
-    SELECT tl.slot, tl.player_id, tl.position_override,
+    SELECT tl.slot, tl.player_id, tl.position_override, tl.priority_sub,
            p.name AS player_name, p.position, p.shirt_number, p.market_value,
-           p.status AS player_status
+           p.status AS player_status, p.image_url,
+           pi.matches_remaining AS injury_matches_remaining,
+           pi.injury_type
     FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
+    LEFT JOIN player_injuries pi ON pi.player_id = p.id AND pi.matches_remaining > 0
     WHERE tl.team_id = ?
     ORDER BY tl.slot ASC
   `).all(teamId);
@@ -90,21 +93,25 @@ router.put('/:teamId', requireAuth, (req, res) => {
 
     // Insert new lineup
     const insert = db.prepare(`
-      INSERT INTO team_lineups (team_id, player_id, slot, position_override)
-      VALUES (?,?,?,?)
+      INSERT INTO team_lineups (team_id, player_id, slot, position_override, priority_sub)
+      VALUES (?,?,?,?,?)
     `);
     for (const entry of lineup) {
-      insert.run(teamId, entry.player_id, entry.slot, entry.position_override || null);
+      insert.run(teamId, entry.player_id, entry.slot, entry.position_override || null, entry.priority_sub ? 1 : 0);
     }
   });
 
   setLineup();
 
   const updatedLineup = db.prepare(`
-    SELECT tl.slot, tl.player_id, tl.position_override,
-           p.name AS player_name, p.position, p.shirt_number
+    SELECT tl.slot, tl.player_id, tl.position_override, tl.priority_sub,
+           p.name AS player_name, p.position, p.shirt_number, p.market_value,
+           p.status AS player_status, p.image_url,
+           pi.matches_remaining AS injury_matches_remaining,
+           pi.injury_type
     FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
+    LEFT JOIN player_injuries pi ON pi.player_id = p.id AND pi.matches_remaining > 0
     WHERE tl.team_id = ?
     ORDER BY tl.slot ASC
   `).all(teamId);
@@ -172,10 +179,14 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
   autoLineup();
 
   const updatedLineup = db.prepare(`
-    SELECT tl.slot, tl.player_id, tl.position_override,
-           p.name AS player_name, p.position, p.shirt_number
+    SELECT tl.slot, tl.player_id, tl.position_override, tl.priority_sub,
+           p.name AS player_name, p.position, p.shirt_number, p.market_value,
+           p.status AS player_status, p.image_url,
+           pi.matches_remaining AS injury_matches_remaining,
+           pi.injury_type
     FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
+    LEFT JOIN player_injuries pi ON pi.player_id = p.id AND pi.matches_remaining > 0
     WHERE tl.team_id = ?
     ORDER BY tl.slot ASC
   `).all(teamId);

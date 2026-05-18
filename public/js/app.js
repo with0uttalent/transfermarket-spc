@@ -90,7 +90,7 @@ function escHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function eventIcon(type) {
-  return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',var_review:'📺'}[type]||'📋';
+  return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',var_review:'📺',injury:'🚑',save:'🧤',near_miss:'🎯',buildup:'🔵'}[type]||'📋';
 }
 function newsIcon(type) {
   return {match:'⚽',tournament:'🏆',transfer:'🔄',rumor:'💬',injury:'🏥',scandal:'⚠️',team:'🏟️'}[type]||'📰';
@@ -1659,8 +1659,9 @@ function renderEventLog(events) {
   let html = '';
   let htShown = false;
   for (const e of events) {
-    if (!htShown && e.minute > 45) { html += `<div class="halftime-divider">⏸ Half Time</div>`; htShown = true; }
-    html += `<div class="event-log-item event-${e.event_type}">
+    if (!htShown && e.minute > 45) { html += `<div class="halftime-divider">⏸ Перерыв</div>`; htShown = true; }
+    const isBuild = e.event_type === 'buildup';
+    html += `<div class="event-log-item event-${e.event_type}${isBuild?' ev-buildup':''}">
       <span class="ev-min">${e.minute}'</span>
       <span class="ev-icon">${eventIcon(e.event_type)}</span>
       <span class="ev-desc">${escHtml(e.description||'')}</span>
@@ -1720,6 +1721,32 @@ function renderMatchFullStats(ms, homeName, awayName) {
   </div>`;
 }
 
+function triggerGoalCelebration(side, match) {
+  const container = document.getElementById('scoreboard');
+  if (!container) return;
+  const teamName = side === 'home' ? match.home_team_name : match.away_team_name;
+
+  // Particle burst
+  const EMOJIS = ['⚽','🎉','🔥','⭐','💥','🏆','👏'];
+  const COUNT = 22;
+  for (let i = 0; i < COUNT; i++) {
+    const el = document.createElement('div');
+    el.className = 'goal-particle';
+    el.textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+    const startX = side === 'home' ? 20 + Math.random() * 30 : 50 + Math.random() * 30;
+    el.style.cssText = `left:${startX}%;top:50%;--dx:${(Math.random()-0.5)*180}px;--dy:${-(60+Math.random()*120)}px;animation-delay:${Math.random()*0.35}s`;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 2200);
+  }
+
+  // Fan cheer banner
+  const banner = document.createElement('div');
+  banner.className = 'goal-banner';
+  banner.innerHTML = `⚽ ГООООЛ! <span style="opacity:.8;font-size:0.7em">${escHtml(teamName)}</span>`;
+  container.appendChild(banner);
+  setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(()=>banner.remove(), 500); }, 2800);
+}
+
 async function startMatchSimulation(matchId) {
   const btn = document.getElementById('btn-sim');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Simulating…'; }
@@ -1761,26 +1788,27 @@ async function startMatchReplay(matchId) {
     const delay = ev.minute * MS_PER_MIN;
     setTimeout(() => {
       if (ev.event_type === 'goal' || ev.event_type === 'own_goal') {
-        if (ev.team_id === match.home_team_id) hScore++;
-        else aScore++;
+        const isOwnGoal = ev.event_type === 'own_goal';
+        const scoringHome = isOwnGoal ? ev.team_id !== match.home_team_id : ev.team_id === match.home_team_id;
+        if (scoringHome) hScore++; else aScore++;
         const sh = document.getElementById('score-home');
         const sa = document.getElementById('score-away');
         if (sh) sh.textContent = hScore;
         if (sa) sa.textContent = aScore;
-        // Flash animation
+        if (!isOwnGoal) triggerGoalCelebration(scoringHome ? 'home' : 'away', match);
         const scoreboard = document.getElementById('scoreboard');
-        if (scoreboard) { scoreboard.style.transform='scale(1.02)'; setTimeout(()=>scoreboard.style.transform='',300); }
+        if (scoreboard) { scoreboard.classList.add('sb-goal-flash'); setTimeout(()=>scoreboard.classList.remove('sb-goal-flash'),700); }
       }
       const logEl2 = document.getElementById('event-log');
       if (logEl2) {
-        // Insert half-time marker
         if (ev.minute > 45 && !logEl2.querySelector('.halftime-divider')) {
           const ht = document.createElement('div');
-          ht.className = 'halftime-divider'; ht.textContent = '⏸ Half Time';
+          ht.className = 'halftime-divider'; ht.textContent = '⏸ Перерыв';
           logEl2.insertBefore(ht, logEl2.firstChild);
         }
+        const isBuild = ev.event_type === 'buildup';
         const item = document.createElement('div');
-        item.className = `event-log-item event-${ev.event_type}`;
+        item.className = `event-log-item event-${ev.event_type}${isBuild?' ev-buildup':''}`;
         item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${escHtml(ev.description||'')}</span>`;
         logEl2.insertBefore(item, logEl2.firstChild);
       }
@@ -2619,10 +2647,12 @@ function renderPitchZones(lineupSlots) {
       const ovr = calcOverall(p, zone.id);
       const naturalZone = posToZone(p.position);
       const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
-      html += `<div class="pb-slot pb-slot-filled" style="left:${x}%;top:${zone.y}%" onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})" title="${escHtml(p.name)} (${ovr||'?'}) — нажмите чтобы убрать в запас">
-        <div class="pb-slot-av">${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}</div>
+      const slotData = starters.find(sl=>sl.player_id===p.id);
+      const isInjured = slotData && slotData.injury_matches_remaining > 0;
+      html += `<div class="pb-slot pb-slot-filled${isInjured?' pb-slot-injured':''}" style="left:${x}%;top:${zone.y}%" onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})" title="${escHtml(p.name)} (${ovr||'?'})${isInjured?' ⚠ ТРАВМА — нажмите чтобы убрать':' — нажмите чтобы убрать в запас'}">
+        <div class="pb-slot-av">${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}${isInjured?'<span class="pb-inj-icon">🚑</span>':''}</div>
         <div class="pb-slot-name" style="font-size:8px">${escHtml(p.name.split(' ')[0])}</div>
-        <div class="pb-slot-ovr" style="color:${ovrColor}">${ovr !== null ? ovr+(naturalZone!==zone.id?'⚠':'') : '?'}</div>
+        <div class="pb-slot-ovr" style="color:${isInjured?'#e74c3c':ovrColor}">${isInjured?'❌':(ovr !== null ? ovr+(naturalZone!==zone.id?'⚠':'') : '?')}</div>
         <div class="pb-slot-remove-badge">✕</div>
       </div>`;
     });
@@ -2653,15 +2683,39 @@ function renderReservesList(lineupSlots, allPlayers, teamId) {
   return reserves.map(s => {
     const p = allPlayers.find(pl=>pl.id===s.player_id);
     if (!p) return '';
-    return `<div class="player-card">
-      ${avatarEl(p.image_url,p.name)}
-      <div class="pc-info"><div class="pc-name">${escHtml(p.name)}</div><div class="pc-pos">${posBadge(p.position)}</div></div>
-      <div class="pc-btn">
-        <button class="btn-icon" onclick="pitchReserveToStarter(${p.id},${teamId})" title="Поставить в основу">⚡</button>
-        <button class="btn-icon danger" onclick="pitchRemoveFromLineup(${p.id},${teamId})" title="Убрать из состава">✕</button>
+    const injured = s.injury_matches_remaining > 0;
+    const isPriority = !!s.priority_sub;
+    return `<div class="player-card${injured?' pc-injured':''}">
+      <div style="position:relative">${avatarEl(p.image_url,p.name)}${injured?`<span class="inj-badge" title="Травма: ещё ${s.injury_matches_remaining} матча(ей)">🚑</span>`:''}</div>
+      <div class="pc-info">
+        <div class="pc-name">${escHtml(p.name)}${injured?` <span style="color:#e74c3c;font-size:10px">(травма ${s.injury_matches_remaining})</span>`:''}</div>
+        <div class="pc-pos">${posBadge(p.position)}</div>
+      </div>
+      <div class="pc-btn" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <label class="priority-sub-label" title="Приоритетная замена — выйдет первым">
+          <input type="checkbox" ${isPriority?'checked':''} onchange="togglePrioritySub(${p.id},${teamId},this.checked)"> ⭐
+        </label>
+        <div style="display:flex;gap:2px">
+          <button class="btn-icon" onclick="pitchReserveToStarter(${p.id},${teamId})" title="Поставить в основу">⚡</button>
+          <button class="btn-icon danger" onclick="pitchRemoveFromLineup(${p.id},${teamId})" title="Убрать из состава">✕</button>
+        </div>
       </div>
     </div>`;
   }).join('');
+}
+
+async function togglePrioritySub(playerId, teamId, checked) {
+  const current = _pitchState.lineup.map(s => ({
+    ...s,
+    priority_sub: s.player_id === playerId ? (checked ? 1 : 0) : (s.priority_sub || 0)
+  }));
+  try {
+    await PUT('/lineups/'+teamId, { lineup: current });
+    _pitchState.lineup = current;
+    // re-render reserves only
+    const el = document.getElementById('pb-reserves');
+    if (el) el.innerHTML = renderReservesList(_pitchState.lineup, _pitchState.players, teamId);
+  } catch(e) { toast(e.message,'error'); }
 }
 
 function pitchPlayerClick(playerId) {

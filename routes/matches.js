@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDb } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
-const { simulateMatch } = require('../services/matchSimulator');
+const { simulateMatch, simulateMatchWithLineup } = require('../services/matchSimulator');
 const { applyMatchResults, generateMatchNews } = require('../services/scheduler');
 const router = express.Router();
 
@@ -109,7 +109,43 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
 
   const home = getLineupInfo(db, match.home_team_id);
   const away = getLineupInfo(db, match.away_team_id);
-  const result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
+
+  // Build skills map for all players
+  const allPlayerIds = [...home.players, ...away.players].map(p => p.id);
+  let skillsMap = {};
+  if (allPlayerIds.length) {
+    const placeholders = allPlayerIds.map(() => '?').join(',');
+    const skillRows = db.prepare(`SELECT * FROM player_skills WHERE player_id IN (${placeholders})`).all(...allPlayerIds);
+    for (const sk of skillRows) skillsMap[sk.player_id] = sk;
+  }
+
+  // Get bench players (slots 12-22) for substitutions
+  const homeReserves = db.prepare(`
+    SELECT p.*, tl.position_override, tl.slot, tl.priority_sub
+    FROM team_lineups tl JOIN players p ON tl.player_id = p.id
+    WHERE tl.team_id = ? AND tl.slot >= 12 AND tl.slot <= 22 AND p.status = 'active'
+    ORDER BY tl.priority_sub DESC, tl.slot ASC
+  `).all(match.home_team_id);
+
+  const awayReserves = db.prepare(`
+    SELECT p.*, tl.position_override, tl.slot, tl.priority_sub
+    FROM team_lineups tl JOIN players p ON tl.player_id = p.id
+    WHERE tl.team_id = ? AND tl.slot >= 12 AND tl.slot <= 22 AND p.status = 'active'
+    ORDER BY tl.priority_sub DESC, tl.slot ASC
+  `).all(match.away_team_id);
+
+  // Use skill-based simulation if we have enough starters
+  let result;
+  if (home.players.length >= 7 && away.players.length >= 7) {
+    result = simulateMatchWithLineup(
+      match.home_team_id, match.away_team_id,
+      home.players, homeReserves,
+      away.players, awayReserves,
+      skillsMap
+    );
+  } else {
+    result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
+  }
 
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 

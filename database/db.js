@@ -372,6 +372,7 @@ function initSchema() {
     `ALTER TABLE matches ADD COLUMN league_id INTEGER`,
     `ALTER TABLE matches ADD COLUMN matchday INTEGER DEFAULT 0`,
     `ALTER TABLE news ADD COLUMN author_name TEXT`,
+    `ALTER TABLE team_lineups ADD COLUMN priority_sub INTEGER DEFAULT 0`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }
