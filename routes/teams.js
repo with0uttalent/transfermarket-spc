@@ -106,12 +106,16 @@ router.delete('/:id', requireAuth, (req, res) => {
   if (!db.prepare('SELECT id FROM teams WHERE id=?').get(id)) {
     return res.status(404).json({ error: 'Not found' });
   }
-  db.transaction(() => {
-    // league_schedule has no ON DELETE CASCADE for team references
-    db.prepare('DELETE FROM league_schedule WHERE home_team_id=? OR away_team_id=?').run(id, id);
-    db.prepare('DELETE FROM teams WHERE id=?').run(id);
-  })();
-  res.json({ message: 'Deleted' });
+  try {
+    db.transaction(() => {
+      db.prepare('DELETE FROM league_schedule WHERE home_team_id=? OR away_team_id=?').run(id, id);
+      db.prepare('DELETE FROM teams WHERE id=?').run(id);
+    })();
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error('Team delete error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
