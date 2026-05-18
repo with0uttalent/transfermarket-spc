@@ -533,7 +533,7 @@ async function renderTeamDetail(app, id) {
     const team = await GET('/teams/'+id);
     app.innerHTML=`
       <div class="detail-hero">
-        ${teamLogoEl(team.logo_url,team.name)}
+        ${teamLogoXL(team.logo_url,team.name)}
         <div class="hero-info">
           <h1>${escHtml(team.name)}</h1>
           <div class="meta">
