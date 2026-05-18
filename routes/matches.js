@@ -46,13 +46,22 @@ router.get('/:id', (req, res) => {
     ORDER BY e.minute
   `).all(req.params.id);
   const playerStats = db.prepare(`
-    SELECT s.*, p.name as player_name, p.position, p.image_url, t.id as team_id
-    FROM player_match_stats s
-    JOIN players p ON s.player_id = p.id
-    LEFT JOIN teams t ON p.team_id = t.id
-    WHERE s.match_id=?
-    ORDER BY s.rating DESC
-  `).all(req.params.id);
+    SELECT
+      p.id as player_id, p.name as player_name, p.position, p.image_url, p.team_id,
+      COALESCE(s.goals, 0)        as goals,
+      COALESCE(s.assists, 0)      as assists,
+      COALESCE(s.yellow_cards, 0) as yellow_cards,
+      COALESCE(s.red_cards, 0)    as red_cards,
+      COALESCE(s.rating, 6.0)     as rating
+    FROM team_lineups tl
+    JOIN players p ON tl.player_id = p.id
+    LEFT JOIN player_match_stats s ON s.player_id = p.id AND s.match_id = ?
+    WHERE tl.team_id IN (
+      SELECT home_team_id FROM matches WHERE id=?
+      UNION SELECT away_team_id FROM matches WHERE id=?
+    ) AND tl.slot <= 11
+    ORDER BY COALESCE(s.rating, 6.0) DESC
+  `).all(req.params.id, req.params.id, req.params.id);
   const fullStats = db.prepare(`SELECT * FROM match_stats WHERE match_id=?`).get(req.params.id) || null;
   res.json({ ...match, events, stats: playerStats, fullStats });
 });
