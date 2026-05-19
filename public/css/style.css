@@ -14,18 +14,23 @@ img { max-width: 100%; display: block; }
 
 /* ─── Variables ────────────────────────────────────────── */
 :root {
-  --green: #00704a;
-  --green-dark: #005235;
-  --green-light: #e8f5ef;
+  --green: #1565c0;
+  --green-dark: #0d47a1;
+  --green-light: #e3f2fd;
   --gold: #f5a623;
   --red: #d0021b;
-  --blue: #1a73e8;
+  --blue: #1565c0;
   --border: #ddd;
   --bg-card: #fff;
+  --bg: #f7f9fc;
+  --surface: #fff;
+  --text: #1a1a1a;
   --text-muted: #666;
   --shadow: 0 2px 8px rgba(0,0,0,.1);
   --radius: 6px;
   --header-h: 56px;
+  --bg-darker: #eef2f7;
+  --bg-hover: #e8eef7;
 }
 
 /* ─── Utilities ────────────────────────────────────────── */
@@ -1487,4 +1492,38 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
   .pp-photo-col { border-right: none; border-bottom: 1px solid var(--border); }
   .pp-right-col { border-left: none; border-top: 1px solid var(--border); flex-direction: row; }
   .pp-team-card { border-bottom: none; border-right: 1px solid var(--border); }
+}
+
+/* ══════════════════════════════════════════════════════════
+   Team Profile — Transfermarkt style
+═══════════════════════════════════════════════════════════ */
+.tp-title { font-size: 28px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+.tp-header-card { display: grid; grid-template-columns: 110px 1fr 180px; gap: 0; background: var(--bg-card); border-radius: var(--radius); margin-bottom: 20px; box-shadow: var(--shadow); overflow: hidden; border: 1px solid var(--border); }
+
+/* Logo column */
+.tp-logo-col { display: flex; align-items: center; justify-content: center; padding: 20px 14px; border-right: 1px solid var(--border); background: var(--bg); }
+.tp-logo-img { width: 80px; height: 80px; object-fit: contain; }
+.tp-logo-ph { width: 80px; height: 80px; background: var(--green); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 800; }
+
+/* Center column */
+.tp-center-col { padding: 16px 20px; }
+.tp-stats-grid { display: flex; flex-wrap: wrap; gap: 4px 24px; }
+.tp-stat { font-size: 13px; color: var(--text); }
+.tp-stat-key { color: var(--text-muted); }
+.tp-stat-val { font-weight: 600; }
+
+/* Right column */
+.tp-right-col { display: flex; flex-direction: column; border-left: 1px solid var(--border); }
+.tp-comp-card { padding: 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); flex: 1; }
+.tp-comp-logo { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
+.tp-comp-name { font-size: 13px; font-weight: 700; color: var(--text); }
+.tp-comp-country { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.tp-mv-box { background: #1565a8; color: #fff; padding: 14px 16px; text-align: center; }
+.tp-mv-val { font-size: 22px; font-weight: 800; line-height: 1.2; }
+.tp-mv-label { font-size: 10px; color: rgba(255,255,255,.75); margin-top: 2px; }
+
+@media (max-width: 640px) {
+  .tp-header-card { grid-template-columns: 80px 1fr; }
+  .tp-right-col { grid-column: 1 / -1; border-left: none; border-top: 1px solid var(--border); flex-direction: row; }
+  .tp-comp-card { border-right: 1px solid var(--border); border-bottom: none; }
 }

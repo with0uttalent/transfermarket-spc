@@ -7,7 +7,9 @@ const router = express.Router();
 const BASE_QUERY = `
   SELECT t.*,
     co.name as country_name, co.flag_emoji,
-    comp.name as competition_name
+    comp.name as competition_name,
+    comp.logo_url as competition_logo_url,
+    comp.trophy_url as competition_trophy_url
   FROM teams t
   LEFT JOIN countries co ON t.country_id = co.id
   LEFT JOIN competitions comp ON t.competition_id = comp.id
@@ -54,7 +56,7 @@ router.get('/:id', (req, res) => {
   `).all(req.params.id);
 
   const titles = db.prepare(`
-    SELECT ti.*, comp.name as competition_name
+    SELECT ti.*, comp.name as competition_name, comp.trophy_url, comp.logo_url as competition_logo_url
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
     WHERE ti.team_id = ?

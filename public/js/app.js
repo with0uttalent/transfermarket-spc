@@ -126,33 +126,19 @@ const PITCH_ZONES = [
 
 const ALL_ZONES = ['GK','DEF','DMF','MID','AMF','FWD'];
 
-// Individual position slots (x,y in % of pitch overlay)
+// 5 uniform circles per row — simple grid layout
+const _ROWS = [
+  { zone:'FWD', y:12 },
+  { zone:'AMF', y:26 },
+  { zone:'MID', y:41 },
+  { zone:'DMF', y:56 },
+  { zone:'DEF', y:71 },
+];
+const _5X = [10, 27.5, 50, 72.5, 90]; // 5 evenly spaced x positions
+
 const PITCH_SLOTS = [
-  { id:'GK',    x:50, y:87, zone:'GK',  label:'ВРТ' },
-  { id:'SW',    x:50, y:79, zone:'DEF', label:'ЛИБ' },
-  { id:'LB',    x:11, y:72, zone:'DEF', label:'ЛЗ'  },
-  { id:'CB-L',  x:33, y:70, zone:'DEF', label:'ЦЗ'  },
-  { id:'CB',    x:50, y:70, zone:'DEF', label:'ЦЗ'  },
-  { id:'CB-R',  x:67, y:70, zone:'DEF', label:'ЦЗ'  },
-  { id:'RB',    x:89, y:72, zone:'DEF', label:'ПЗ'  },
-  { id:'DM-L',  x:33, y:57, zone:'DMF', label:'ОПЗ' },
-  { id:'DM',    x:50, y:57, zone:'DMF', label:'ОПЗ' },
-  { id:'DM-R',  x:67, y:57, zone:'DMF', label:'ОПЗ' },
-  { id:'LM',    x:11, y:42, zone:'MID', label:'ЛП'  },
-  { id:'CM-L',  x:33, y:41, zone:'MID', label:'ЦП'  },
-  { id:'CM',    x:50, y:41, zone:'MID', label:'ЦП'  },
-  { id:'CM-R',  x:67, y:41, zone:'MID', label:'ЦП'  },
-  { id:'RM',    x:89, y:42, zone:'MID', label:'ПП'  },
-  { id:'LW',    x:9,  y:26, zone:'AMF', label:'ЛВ'  },
-  { id:'AM-L',  x:31, y:26, zone:'AMF', label:'АТП' },
-  { id:'AM',    x:50, y:25, zone:'AMF', label:'АТП' },
-  { id:'AM-R',  x:69, y:26, zone:'AMF', label:'АТП' },
-  { id:'RW',    x:91, y:26, zone:'AMF', label:'ПВ'  },
-  { id:'LW2',   x:14, y:13, zone:'FWD', label:'ЛН'  },
-  { id:'ST-L',  x:34, y:13, zone:'FWD', label:'НАП' },
-  { id:'CF',    x:50, y:12, zone:'FWD', label:'ЦНА' },
-  { id:'ST-R',  x:66, y:13, zone:'FWD', label:'НАП' },
-  { id:'RW2',   x:86, y:13, zone:'FWD', label:'ПН'  },
+  { id:'GK-1', x:50, y:86, zone:'GK', label:'' },
+  ..._ROWS.flatMap(r => _5X.map((x,i) => ({ id:`${r.zone}-${i+1}`, x, y:r.y, zone:r.zone, label:'' }))),
 ];
 
 function slotToZone(slotId) {
@@ -643,23 +629,87 @@ async function renderTeamDetail(app, id) {
   app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const team = await GET('/teams/'+id);
+
+    // ── Stats calculations ────────────────────────────────────
+    const players = team.players || [];
+    const ages = players.map(p => calcAge(p.date_of_birth)).filter(Boolean);
+    const avgAge = ages.length ? (ages.reduce((a,b)=>a+b,0)/ages.length).toFixed(1) : '–';
+    const foreigners = players.filter(p => p.nationality_id && p.nationality_id !== team.country_id).length;
+    const foreignPct = players.length ? ((foreigners/players.length)*100).toFixed(1) : 0;
+    const intlPlayers = players.filter(p => p.national_caps > 0 || p.national_team).length;
+    const transfers = team.transfers || [];
+    const income  = transfers.filter(t=>t.from_team_id===team.id).reduce((s,t)=>s+(t.transfer_fee||0),0);
+    const expense = transfers.filter(t=>t.to_team_id===team.id).reduce((s,t)=>s+(t.transfer_fee||0),0);
+    const balance = income - expense;
+    const balSign = balance>=0?'+':'';
+
+    // ── Trophy strip ──────────────────────────────────────────
+    const trophyStrip = (() => {
+      if (!team.titles?.length) return '<span style="color:var(--text-muted);font-size:13px;font-style:italic">Пока нет титулов</span>';
+      const groups = {};
+      for (const t of team.titles) {
+        const key = t.competition_id || t.title_name;
+        if (!groups[key]) groups[key] = { t, count:0 };
+        groups[key].count++;
+      }
+      return Object.values(groups).map(({t,count}) => {
+        const img = t.trophy_url
+          ? `<img src="${escHtml(t.trophy_url)}" class="trophy-icon-img" onerror="this.style.display='none'">`
+          : `<span class="trophy-icon-emoji">🏆</span>`;
+        return `<div class="trophy-chip" title="${escHtml(t.competition_name||t.title_name)}" onclick="document.querySelector('[data-tab=titles]').click()">
+          <div class="trophy-chip-icon">${img}</div>
+          <span class="trophy-chip-count">${count}</span>
+        </div>`;
+      }).join('') + `<span class="trophy-strip-more" onclick="document.querySelector('[data-tab=titles]').click()">›</span>`;
+    })();
+
+    const teamJson = JSON.stringify(team).replace(/"/g,'&quot;');
+
     app.innerHTML=`
-      <div class="detail-hero">
-        ${teamLogoXL(team.logo_url,team.name)}
-        <div class="hero-info">
-          <h1>${escHtml(team.name)}</h1>
-          <div class="meta">
-            ${team.flag_emoji?`<span>${team.flag_emoji} ${escHtml(team.country_name)}</span>`:''}
-            ${team.competition_name?`<span>🏆 ${escHtml(team.competition_name)}</span>`:''}
-            ${team.founded?`<span>📅 Основан ${team.founded}</span>`:''}
-            ${team.stadium?`<span>🏟️ ${escHtml(team.stadium)}</span>`:''}
+      <h1 class="tp-title">${escHtml(team.name)}</h1>
+
+      <div class="tp-header-card">
+        <!-- Logo -->
+        <div class="tp-logo-col">
+          ${team.logo_url
+            ? `<img src="${escHtml(team.logo_url)}" class="tp-logo-img" onerror="this.style.display='none'">`
+            : `<div class="tp-logo-ph">${escHtml(team.name[0])}</div>`}
+        </div>
+
+        <!-- Center: trophy strip + stats -->
+        <div class="tp-center-col">
+          <div class="trophy-strip" style="margin-bottom:14px">${trophyStrip}</div>
+          <div class="tp-stats-grid">
+            <div class="tp-stat"><span class="tp-stat-key">Игроков в заявке:</span> <span class="tp-stat-val">${players.length}</span></div>
+            <div class="tp-stat"><span class="tp-stat-key">Средний возраст:</span> <span class="tp-stat-val">${avgAge}</span></div>
+            <div class="tp-stat"><span class="tp-stat-key">Легионеры:</span> <span class="tp-stat-val">${foreigners} <span style="color:var(--text-muted);font-weight:400">${players.length?foreignPct+'%':''}</span></span></div>
+            ${intlPlayers?`<div class="tp-stat"><span class="tp-stat-key">Игроки сборных:</span> <span class="tp-stat-val">${intlPlayers}</span></div>`:''}
+            ${team.stadium?`<div class="tp-stat"><span class="tp-stat-key">Стадион:</span> <span class="tp-stat-val">${escHtml(team.stadium)}</span></div>`:''}
+            ${team.founded?`<div class="tp-stat"><span class="tp-stat-key">Основан:</span> <span class="tp-stat-val">${team.founded}</span></div>`:''}
+            ${transfers.length?`<div class="tp-stat"><span class="tp-stat-key">Трансферный баланс:</span> <span class="tp-stat-val" style="color:${balance>=0?'#27ae60':'#e74c3c'}">${balSign}${fmtValue(balance)}</span></div>`:''}
+          </div>
+          ${isAdmin()?`<div style="margin-top:12px"><button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="showTeamForm(${teamJson})">✏️ Редактировать</button></div>`:''}
+        </div>
+
+        <!-- Right: competition card -->
+        <div class="tp-right-col">
+          ${team.competition_name ? `
+          <div class="tp-comp-card">
+            ${team.competition_logo_url
+              ? `<img src="${escHtml(team.competition_logo_url)}" class="tp-comp-logo" onerror="this.style.display='none'">`
+              : ''}
+            <div>
+              <div class="tp-comp-name">${escHtml(team.competition_name)}</div>
+              ${team.flag_emoji?`<div class="tp-comp-country">${team.flag_emoji} ${escHtml(team.country_name||'')}</div>`:''}
+            </div>
+          </div>` : ''}
+          <div class="tp-mv-box">
+            <div class="tp-mv-val">${fmtValue(team.market_value)}</div>
+            <div class="tp-mv-label">Общая стоимость</div>
           </div>
         </div>
-        <div class="hero-mv"><div class="mv-label">Стоимость состава</div><div class="mv-value">${fmtValue(team.market_value)}</div></div>
-        ${isAdmin()?`<div style="margin-left:16px;display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showTeamForm(${JSON.stringify(team).replace(/"/g,'&quot;')})">Редактировать</button>
-        </div>`:''}
       </div>
+
       ${team.stadium_url ? `<div class="stadium-banner"><img src="${escHtml(team.stadium_url)}" alt="${escHtml(team.stadium||team.name)}" class="stadium-img"/><div class="stadium-label">🏟️ ${escHtml(team.stadium||'Стадион')}</div></div>` : ''}
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="squad">Состав (${team.players.length})</button>
@@ -2843,10 +2893,14 @@ function renderPitchZones(lineupSlots) {
       const outOfPos = naturalZone !== slot.zone;
       const ovrColor = !ovr ? '#888' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
       const isInjured = s.injury_matches_remaining > 0;
+      const zoneLabel = { GK:'Вратарь', DEF:'Защитник', DMF:'Опорный', MID:'Полузащитник', AMF:'Атакующий', FWD:'Нападающий' };
+      const bestZone = zoneLabel[naturalZone] || naturalZone;
+      const curZone = zoneLabel[slot.zone] || slot.zone;
+      const posHint = `${escHtml(p.name)} | Предпочитает: ${escHtml(p.position||naturalZone)} (${bestZone})${outOfPos?' | Текущая позиция: '+curZone+' ⚠':''}${isInjured?' | ⚠ ТРАВМА':''}`;
       html += `<div class="pb-slot pb-slot-filled${isInjured?' pb-slot-injured':''}"
         style="left:${slot.x}%;top:${slot.y}%"
         onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})"
-        title="${escHtml(p.name)}${isInjured?' ⚠ ТРАВМА':''} — нажмите чтобы убрать">
+        title="${posHint}">
         <div class="pb-slot-av">
           ${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}
           ${isInjured?'<span class="pb-inj-icon">🚑</span>':''}
@@ -2890,14 +2944,21 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
     const sel = p.id === selectedId;
     const ovr = calcOverall(p);
     const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+    const natZone = posToZone(p.position);
+    const zoneNames = { GK:'Вратарь', DEF:'Защитник', DMF:'Опорный', MID:'Полузащитник', AMF:'Атакующий', FWD:'Нападающий' };
+    const tooltip = `${p.name} | Позиция: ${p.position||'–'} | Лучшая зона: ${zoneNames[natZone]||natZone}${p.sub_position?' ('+p.sub_position+')':''}`;
     return `<div class="pb-player-row${sel?' pb-selected':''}"
       draggable="true"
       ondragstart="dragPlayerStart(${p.id},'sidebar',event)"
-      onclick="pitchPlayerClick(${p.id})">
+      onclick="pitchPlayerClick(${p.id})"
+      title="${escHtml(tooltip)}">
       ${avatarEl(p.image_url,p.name)}
-      <div style="flex:1;min-width:0"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${posBadge(p.position)}${p.sub_position?`<span style="font-size:10px;color:var(--text-muted)">${escHtml(p.sub_position)}</span>`:''}</div>
+      </div>
       <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
-      ${sel?`<span style="color:var(--green,#2ecc71);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
+      ${sel?`<span style="color:var(--blue);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
     </div>`;
   }).join('');
 }
