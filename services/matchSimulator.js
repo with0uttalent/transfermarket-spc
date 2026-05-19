@@ -341,7 +341,7 @@ function simulateMatchCore(
     if (rand() < 0.008) tryPenalty(m, rand() < 0.5);
     if (rand() < 0.028) tryCard(m, rand() < 0.5);
     if (rand() < 0.0012) tryDirectRed(m, rand() < 0.5);
-    if (m % 10 === 0 && rand() < 0.30) tryInjury(m, rand() < 0.5);
+    if (m % 45 === 0 && rand() < 0.12) tryInjury(m, rand() < 0.5);
     if (rand() < 0.022) tryBigSave(m, rand() < 0.5);
     if (rand() < 0.018) tryNearMiss(m, rand() < 0.5);
 

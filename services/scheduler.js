@@ -101,9 +101,10 @@ function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
   // Injuries: record in player_injuries table (3 matches unavailable)
   if (injuredPlayers && injuredPlayers.length) {
     const injTypes = ['muscle strain','hamstring injury','ankle sprain','calf problem'];
-    const insertInjury = db.prepare(`INSERT OR REPLACE INTO player_injuries (player_id, injury_type, matches_remaining) VALUES (?,?,3)`);
+    const insertInjury = db.prepare(`INSERT OR REPLACE INTO player_injuries (player_id, injury_type, matches_remaining) VALUES (?,?,?)`);
     const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-    for (const pid of injuredPlayers) insertInjury.run(pid, pick(injTypes));
+    const injDuration = () => Math.random() < 0.25 ? 2 : 1; // 75% = 1 match, 25% = 2 matches
+    for (const pid of injuredPlayers) insertInjury.run(pid, pick(injTypes), injDuration());
   }
 
   // Skill updates
