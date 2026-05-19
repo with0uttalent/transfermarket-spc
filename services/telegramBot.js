@@ -2,9 +2,11 @@
 
 const TelegramBot = require('node-telegram-bot-api');
 const { createCanvas, loadImage } = require('canvas');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 
 const TOKEN   = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const PROXY   = 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
 
 let bot = null;
 
@@ -13,7 +15,9 @@ function initBot() {
     console.log('[TelegramBot] No TOKEN/CHAT_ID — disabled.');
     return;
   }
-  bot = new TelegramBot(TOKEN);
+  bot = new TelegramBot(TOKEN, {
+    request: { agent: new SocksProxyAgent(PROXY) },
+  });
   console.log('[TelegramBot] Ready.');
 }
 
