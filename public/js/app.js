@@ -2634,8 +2634,11 @@ function renderLineupEditor(team, lineup) {
       <div class="pb-layout">
         <div class="pb-pitch-wrap" id="pb-pitch">${renderPitchZones(slots)}</div>
         <div class="pb-sidebar">
-          <div class="pb-sidebar-header">👆 Выберите игрока → нажмите зону на поле</div>
-          <div id="pb-player-list">${renderPitchSidebar(allPlayers, slots, null)}</div>
+          <div class="pb-sidebar-header">✋ Перетащите игрока на поле или в скамейку</div>
+          <div id="pb-player-list"
+               ondragover="event.preventDefault()"
+               ondrop="dropOnSidebar(event)"
+               ondragleave="event.currentTarget.classList.remove('bench-drop-active')">${renderPitchSidebar(allPlayers, slots, null)}</div>
         </div>
       </div>
       <div id="pb-bench-section" style="margin-top:16px">${renderBenchSection(slots, allPlayers, team.id)}</div>
@@ -2656,7 +2659,11 @@ function renderPitchZones(lineupSlots) {
   let html = '';
   for (const zone of PITCH_ZONES) {
     const zp = zoneMap[zone.id];
-    html += `<div class="pb-zone-band${hasSel?' pb-zone-ready':''}" style="top:${zone.y-7}%;height:14%" onclick="pitchZoneClick('${zone.id}')">
+    html += `<div class="pb-zone-band${hasSel?' pb-zone-ready':''}" style="top:${zone.y-7}%;height:14%"
+      onclick="pitchZoneClick('${zone.id}')"
+      ondragover="event.preventDefault();event.currentTarget.classList.add('pb-zone-drag-over')"
+      ondragleave="event.currentTarget.classList.remove('pb-zone-drag-over')"
+      ondrop="event.currentTarget.classList.remove('pb-zone-drag-over');dropOnZone('${zone.id}',event)">
       <span class="${hasSel?'pb-zone-add-hint':'pb-zone-label'}">${hasSel?`+ ${zone.label}`:zone.label}</span>
     </div>`;
     zp.forEach((s, i) => {
@@ -2697,7 +2704,10 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
     const sel = p.id === selectedId;
     const ovr = calcOverall(p);
     const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
-    return `<div class="pb-player-row${sel?' pb-selected':''}" onclick="pitchPlayerClick(${p.id})">
+    return `<div class="pb-player-row${sel?' pb-selected':''}"
+      draggable="true"
+      ondragstart="dragPlayerStart(${p.id},'sidebar',event)"
+      onclick="pitchPlayerClick(${p.id})">
       ${avatarEl(p.image_url,p.name)}
       <div style="flex:1;min-width:0"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
       <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
@@ -2727,7 +2737,9 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
     if (!p) return '';
     const ovr = calcOverall(p);
     const ovrColor = !ovr?'#888':ovr>=80?'#f1c40f':ovr>=70?'#2ecc71':ovr>=60?'#3498db':'#95a5a6';
-    return `<div class="bench-card${opts.priority?' bench-priority':''}">
+    return `<div class="bench-card${opts.priority?' bench-priority':''}"
+      draggable="true"
+      ondragstart="dragPlayerStart(${p.id},'${opts.priority?'priority':'bench'}',event)">
       <div style="position:relative;flex-shrink:0">${avatarEl(p.image_url,p.name)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.name)}</div>
@@ -2735,7 +2747,7 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
         <span style="font-size:11px;font-weight:800;color:${ovrColor}">${ovr??'?'}</span>
-        ${opts.showPriority?`<label class="priority-sub-label" title="Приоритетная замена"><input type="checkbox" ${s.priority_sub?'checked':''} onchange="togglePrioritySub(${p.id},${teamId},this.checked)"> ⭐</label>`:''}
+        ${opts.showPriority?`<label class="priority-sub-label" title="Приоритетная замена" onclick="event.stopPropagation()"><input type="checkbox" ${s.priority_sub?'checked':''} onchange="togglePrioritySub(${p.id},${teamId},this.checked)"> ⭐</label>`:''}
         <button class="btn-icon" onclick="pitchReserveToStarter(${p.id},${teamId})" title="В основу">⚡</button>
         <button class="btn-icon danger" onclick="pitchRemoveFromLineup(${p.id},${teamId})" title="Убрать">✕</button>
       </div>
@@ -2756,18 +2768,23 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
     </div>`;
   }
 
+  const dropAttrs = (type) =>
+    `ondragover="event.preventDefault();event.currentTarget.classList.add('bench-drop-active')"` +
+    ` ondragleave="event.currentTarget.classList.remove('bench-drop-active')"` +
+    ` ondrop="dropOnBench('${type}',event)"`;
+
   return `<div class="bench-grid">
     <div class="bench-col">
       <div class="bench-col-header bench-header-priority">⭐ Замены в приоритете <span class="bench-count">${priority.length}/3</span></div>
-      <div class="bench-col-body">${priority.length
+      <div class="bench-col-body bench-drop-zone" ${dropAttrs('priority')}>${priority.length
         ? priority.map(s=>benchCard(s,{priority:true,showPriority:true})).join('')
-        : '<div class="bench-empty">Отметьте ⭐ у запасных</div>'}</div>
+        : '<div class="bench-empty">Перетащите игрока сюда</div>'}</div>
     </div>
     <div class="bench-col">
       <div class="bench-col-header bench-header-bench">🪑 Скамейка запасных <span class="bench-count">${regular.length}</span></div>
-      <div class="bench-col-body">${regular.length
+      <div class="bench-col-body bench-drop-zone" ${dropAttrs('bench')}>${regular.length
         ? regular.map(s=>benchCard(s,{showPriority:true})).join('')
-        : '<div class="bench-empty">Нет запасных</div>'}</div>
+        : '<div class="bench-empty">Перетащите игрока сюда</div>'}</div>
     </div>
     <div class="bench-col">
       <div class="bench-col-header bench-header-injured">🚑 Лазарет <span class="bench-count">${allInjuredPlayers.length}</span></div>
@@ -2817,6 +2834,81 @@ async function togglePrioritySub(playerId, teamId, checked) {
     const el = document.getElementById('pb-bench-section');
     if (el) el.innerHTML = renderBenchSection(_pitchState.lineup, _pitchState.players, teamId);
   } catch(e) { toast(e.message,'error'); }
+}
+
+// ─── Drag-and-drop helpers ───────────────────────────────────────────────────
+let _dragPlayerId = null;
+let _dragSource   = null; // 'sidebar' | 'bench' | 'priority'
+
+function dragPlayerStart(playerId, source, event) {
+  _dragPlayerId = playerId;
+  _dragSource   = source;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', String(playerId));
+}
+
+async function dropOnZone(zoneId, event) {
+  event.preventDefault();
+  const pid = _dragPlayerId;
+  if (!pid) return;
+  const player = _pitchState.players.find(p => p.id === pid);
+  if (player?.injury_matches_remaining > 0) { toast('Игрок травмирован', 'error'); return; }
+  const tid = _pitchState.teamId;
+  const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
+  // If already a starter, just update zone
+  if (starters.find(s=>s.player_id===pid)) {
+    const current = _pitchState.lineup.map(s=>s.player_id===pid?{...s,position_override:zoneId}:s);
+    try { await PUT('/lineups/'+tid,{lineup:current}); await refreshPitchEditor(); } catch(e){toast(e.message,'error');}
+    return;
+  }
+  if (starters.length >= 11) { toast('Основной состав заполнен (11/11)', 'error'); return; }
+  const usedSlots = new Set(starters.map(s=>s.slot));
+  let freeSlot = null;
+  for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){freeSlot=i;break;} }
+  try {
+    const current = _pitchState.lineup.filter(s=>s.player_id!==pid);
+    current.push({slot:freeSlot, player_id:pid, position_override:zoneId});
+    await PUT('/lineups/'+tid,{lineup:current});
+    await refreshPitchEditor();
+  } catch(e){toast(e.message,'error');}
+}
+
+async function dropOnBench(targetType, event) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('bench-drop-active');
+  const pid = _dragPlayerId;
+  if (!pid) return;
+  const player = _pitchState.players.find(p=>p.id===pid);
+  if (player?.injury_matches_remaining > 0) { toast('Травмированный игрок в лазарете', 'error'); return; }
+  const tid = _pitchState.teamId;
+  const isPriority = targetType === 'priority';
+  if (isPriority) {
+    const cnt = _pitchState.lineup.filter(s=>s.priority_sub&&s.player_id!==pid&&s.slot>11).length;
+    if (cnt >= 3) { toast('Максимум 3 приоритетных замены', 'error'); return; }
+  }
+  const existing = _pitchState.lineup.find(s=>s.player_id===pid&&s.slot>11&&s.slot<=22);
+  let current;
+  if (existing) {
+    // Already on bench — just toggle priority
+    current = _pitchState.lineup.map(s=>s.player_id===pid?{...s,priority_sub:isPriority?1:0}:s);
+  } else {
+    const usedBench = new Set(_pitchState.lineup.filter(s=>s.slot>11&&s.slot<=22).map(s=>s.slot));
+    let slot = null;
+    for (let i=12;i<=22;i++){if(!usedBench.has(i)){slot=i;break;}}
+    if (!slot) { toast('Скамейка запасных заполнена', 'error'); return; }
+    current = _pitchState.lineup.filter(s=>s.player_id!==pid);
+    current.push({slot, player_id:pid, position_override:null, priority_sub:isPriority?1:0});
+  }
+  try { await PUT('/lineups/'+tid,{lineup:current}); await refreshPitchEditor(); } catch(e){toast(e.message,'error');}
+}
+
+async function dropOnSidebar(event) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('bench-drop-active');
+  const pid = _dragPlayerId;
+  if (!pid || _dragSource === 'sidebar') return;
+  const current = _pitchState.lineup.filter(s=>s.player_id!==pid);
+  try { await PUT('/lineups/'+_pitchState.teamId,{lineup:current}); await refreshPitchEditor(); } catch(e){toast(e.message,'error');}
 }
 
 function pitchPlayerClick(playerId) {
