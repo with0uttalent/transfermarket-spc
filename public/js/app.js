@@ -126,6 +126,41 @@ const PITCH_ZONES = [
 
 const ALL_ZONES = ['GK','DEF','DMF','MID','AMF','FWD'];
 
+// Individual position slots (x,y in % of pitch overlay)
+const PITCH_SLOTS = [
+  { id:'GK',    x:50, y:87, zone:'GK',  label:'ВРТ' },
+  { id:'SW',    x:50, y:79, zone:'DEF', label:'ЛИБ' },
+  { id:'LB',    x:11, y:72, zone:'DEF', label:'ЛЗ'  },
+  { id:'CB-L',  x:33, y:70, zone:'DEF', label:'ЦЗ'  },
+  { id:'CB',    x:50, y:70, zone:'DEF', label:'ЦЗ'  },
+  { id:'CB-R',  x:67, y:70, zone:'DEF', label:'ЦЗ'  },
+  { id:'RB',    x:89, y:72, zone:'DEF', label:'ПЗ'  },
+  { id:'DM-L',  x:33, y:57, zone:'DMF', label:'ОПЗ' },
+  { id:'DM',    x:50, y:57, zone:'DMF', label:'ОПЗ' },
+  { id:'DM-R',  x:67, y:57, zone:'DMF', label:'ОПЗ' },
+  { id:'LM',    x:11, y:42, zone:'MID', label:'ЛП'  },
+  { id:'CM-L',  x:33, y:41, zone:'MID', label:'ЦП'  },
+  { id:'CM',    x:50, y:41, zone:'MID', label:'ЦП'  },
+  { id:'CM-R',  x:67, y:41, zone:'MID', label:'ЦП'  },
+  { id:'RM',    x:89, y:42, zone:'MID', label:'ПП'  },
+  { id:'LW',    x:9,  y:26, zone:'AMF', label:'ЛВ'  },
+  { id:'AM-L',  x:31, y:26, zone:'AMF', label:'АТП' },
+  { id:'AM',    x:50, y:25, zone:'AMF', label:'АТП' },
+  { id:'AM-R',  x:69, y:26, zone:'AMF', label:'АТП' },
+  { id:'RW',    x:91, y:26, zone:'AMF', label:'ПВ'  },
+  { id:'LW2',   x:14, y:13, zone:'FWD', label:'ЛН'  },
+  { id:'ST-L',  x:34, y:13, zone:'FWD', label:'НАП' },
+  { id:'CF',    x:50, y:12, zone:'FWD', label:'ЦНА' },
+  { id:'ST-R',  x:66, y:13, zone:'FWD', label:'НАП' },
+  { id:'RW2',   x:86, y:13, zone:'FWD', label:'ПН'  },
+];
+
+function slotToZone(slotId) {
+  if (!slotId) return 'MID';
+  if (ALL_ZONES.includes(slotId)) return slotId;
+  return PITCH_SLOTS.find(s => s.id === slotId)?.zone || 'MID';
+}
+
 function posToZone(position) {
   if (!position) return 'MID';
   if (position === 'Goalkeeper') return 'GK';
@@ -141,7 +176,7 @@ function computeFormation(lineup) {
   const starters = lineup.filter(s => s.slot >= 1 && s.slot <= 11);
   const cnt = { GK:0, DEF:0, DMF:0, MID:0, AMF:0, FWD:0 };
   for (const s of starters) {
-    const z = ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(s.position);
+    const z = slotToZone(s.position_override) || posToZone((_pitchState.players||[]).find(p=>p.id===s.player_id)?.position);
     if (z in cnt) cnt[z]++;
   }
   return [cnt.DEF, cnt.DMF, cnt.MID, cnt.AMF, cnt.FWD].filter(c => c > 0).join('-') || '–';
@@ -171,7 +206,7 @@ const OVR_WEIGHTS = {
   FWD: [0.28, 0.40, 0.16, 0.05, 0.11],
 };
 
-function calcOverall(player, assignedZone) {
+function calcOverall(player, assignedSlot) {
   const { pace, shooting, passing, defending, physical } = player;
   if (!pace && !shooting && !passing && !defending && !physical) return null;
   const naturalZone = posToZone(player.position);
@@ -180,6 +215,7 @@ function calcOverall(player, assignedZone) {
     w[0]*(pace||50) + w[1]*(shooting||50) + w[2]*(passing||50) +
     w[3]*(defending||50) + w[4]*(physical||50)
   );
+  const assignedZone = slotToZone(assignedSlot);
   if (!assignedZone || assignedZone === naturalZone) return base;
   return Math.round(base * positionPenalty(naturalZone, assignedZone));
 }
@@ -2770,42 +2806,69 @@ function renderLineupEditor(team, lineup) {
 
 function renderPitchZones(lineupSlots) {
   const starters = lineupSlots.filter(s=>s.slot>=1&&s.slot<=11);
-  const zoneMap = {};
-  for (const z of ALL_ZONES) zoneMap[z] = [];
-  for (const s of starters) {
-    const z = ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(
-      (_pitchState.players||[]).find(pl=>pl.id===s.player_id)?.position
-    );
-    zoneMap[z].push(s);
-  }
+  const players = _pitchState.players || [];
   const hasSel = !!_pitchState.selectedPlayerId;
+  const selPlayer = hasSel ? players.find(p=>p.id===_pitchState.selectedPlayerId) : null;
+  const selNaturalZone = selPlayer ? posToZone(selPlayer.position) : null;
+
+  // Build slotId → starterSlot map (handle both new slot IDs and old zone IDs)
+  const slotMap = {}; // slotId → s
+  const oldZoneStarters = [];
+  for (const s of starters) {
+    if (PITCH_SLOTS.find(ps=>ps.id===s.position_override)) {
+      slotMap[s.position_override] = s;
+    } else {
+      oldZoneStarters.push(s);
+    }
+  }
+  // Map old zone-based starters to first available slot in that zone
+  const usedIds = new Set(Object.keys(slotMap));
+  for (const s of oldZoneStarters) {
+    const zone = slotToZone(s.position_override) ||
+      posToZone(players.find(p=>p.id===s.player_id)?.position);
+    const free = PITCH_SLOTS.find(ps=>ps.zone===zone && !usedIds.has(ps.id));
+    if (free) { slotMap[free.id] = s; usedIds.add(free.id); }
+  }
+
   let html = '';
-  for (const zone of PITCH_ZONES) {
-    const zp = zoneMap[zone.id];
-    html += `<div class="pb-zone-band${hasSel?' pb-zone-ready':''}" style="top:${zone.y-7}%;height:14%"
-      onclick="pitchZoneClick('${zone.id}')"
-      ondragover="event.preventDefault();event.currentTarget.classList.add('pb-zone-drag-over')"
-      ondragleave="event.currentTarget.classList.remove('pb-zone-drag-over')"
-      ondrop="event.currentTarget.classList.remove('pb-zone-drag-over');dropOnZone('${zone.id}',event)">
-      <span class="${hasSel?'pb-zone-add-hint':'pb-zone-label'}">${hasSel?`+ ${zone.label}`:zone.label}</span>
-    </div>`;
-    zp.forEach((s, i) => {
-      const p = (_pitchState.players||[]).find(pl=>pl.id===s.player_id);
-      if (!p) return;
-      const x = zp.length===1 ? 50 : 10 + 80*(i/(zp.length-1));
+  for (const slot of PITCH_SLOTS) {
+    const s = slotMap[slot.id];
+    if (s) {
+      // ── Filled slot ─────────────────────────────────────────
+      const p = players.find(pl=>pl.id===s.player_id);
+      if (!p) continue;
       const ini = p.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-      const ovr = calcOverall(p, zone.id);
+      const ovr = calcOverall(p, slot.id);
       const naturalZone = posToZone(p.position);
-      const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
-      const slotData = starters.find(sl=>sl.player_id===p.id);
-      const isInjured = slotData && slotData.injury_matches_remaining > 0;
-      html += `<div class="pb-slot pb-slot-filled${isInjured?' pb-slot-injured':''}" style="left:${x}%;top:${zone.y}%" onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})" title="${escHtml(p.name)} (${ovr||'?'})${isInjured?' ⚠ ТРАВМА — нажмите чтобы убрать':' — нажмите чтобы убрать в запас'}">
-        <div class="pb-slot-av">${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}${isInjured?'<span class="pb-inj-icon">🚑</span>':''}</div>
-        <div class="pb-slot-name" style="font-size:8px">${escHtml(p.name.split(' ')[0])}</div>
-        <div class="pb-slot-ovr" style="color:${isInjured?'#e74c3c':ovrColor}">${isInjured?'❌':(ovr !== null ? ovr+(naturalZone!==zone.id?'⚠':'') : '?')}</div>
+      const outOfPos = naturalZone !== slot.zone;
+      const ovrColor = !ovr ? '#888' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
+      const isInjured = s.injury_matches_remaining > 0;
+      html += `<div class="pb-slot pb-slot-filled${isInjured?' pb-slot-injured':''}"
+        style="left:${slot.x}%;top:${slot.y}%"
+        onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})"
+        title="${escHtml(p.name)}${isInjured?' ⚠ ТРАВМА':''} — нажмите чтобы убрать">
+        <div class="pb-slot-av">
+          ${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}
+          ${isInjured?'<span class="pb-inj-icon">🚑</span>':''}
+        </div>
+        <div class="pb-slot-name">${escHtml(p.name.split(' ')[0])}</div>
+        <div class="pb-slot-ovr" style="color:${isInjured?'#e74c3c':ovrColor}">${isInjured?'❌':(ovr!=null?ovr+(outOfPos?'⚠':''):'?')}</div>
         <div class="pb-slot-remove-badge">✕</div>
       </div>`;
-    });
+    } else {
+      // ── Empty slot ──────────────────────────────────────────
+      const preferred = hasSel && slot.zone === selNaturalZone;
+      const active = hasSel;
+      html += `<div class="pb-slot pb-slot-empty${active?' pb-slot-available':''}${preferred?' pb-slot-preferred':''}"
+        style="left:${slot.x}%;top:${slot.y}%"
+        onclick="pitchSlotClick('${slot.id}',event)"
+        ondragover="event.preventDefault();event.currentTarget.classList.add('pb-slot-drag-over')"
+        ondragleave="event.currentTarget.classList.remove('pb-slot-drag-over')"
+        ondrop="event.currentTarget.classList.remove('pb-slot-drag-over');dropOnZone('${slot.id}',event)"
+        title="${slot.label}${active?' — нажмите чтобы поставить':''}">
+        <span class="pb-slot-empty-label">${slot.label}</span>
+      </div>`;
+    }
   }
   return `<div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${html}</div></div>`;
 }
@@ -2970,30 +3033,33 @@ function dragPlayerStart(playerId, source, event) {
   event.dataTransfer.setData('text/plain', String(playerId));
 }
 
-async function dropOnZone(zoneId, event) {
-  event.preventDefault();
-  const pid = _dragPlayerId;
-  if (!pid) return;
-  const player = _pitchState.players.find(p => p.id === pid);
+async function _placePlayerOnPitch(pid, slotId) {
+  const player = _pitchState.players.find(p=>p.id===pid);
   if (player?.injury_matches_remaining > 0) { toast('Игрок травмирован', 'error'); return; }
   const tid = _pitchState.teamId;
   const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
-  // If already a starter, just update zone
+  // If already a starter, just move to new slot
   if (starters.find(s=>s.player_id===pid)) {
-    const current = _pitchState.lineup.map(s=>s.player_id===pid?{...s,position_override:zoneId}:s);
-    try { await PUT('/lineups/'+tid,{lineup:current}); await refreshPitchEditor(); } catch(e){toast(e.message,'error');}
+    const current = _pitchState.lineup.map(s=>s.player_id===pid?{...s,position_override:slotId}:s);
+    await PUT('/lineups/'+tid, {lineup:current});
+    await refreshPitchEditor();
     return;
   }
   if (starters.length >= 11) { toast('Основной состав заполнен (11/11)', 'error'); return; }
-  const usedSlots = new Set(starters.map(s=>s.slot));
-  let freeSlot = null;
-  for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){freeSlot=i;break;} }
-  try {
-    const current = _pitchState.lineup.filter(s=>s.player_id!==pid);
-    current.push({slot:freeSlot, player_id:pid, position_override:zoneId});
-    await PUT('/lineups/'+tid,{lineup:current});
-    await refreshPitchEditor();
-  } catch(e){toast(e.message,'error');}
+  const usedNums = new Set(starters.map(s=>s.slot));
+  let freeNum = null;
+  for (let i=1;i<=11;i++) { if(!usedNums.has(i)){freeNum=i;break;} }
+  const current = _pitchState.lineup.filter(s=>s.player_id!==pid);
+  current.push({slot:freeNum, player_id:pid, position_override:slotId});
+  await PUT('/lineups/'+tid, {lineup:current});
+  await refreshPitchEditor();
+}
+
+async function dropOnZone(slotId, event) {
+  event.preventDefault();
+  const pid = _dragPlayerId;
+  if (!pid) return;
+  try { await _placePlayerOnPitch(pid, slotId); } catch(e){toast(e.message,'error');}
 }
 
 async function dropOnBench(targetType, event) {
@@ -3042,27 +3108,21 @@ function pitchPlayerClick(playerId) {
   if (pitchEl) pitchEl.innerHTML = renderPitchZones(_pitchState.lineup);
 }
 
+async function pitchSlotClick(slotId, event) {
+  if (event) event.stopPropagation();
+  const pid = _pitchState.selectedPlayerId;
+  if (!pid) return;
+  try { await _placePlayerOnPitch(pid, slotId); } catch(e) { toast(e.message,'error'); }
+}
+
+// kept for backward compat (auto-lineup etc.)
 async function pitchZoneClick(zoneId) {
   const pid = _pitchState.selectedPlayerId;
   if (!pid) return;
-  // Block injured players
-  const player = _pitchState.players.find(p => p.id === pid);
-  if (player && player.injury_matches_remaining > 0) {
-    toast('Игрок травмирован и не может выйти на поле', 'error');
-    return;
-  }
-  const tid = _pitchState.teamId;
-  const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
-  if (starters.length >= 11) { toast('Основной состав заполнен (11/11)', 'error'); return; }
-  const usedSlots = new Set(starters.map(s=>s.slot));
-  let freeSlot = null;
-  for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){freeSlot=i;break;} }
-  try {
-    const current = _pitchState.lineup.filter(s=>s.player_id!==pid);
-    current.push({ slot: freeSlot, player_id: pid, position_override: zoneId });
-    await PUT('/lineups/'+tid, { lineup: current });
-    await refreshPitchEditor();
-  } catch(e) { toast(e.message,'error'); }
+  const usedSlotIds = new Set(_pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11).map(s=>s.position_override));
+  const free = PITCH_SLOTS.find(s=>s.zone===zoneId && !usedSlotIds.has(s.id));
+  if (free) return pitchSlotClick(free.id, null);
+  toast('Нет свободных позиций в этой зоне', 'error');
 }
 
 async function pitchPlayerDotClick(playerId) {
@@ -3085,9 +3145,15 @@ async function pitchReserveToStarter(playerId, teamId) {
   let freeSlot = null;
   for (let i=1;i<=11;i++) { if(!usedSlots.has(i)){freeSlot=i;break;} }
   const p = _pitchState.players.find(pl=>pl.id===playerId);
+  // Find a free slot matching natural position
+  const naturalZone = p ? posToZone(p.position) : 'MID';
+  const usedSlotIds = new Set(starters.map(s=>s.position_override));
+  const targetSlot = PITCH_SLOTS.find(s=>s.zone===naturalZone&&!usedSlotIds.has(s.id))
+    || PITCH_SLOTS.find(s=>!usedSlotIds.has(s.id))
+    || PITCH_SLOTS[0];
   try {
     const current = _pitchState.lineup.filter(s=>s.player_id!==playerId);
-    current.push({ slot: freeSlot, player_id: playerId, position_override: p ? posToZone(p.position) : 'MID' });
+    current.push({ slot: freeSlot, player_id: playerId, position_override: targetSlot.id });
     await PUT('/lineups/'+teamId, { lineup: current });
     await refreshPitchEditor();
   } catch(e) { toast(e.message,'error'); }

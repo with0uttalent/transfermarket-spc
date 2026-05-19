@@ -1286,18 +1286,39 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .pb-slot-filled .pb-slot-av { width: 36px; height: 36px; border-radius: 50%; background: var(--green); border: 2px solid #fff; margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
 .pb-slot-filled .pb-slot-av img { width: 100%; height: 100%; object-fit: cover; }
 .pb-slot-filled .pb-slot-name { font-size: 9px; color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,.8); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
-.pb-slot-empty { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.15); border: 2px dashed rgba(255,255,255,.5); display: flex; align-items: center; justify-content: center; }
-.pb-slot-empty .pb-slot-label { font-size: 9px; font-weight: 700; color: rgba(255,255,255,.8); }
-.pb-slot-empty.pb-slot-ready { background: rgba(46,204,113,.3); border-color: #2ecc71; animation: pulse-slot .8s ease-in-out infinite; }
+/* ── Empty position circles ──────────────────────────────── */
+.pb-slot-empty {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(255,255,255,.10); border: 1.5px solid rgba(255,255,255,.35);
+  display: flex; align-items: center; justify-content: center;
+  cursor: default; pointer-events: none; transition: all .15s;
+}
+.pb-slot-empty-label { font-size: 8px; font-weight: 700; color: rgba(255,255,255,.55); letter-spacing: .3px; pointer-events: none; }
+/* Player selected → all empty slots become interactive */
+.pb-slot-available {
+  cursor: pointer; pointer-events: all;
+  background: rgba(255,255,255,.20); border-color: rgba(255,255,255,.7);
+  animation: pulse-slot .9s ease-in-out infinite;
+}
+.pb-slot-available .pb-slot-empty-label { color: rgba(255,255,255,.9); }
+.pb-slot-available:hover { background: rgba(255,255,255,.35); transform: translate(-50%,-50%) scale(1.15); }
+/* Natural-zone match → green preferred highlight */
+.pb-slot-preferred {
+  background: rgba(46,204,113,.28) !important; border-color: #2ecc71 !important;
+  animation: pulse-slot-green .9s ease-in-out infinite !important;
+}
+.pb-slot-preferred .pb-slot-empty-label { color: #afffce; }
+.pb-slot-preferred:hover { background: rgba(46,204,113,.45) !important; }
+/* Drag-over on empty slot */
+.pb-slot-drag-over { background: rgba(46,204,113,.5) !important; border-color: #2ecc71 !important; transform: translate(-50%,-50%) scale(1.2); }
+
+@keyframes pulse-slot { 0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.3)} 50%{box-shadow:0 0 0 5px rgba(255,255,255,0)} }
+@keyframes pulse-slot-green { 0%,100%{box-shadow:0 0 0 0 rgba(46,204,113,.5)} 50%{box-shadow:0 0 0 6px rgba(46,204,113,0)} }
+
 .pb-slot-filled:hover { transform: translate(-50%,-50%) scale(1.12); }
-.pb-slot-empty:hover { background: rgba(255,255,255,.25); }
-@keyframes pulse-slot { 0%,100%{box-shadow:0 0 0 0 rgba(46,204,113,.4)} 50%{box-shadow:0 0 0 6px rgba(46,204,113,0)} }
-.pb-zone-band { position: absolute; left: 2%; right: 2%; cursor: default; display: flex; align-items: center; justify-content: center; border-radius: 6px; z-index: 1; transition: background .15s; pointer-events: none; }
-.pb-zone-band.pb-zone-ready { cursor: pointer; pointer-events: all; background: rgba(46,204,113,.18); border: 1.5px dashed rgba(46,204,113,.7); animation: pulse-zone .9s ease-in-out infinite; }
-.pb-zone-band.pb-zone-ready:hover { background: rgba(46,204,113,.32); }
-.pb-zone-label { font-size: 10px; color: rgba(255,255,255,.25); font-weight: 700; pointer-events: none; letter-spacing: .5px; }
-.pb-zone-add-hint { font-size: 13px; color: rgba(46,204,113,.95); font-weight: 700; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
-@keyframes pulse-zone { 0%,100%{border-color:rgba(46,204,113,.4)} 50%{border-color:rgba(46,204,113,.9)} }
+
+/* zone-band kept in DOM but hidden (auto-lineup etc still reference it) */
+.pb-zone-band { display: none; }
 .pb-slot-remove-badge { position: absolute; top: -4px; right: -4px; width: 14px; height: 14px; background: #e74c3c; border-radius: 50%; font-size: 8px; display: none; align-items: center; justify-content: center; color: #fff; font-weight: 700; z-index: 4; }
 .pb-slot-filled:hover .pb-slot-remove-badge { display: flex; }
 .pb-slot-ovr { font-size: 9px; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,.8); line-height: 1; margin-top: 1px; }
