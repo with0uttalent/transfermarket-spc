@@ -164,13 +164,29 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
   `).get(matchId);
   const base = `http://localhost:${process.env.PORT || 3000}`;
   const toUrl = u => u ? (u.startsWith('http') ? u : base + u) : null;
+
+  // Enrich goal events with player names for Telegram caption
+  const goalEvents = db.prepare(`
+    SELECT e.event_type, e.minute, e.team_id,
+      p.name  as player_name,
+      p2.name as assist_name
+    FROM match_events e
+    LEFT JOIN players p  ON e.player_id  = p.id
+    LEFT JOIN players p2 ON e.player2_id = p2.id
+    WHERE e.match_id = ? AND e.event_type IN ('goal','own_goal')
+    ORDER BY e.minute
+  `).all(matchId);
+
   sendMatchResult({
     matchId, homeTeam, awayTeam, homeScore, awayScore,
     homeLogo:    toUrl(match?.home_logo),
     awayLogo:    toUrl(match?.away_logo),
     stadiumUrl:  toUrl(match?.home_stadium),
-    status: match?.status || 'finished',
+    homeTeamId:  db.prepare('SELECT home_team_id FROM matches WHERE id=?').get(matchId)?.home_team_id,
+    awayTeamId:  db.prepare('SELECT away_team_id FROM matches WHERE id=?').get(matchId)?.away_team_id,
+    status:      match?.status || 'finished',
     events,
+    goalEvents,
   }).catch(() => {});
 
   // Individual news for each match injury
