@@ -124,6 +124,8 @@ router.delete('/:id', requireAuth, (req, res) => {
   try {
     db.transaction(() => {
       db.prepare('DELETE FROM league_schedule WHERE home_team_id=? OR away_team_id=?').run(id, id);
+      // loans.to_team_id is NOT NULL, so SET NULL FK won't work — delete the rows instead
+      db.prepare('DELETE FROM loans WHERE to_team_id=? OR from_team_id=?').run(id, id);
       db.prepare('DELETE FROM teams WHERE id=?').run(id);
     })();
     res.json({ message: 'Deleted' });
