@@ -647,6 +647,48 @@ async function renderTeamDetail(app, id) {
     const intlPlayers = players.filter(p => p.national_caps > 0 || p.national_team).length;
     const transfers = team.transfers || [];
     const income  = transfers.filter(t=>t.from_team_id===team.id).reduce((s,t)=>s+(t.transfer_fee||0),0);
+
+    // ── OVR strength breakdown (admin only) ──────────────────
+    const ATK_POS = new Set(['Centre-Forward','Striker','Left Winger','Right Winger','Attacking Midfield']);
+    const MID_POS = new Set(['Central Midfield','Defensive Midfield']);
+    const DEF_POS = new Set(['Centre-Back','Left-Back','Right-Back']);
+    const GK_POS  = new Set(['Goalkeeper']);
+    const lineAvg = pls => { const v = pls.map(p=>calcOverall(p)).filter(x=>x!==null); return v.length ? Math.round(v.reduce((a,b)=>a+b,0)/v.length) : null; };
+    const atkPl = players.filter(p=>ATK_POS.has(p.position||'')), midPl = players.filter(p=>MID_POS.has(p.position||''));
+    const defPl = players.filter(p=>DEF_POS.has(p.position||'')), gkPl  = players.filter(p=>GK_POS.has(p.position||''));
+    const atkOvr = lineAvg(atkPl), midOvr = lineAvg(midPl), defOvr = lineAvg(defPl), gkOvr = lineAvg(gkPl);
+    const allOvrs = players.map(p=>calcOverall(p)).filter(x=>x!==null);
+    const sqOvr = allOvrs.length ? Math.round(allOvrs.reduce((a,b)=>a+b,0)/allOvrs.length) : null;
+    // Weighted attack/defense using simulator formula
+    const A = atkOvr??sqOvr??60, M = midOvr??sqOvr??60, D = defOvr??sqOvr??60, G = gkOvr??sqOvr??60;
+    const teamAtkStr = Math.round(A*0.55 + M*0.30 + D*0.10 + G*0.05);
+    const teamDefStr = Math.round(D*0.45 + G*0.30 + M*0.20 + A*0.05);
+    const ovrBar = (val, color='#16a34a') => val===null ? '–' :
+      `<div style="display:flex;align-items:center;gap:6px">
+        ${ovrBadge(val,null,null)}
+        <div style="flex:1;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${val}%;background:${color};border-radius:3px"></div>
+        </div>
+      </div>`;
+    const ovrPanel = sqOvr===null ? '<div style="color:var(--text-muted);font-size:12px">Нет данных по навыкам</div>' : `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-size:32px;font-weight:900;line-height:1;color:var(--green)">${sqOvr}</div>
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.4">Средний<br>OVR состава</div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:11px;color:var(--text-muted)">Атак. сила</div>
+          <div style="font-weight:800;color:#e67e22">${teamAtkStr}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:var(--text-muted)">Защ. сила</div>
+          <div style="font-weight:800;color:#2980b9">${teamDefStr}</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:12px">
+        <div><span style="display:inline-block;width:80px;color:var(--text-muted)">🗡 Атака</span>${ovrBar(atkOvr,'#e67e22')}</div>
+        <div><span style="display:inline-block;width:80px;color:var(--text-muted)">⚙ Полузащ.</span>${ovrBar(midOvr,'#8e44ad')}</div>
+        <div><span style="display:inline-block;width:80px;color:var(--text-muted)">🛡 Защита</span>${ovrBar(defOvr,'#2980b9')}</div>
+        <div><span style="display:inline-block;width:80px;color:var(--text-muted)">🧤 Вратарь</span>${ovrBar(gkOvr,'#27ae60')}</div>
+      </div>`;
     const expense = transfers.filter(t=>t.to_team_id===team.id).reduce((s,t)=>s+(t.transfer_fee||0),0);
     const balance = income - expense;
     const balSign = balance>=0?'+':'';
@@ -715,6 +757,14 @@ async function renderTeamDetail(app, id) {
             <div class="tp-mv-val">${fmtValueTM(team.market_value)}</div>
             <div class="tp-mv-label">Общая стоимость</div>
           </div>
+          ${isAdmin() ? `<div class="tp-ovr-toggle-row">
+            <span class="tp-ovr-toggle-label">Сила состава (OVR)</span>
+            <label class="toggle-switch">
+              <input type="checkbox" onchange="document.getElementById('tp-ovr-panel-${team.id}').style.display=this.checked?'block':'none'">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div id="tp-ovr-panel-${team.id}" class="tp-ovr-panel" style="display:none">${ovrPanel}</div>` : ''}
         </div>
       </div>
 
