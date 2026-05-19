@@ -137,17 +137,17 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
   const homeWon = homeScore > awayScore;
   const draw    = homeScore === awayScore;
   const result  = homeWon
-    ? `${homeTeam} won ${homeScore}–${awayScore} against ${awayTeam}`
-    : draw ? `${homeTeam} and ${awayTeam} drew ${homeScore}–${awayScore}`
-           : `${awayTeam} won ${awayScore}–${homeScore} against ${homeTeam}`;
+    ? `${homeTeam} победили ${awayTeam} со счётом ${homeScore}–${awayScore}`
+    : draw ? `${homeTeam} и ${awayTeam} сыграли вничью ${homeScore}–${awayScore}`
+           : `${awayTeam} победили ${homeTeam} со счётом ${awayScore}–${homeScore}`;
 
   const goals = events.filter(e => e.event_type === 'goal' || e.event_type === 'own_goal');
   const reds  = events.filter(e => e.event_type === 'red_card');
   const inj   = events.filter(e => e.event_type === 'injury');
   let body = result + '.';
-  if (goals.length) body += ` Goals: ${goals.map(e => `(${e.minute}')`).join(', ')}.`;
-  if (reds.length)  body += ` Red cards: ${reds.length}.`;
-  if (inj.length)   body += ` Injuries: ${inj.length}.`;
+  if (goals.length) body += ` Голы: ${goals.map(e => `(${e.minute}')`).join(', ')}.`;
+  if (reds.length)  body += ` Удалений: ${reds.length}.`;
+  if (inj.length)   body += ` Травм: ${inj.length}.`;
 
   db.prepare(`INSERT INTO news (title, body, type, match_id) VALUES (?,?,?,?)`)
     .run(`${homeTeam} ${homeScore}–${awayScore} ${awayTeam}`, body, 'match', matchId);
@@ -159,20 +159,20 @@ function generateTeamMatchNews(matchId, homeTeamId, awayTeamId, homeTeamName, aw
   const draw    = homeScore === awayScore;
 
   const homeMsg = homeWon
-    ? `${homeTeamName} secured a ${homeScore}–${awayScore} victory at home! Excellent performance from the squad.`
+    ? `${homeTeamName} одержали победу дома со счётом ${homeScore}–${awayScore}! Отличная игра команды.`
     : draw
-      ? `${homeTeamName} shared the spoils in a ${homeScore}–${awayScore} draw.`
-      : `${homeTeamName} suffered a ${homeScore}–${awayScore} defeat. The manager will have plenty to reflect on.`;
+      ? `${homeTeamName} сыграли вничью ${homeScore}–${awayScore}.`
+      : `${homeTeamName} потерпели домашнее поражение ${homeScore}–${awayScore}. Тренерскому штабу есть над чем задуматься.`;
   const awayMsg = !homeWon && !draw
-    ? `${awayTeamName} claimed a brilliant away win, defeating ${homeTeamName} ${awayScore}–${homeScore}!`
+    ? `${awayTeamName} вырвали блестящую победу в гостях, обыграв ${homeTeamName} ${awayScore}–${homeScore}!`
     : draw
-      ? `${awayTeamName} held ${homeTeamName} to a ${awayScore}–${homeScore} draw on the road.`
-      : `${awayTeamName} were beaten ${homeScore}–${awayScore} away from home.`;
+      ? `${awayTeamName} удержали ничью ${awayScore}–${homeScore} в выездном матче.`
+      : `${awayTeamName} уступили ${homeScore}–${awayScore} в гостях.`;
 
   db.prepare(`INSERT INTO news (title, body, type, match_id, team_id) VALUES (?,?,?,?,?)`)
-    .run(`${homeTeamName}: match result`, homeMsg, 'team', matchId, homeTeamId);
+    .run(`${homeTeamName}: итог матча`, homeMsg, 'team', matchId, homeTeamId);
   db.prepare(`INSERT INTO news (title, body, type, match_id, team_id) VALUES (?,?,?,?,?)`)
-    .run(`${awayTeamName}: match result`, awayMsg, 'team', matchId, awayTeamId);
+    .run(`${awayTeamName}: итог матча`, awayMsg, 'team', matchId, awayTeamId);
 }
 
 function getLineupInfo(db, teamId) {
@@ -226,7 +226,7 @@ function simulateScheduledMatches() {
     db.prepare(`UPDATE loans SET status='ended' WHERE id=?`).run(loan.id);
     const p = db.prepare(`SELECT name FROM players WHERE id=?`).get(loan.player_id);
     const t = db.prepare(`SELECT name FROM teams WHERE id=?`).get(loan.from_team_id);
-    if (p && t) db.prepare(`INSERT INTO news (title, body, type) VALUES (?,?,?)`).run(`Loan ended: ${p.name} returns`, `${p.name} has returned to ${t.name} after loan spell.`, 'transfer');
+    if (p && t) db.prepare(`INSERT INTO news (title, body, type) VALUES (?,?,?)`).run(`Аренда завершена: ${p.name} возвращается`, `${p.name} вернулся в ${t.name} по окончании срока аренды.`, 'transfer');
   }
 }
 
@@ -262,16 +262,16 @@ function generateRandomPlayerNews() {
   function pickItem(player) {
     const otherTeam = teams.find(t => t.id !== player.team_id) || teams[0];
     const pool = [
-      { title:`${player.name} linked with move to ${otherTeam.name}`, body:`Sources suggest ${otherTeam.name} are monitoring ${player.name}. The ${player.position||'player'} could be available in the upcoming window.`, type:'rumor' },
-      { title:`${otherTeam.name} set to bid for ${player.name}`, body:`${otherTeam.name} are reportedly preparing a formal approach. Personal terms are yet to be discussed.`, type:'rumor' },
-      { title:`${player.name} contract talks stall`, body:`Renewal negotiations for ${player.name} have hit a snag. ${otherTeam.name} are thought to be watching closely.`, type:'rumor' },
-      { title:`${player.name} wants new challenge`, body:`${player.name} has reportedly expressed a desire for regular first-team football. Several clubs are said to be interested.`, type:'rumor' },
-      { title:`Injury concern: ${player.name}`, body:`${player.name} picked up a knock in training and is being assessed by medical staff ahead of upcoming fixtures.`, type:'injury' },
-      { title:`${player.name} set for weeks on sidelines`, body:`${player.name} is expected to miss several weeks with a muscle injury. The club is monitoring recovery closely.`, type:'injury' },
-      { title:`${player.name} in training ground controversy`, body:`${player.name} reportedly had a heated exchange with coaching staff. The club has downplayed the incident.`, type:'scandal' },
-      { title:`${player.name} fined for conduct breach`, body:`${player.name} has been fined by ${player.team_name||'the club'} following a breach of professional standards.`, type:'scandal' },
-      { title:`Insight: ${player.name} form analysed`, body:`${player.name} has been one of the standout performers this season. Analysts rate the ${player.position||'player'} among the best in their position.`, type:'rumor' },
-      { title:`${player.team_name||'Club'} preparing new contract for ${player.name}`, body:`${player.team_name||'The club'} are keen to tie down ${player.name} to an improved long-term deal amid reported interest from abroad.`, type:'rumor' },
+      { title:`${player.name} связывают с переходом в ${otherTeam.name}`, body:`По данным источников, ${otherTeam.name} следят за ${player.name}. Игрок может быть доступен в ближайшее трансферное окно.`, type:'rumor' },
+      { title:`${otherTeam.name} готовятся сделать предложение за ${player.name}`, body:`По слухам, ${otherTeam.name} готовят официальное предложение. Личные условия контракта ещё не обсуждались.`, type:'rumor' },
+      { title:`Переговоры по контракту ${player.name} зашли в тупик`, body:`Переговоры о продлении соглашения с ${player.name} забуксовали. Источники сообщают, что ${otherTeam.name} внимательно следит за ситуацией.`, type:'rumor' },
+      { title:`${player.name} хочет сменить обстановку`, body:`По имеющимся данным, ${player.name} выразил желание получать больше игрового времени. Несколько клубов уже проявили интерес.`, type:'rumor' },
+      { title:`Тревога за здоровье: ${player.name}`, body:`${player.name} получил повреждение на тренировке. Медицинский штаб оценивает его состояние перед предстоящими матчами.`, type:'injury' },
+      { title:`${player.name} выбудет на несколько недель`, body:`${player.name} ожидает пауза из-за мышечной травмы. Клуб внимательно следит за динамикой восстановления.`, type:'injury' },
+      { title:`Скандал в тренировочном центре с участием ${player.name}`, body:`По данным инсайдеров, у ${player.name} произошёл конфликт с тренерским штабом. Клуб опроверг серьёзность инцидента.`, type:'scandal' },
+      { title:`${player.name} оштрафован за нарушение дисциплины`, body:`${player.name} получил штраф от ${player.team_name||'клуба'} за нарушение профессиональных стандартов.`, type:'scandal' },
+      { title:`Анализ формы: ${player.name} в ударе`, body:`${player.name} стал одним из ярких исполнителей этого сезона. Эксперты ставят ${player.position?`этого ${player.position}`:'игрока'} в число лучших на своей позиции.`, type:'rumor' },
+      { title:`${player.team_name||'Клуб'} готовит новый контракт для ${player.name}`, body:`${player.team_name||'Клуб'} стремится удержать ${player.name} на улучшенных условиях на фоне интереса из-за рубежа.`, type:'rumor' },
     ];
     return pool[Math.floor(Math.random() * pool.length)];
   }
@@ -432,19 +432,19 @@ function simulateLeagueMatchday(leagueId) {
     const awayTeam = db.prepare('SELECT name FROM teams WHERE id=?').get(srow.away_team_id);
     if (homeTeam && awayTeam) {
       const homeMsg = homeWon
-        ? `${homeTeam.name} secured a ${homeScore}-${awayScore} victory at home!`
-        : draw ? `${homeTeam.name} drew ${homeScore}-${awayScore} in the league.`
-               : `${homeTeam.name} suffered a ${homeScore}-${awayScore} league defeat.`;
+        ? `${homeTeam.name} одержали победу дома со счётом ${homeScore}–${awayScore}!`
+        : draw ? `${homeTeam.name} сыграли вничью ${homeScore}–${awayScore} в чемпионате.`
+               : `${homeTeam.name} потерпели поражение ${homeScore}–${awayScore} в домашнем матче.`;
       const awayMsg = !homeWon && !draw
-        ? `${awayTeam.name} claimed a brilliant ${awayScore}-${homeScore} away win!`
-        : draw ? `${awayTeam.name} drew ${awayScore}-${homeScore} in the league.`
-               : `${awayTeam.name} lost ${awayScore}-${homeScore} on the road.`;
+        ? `${awayTeam.name} вырвали блестящую победу в гостях ${awayScore}–${homeScore}!`
+        : draw ? `${awayTeam.name} сыграли вничью ${awayScore}–${homeScore} в гостевом матче.`
+               : `${awayTeam.name} проиграли ${awayScore}–${homeScore} в гостях.`;
 
       db.prepare(`INSERT INTO news (title, body, type, match_id, team_id) VALUES (?,?,?,?,?)`).run(
-        `League MD${matchday}: ${srow.home_name} vs ${srow.away_name}`, homeMsg, 'team', matchId, srow.home_team_id
+        `Тур ${matchday}: ${srow.home_name} vs ${srow.away_name}`, homeMsg, 'team', matchId, srow.home_team_id
       );
       db.prepare(`INSERT INTO news (title, body, type, match_id, team_id) VALUES (?,?,?,?,?)`).run(
-        `League MD${matchday}: ${srow.home_name} vs ${srow.away_name}`, awayMsg, 'team', matchId, srow.away_team_id
+        `Тур ${matchday}: ${srow.home_name} vs ${srow.away_name}`, awayMsg, 'team', matchId, srow.away_team_id
       );
     }
 

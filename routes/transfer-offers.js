@@ -228,8 +228,8 @@ router.put('/:id/accept', requireAuth, (req, res) => {
 
       // News
       db.prepare(`INSERT INTO news (title, body, type, player_id) VALUES (?,?,?,?)`).run(
-        `Transfer: ${player.name} joins ${fromTeam.name}`,
-        `${player.name} has completed a permanent transfer from ${toTeam.name} to ${fromTeam.name} for ${fmtV(offer.amount)}.`,
+        `Трансфер: ${player.name} переходит в ${fromTeam.name}`,
+        `${player.name} завершил переход на постоянной основе из ${toTeam.name} в ${fromTeam.name} за ${fmtV(offer.amount)}.`,
         'transfer',
         player.id
       );
@@ -256,8 +256,8 @@ router.put('/:id/accept', requireAuth, (req, res) => {
 
       // News
       db.prepare(`INSERT INTO news (title, body, type, player_id) VALUES (?,?,?,?)`).run(
-        `Loan: ${player.name} joins ${fromTeam.name}`,
-        `${player.name} has joined ${fromTeam.name} on loan from ${toTeam.name} for ${offer.loan_months || 6} months.`,
+        `Аренда: ${player.name} переходит в ${fromTeam.name}`,
+        `${player.name} присоединился к ${fromTeam.name} на правах аренды из ${toTeam.name} сроком на ${offer.loan_months || 6} мес.`,
         'transfer',
         player.id
       );

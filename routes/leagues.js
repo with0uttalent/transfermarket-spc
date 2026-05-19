@@ -478,8 +478,8 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     `).run(champion.team_id, titleName, `Season ${league.season}`, new Date().getFullYear());
 
     db.prepare(`INSERT INTO news (title, body, type) VALUES (?,?,?)`).run(
-      `${champion.team_name} crowned ${league.name} Champions!`,
-      `${champion.team_name} have won the ${league.name} title for Season ${league.season} with ${champion.points} points. Congratulations to the squad and coaching staff!`,
+      `${champion.team_name} — чемпион ${league.name}!`,
+      `${champion.team_name} завоевали титул ${league.name} в сезоне ${league.season}, набрав ${champion.points} очков. Поздравляем команду и тренерский штаб!`,
       'transfer'
     );
   }
