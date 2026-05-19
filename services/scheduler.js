@@ -469,35 +469,12 @@ function simulateLeagueMatchday(leagueId) {
 }
 
 function startScheduler() {
-  // Daily at 00:05 – simulate scheduled matches & return expired loans
-  cron.schedule('5 0 * * *', () => { try { simulateScheduledMatches(); } catch(e) { console.warn('[Scheduler] Daily sim error:', e.message); } });
-
-  // Every 30 minutes – auto-generate and simulate a match
-  cron.schedule('*/30 * * * *', () => {
-    try { generateRandomMatch(); } catch(e) { console.warn('[Scheduler] Auto-match error:', e.message); }
-  });
-
   // Every 15 minutes – generate at least 2 player/team news items
   cron.schedule('*/15 * * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  // Daily at 08:00 – simulate league matchdays due today
-  cron.schedule('0 8 * * *', () => {
-    try {
-      const db = getDb();
-      const activeLeagues = db.prepare(`SELECT id FROM leagues WHERE status='active'`).all();
-      for (const league of activeLeagues) {
-        try {
-          simulateLeagueMatchday(league.id);
-        } catch(e) {
-          console.warn(`[Scheduler] League ${league.id} matchday error:`, e.message);
-        }
-      }
-    } catch(e) { console.warn('[Scheduler] League cron error:', e.message); }
-  });
-
-  console.log('[Scheduler] Crons: match/30min | news/15min | daily-sim/00:05 | league-matchday/08:00.');
+  console.log('[Scheduler] Crons: news/15min. Match simulation is manual-only.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };
