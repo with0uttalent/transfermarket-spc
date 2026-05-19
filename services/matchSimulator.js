@@ -176,6 +176,28 @@ function simulateMatchCore(
     events.push({ minute, event_type:type, team_id:teamId, player_id:playerId||null, player2_id:player2Id||null, description:desc });
   }
 
+  function addBuildupSequence(minute, attackers, teamId, excludeId, maxCount=3) {
+    const passers = attackers.filter(p => p.id !== excludeId);
+    const buildCount = ri(1, maxCount);
+    const buildMinStart = Math.max(1, minute - buildCount);
+    for (let b = 0; b < buildCount; b++) {
+      const bMin = buildMinStart + b;
+      if (bMin >= minute) break;
+      if (rand() < 0.5 && passers.length >= 2) {
+        const from = pick(passers);
+        const to = pick(passers.filter(p => p.id !== from.id));
+        const tmpl = pick(PASS_ACTIONS);
+        addEvent(bMin, 'buildup', teamId, from.id, to.id,
+          `🔵 ${tmpl.replace('{from}', from.name).replace('{to}', to.name)}`);
+      } else if (passers.length) {
+        const player = pick(passers);
+        const tmpl = pick(DRIBBLE_ACTIONS);
+        addEvent(bMin, 'buildup', player.team_id || teamId, player.id, null,
+          `🟡 ${tmpl.replace('{player}', player.name)}`);
+      }
+    }
+  }
+
   function tryGoal(minute, isHome) {
     const attackers = isHome ? activeHome : activeAway;
     const teamId    = isHome ? homeTeamId : awayTeamId;
@@ -197,26 +219,7 @@ function simulateMatchCore(
       return;
     }
 
-    // Build-up sequence: 1-3 pass/dribble events 2-3 minutes before goal
-    const buildMinStart = Math.max(1, minute - ri(1, 3));
-    const buildCount = ri(1, 3);
-    const passers = attackers.filter(p => p.id !== scorer.id);
-    for (let b = 0; b < buildCount; b++) {
-      const bMin = buildMinStart + b;
-      if (bMin >= minute) break;
-      if (rand() < 0.5 && passers.length >= 2) {
-        const from = pick(passers);
-        const to = pick(passers.filter(p => p.id !== from.id));
-        const tmpl = pick(PASS_ACTIONS);
-        addEvent(bMin, 'buildup', teamId, from.id, to.id,
-          `🔵 ${tmpl.replace('{from}', from.name).replace('{to}', to.name)}`);
-      } else if (passers.length) {
-        const player = pick(passers);
-        const tmpl = pick(DRIBBLE_ACTIONS);
-        addEvent(bMin, 'buildup', player.team_id || teamId, player.id, null,
-          `🟡 ${tmpl.replace('{player}', player.name)}`);
-      }
-    }
+    addBuildupSequence(minute, attackers, teamId, scorer.id);
 
     track(scorer.id); stats[scorer.id].goals++; stats[scorer.id].rating += 1.5;
     if (assister) { track(assister.id); stats[assister.id].assists++; stats[assister.id].rating += 0.8; }
@@ -324,10 +327,11 @@ function simulateMatchCore(
     const teamId    = isHome ? homeTeamId : awayTeamId;
     if (!attackers.length) return;
     const fwd = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
-    const p = fwd.length ? pick(fwd) : pick(attackers);
-    track(p.id);
-    addEvent(minute, 'near_miss', teamId, p.id, null,
-      `🎯 Почти гол! ${p.name} — удар в штангу/перекладину! ${commentaryNearMiss(p.name)}`);
+    const shooter = fwd.length ? pick(fwd) : pick(attackers);
+    if (rand() < 0.6) addBuildupSequence(minute, attackers, teamId, shooter.id, 2);
+    track(shooter.id);
+    addEvent(minute, 'near_miss', teamId, shooter.id, null,
+      `🎯 Почти гол! ${shooter.name} — удар в штангу/перекладину! ${commentaryNearMiss(shooter.name)}`);
   }
 
   for (let m = 1; m <= 90; m++) {
@@ -430,6 +434,25 @@ function simulateMatchCore(
     if (s.yellow_cards >= 1) d.physical -= 1;
     if (s.injured) { d.pace -= ri(1,2); d.physical -= ri(1,2); }
     skillDeltas[pid] = d;
+  }
+
+  // Defender / GK skill growth
+  const homeCleanSheet = awayScore === 0;
+  const awayCleanSheet = homeScore === 0;
+  for (const p of [...allHomePlayers, ...allAwayPlayers]) {
+    if (!skillDeltas[p.id]) skillDeltas[p.id] = { pace:0, shooting:0, passing:0, defending:0, physical:0 };
+    const pos = p.position || '';
+    const isHome = allHomePlayers.some(hp => hp.id === p.id);
+    const cs = isHome ? homeCleanSheet : awayCleanSheet;
+    if (DEF_POSITIONS.has(pos) || GK_POSITIONS.has(pos)) {
+      if (cs) {
+        skillDeltas[p.id].defending += ri(1, 2);
+        if (GK_POSITIONS.has(pos)) skillDeltas[p.id].physical += ri(0, 1);
+      }
+      const s = stats[p.id];
+      if (s && s.rating >= 7.5) skillDeltas[p.id].defending += 1;
+      if (rand() < 0.25) skillDeltas[p.id].physical += 1;
+    }
   }
 
   const matchStats = generateMatchFullStats(homeStr, awayStr, homeScore, awayScore);

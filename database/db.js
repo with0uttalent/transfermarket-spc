@@ -386,6 +386,8 @@ function initSchema() {
     `ALTER TABLE teams ADD COLUMN transfer_budget_spent REAL DEFAULT 0`,
     `ALTER TABLE leagues ADD COLUMN trophy_url TEXT`,
     `ALTER TABLE leagues ADD COLUMN logo_url TEXT`,
+    `ALTER TABLE tournaments ADD COLUMN bye_winners TEXT`,
+    `ALTER TABLE transfer_offers ADD COLUMN swap_player_id INTEGER`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

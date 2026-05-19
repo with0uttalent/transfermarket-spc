@@ -138,6 +138,10 @@ router.post('/:id/start', requireAuth, (req, res) => {
     }
   }
 
+  // Save bye winners so simulate-round can combine them with match winners
+  db.prepare(`UPDATE tournaments SET bye_winners=? WHERE id=?`)
+    .run(byeWinners.length ? JSON.stringify(byeWinners) : null, req.params.id);
+
   // If some teams got BYE and all first-round matches would be byes, start at round 2
   db.prepare(`UPDATE tournaments SET status='in_progress', current_round=1, total_rounds=? WHERE id=?`)
     .run(totalRounds, req.params.id);
@@ -194,13 +198,17 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
     const roundMatches2 = db.prepare(`SELECT * FROM matches WHERE tournament_id=? AND tournament_round=?`)
       .all(req.params.id, tour.current_round);
     const winners = roundMatches2.map(m => m.home_score >= m.away_score ? m.home_team_id : m.away_team_id);
+    const savedByes = tour.bye_winners ? JSON.parse(tour.bye_winners) : [];
+    const allWinners = [...winners, ...savedByes];
+    // Clear bye_winners now that they've been used
+    db.prepare(`UPDATE tournaments SET bye_winners=NULL WHERE id=?`).run(req.params.id);
     const nextRound = tour.current_round + 1;
-    if (winners.length === 1) {
+    if (allWinners.length === 1) {
       db.prepare(`UPDATE tournaments SET status='finished' WHERE id=?`).run(req.params.id);
-      const champ = db.prepare(`SELECT name FROM teams WHERE id=?`).get(winners[0]);
+      const champ = db.prepare(`SELECT name FROM teams WHERE id=?`).get(allWinners[0]);
       db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
         .run(`🏆 ${champ.name} wins ${tour.name}!`, `${champ.name} is the champion of ${tour.name}!`, 'tournament', req.params.id);
-      const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(winners[0]);
+      const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(allWinners[0]);
       const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
       for (const cp of champPl) {
         insertAch.run(cp.id, 'tournament_winner', `Won ${tour.name}`, req.params.id);
@@ -213,10 +221,10 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
       }
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      for (let i = 0; i < winners.length; i += 2) {
-        if (winners[i + 1] !== undefined) {
+      for (let i = 0; i < allWinners.length; i += 2) {
+        if (allWinners[i + 1] !== undefined) {
           db.prepare(`INSERT INTO matches (home_team_id,away_team_id,match_date,tournament_id,tournament_round) VALUES (?,?,?,?,?)`)
-            .run(winners[i], winners[i + 1], today, req.params.id, nextRound);
+            .run(allWinners[i], allWinners[i + 1], today, req.params.id, nextRound);
         }
       }
       db.prepare(`UPDATE tournaments SET current_round=? WHERE id=?`).run(nextRound, req.params.id);

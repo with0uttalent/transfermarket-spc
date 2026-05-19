@@ -85,7 +85,7 @@ router.get('/', requireAuth, (req, res) => {
 router.post('/', requireAuth, (req, res) => {
   const db = getDb();
   const isAdmin = req.user.role === 'admin';
-  const { to_team_id, player_id, offer_type, amount, loan_months, message } = req.body;
+  const { to_team_id, player_id, offer_type, amount, loan_months, message, swap_player_id } = req.body;
 
   let from_team_id = req.body.from_team_id;
 
