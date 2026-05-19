@@ -201,6 +201,7 @@ function calcOverall(player, assignedSlot) {
     w[0]*(pace||50) + w[1]*(shooting||50) + w[2]*(passing||50) +
     w[3]*(defending||50) + w[4]*(physical||50)
   );
+  if (!assignedSlot) return base;
   const assignedZone = slotToZone(assignedSlot);
   if (!assignedZone || assignedZone === naturalZone) return base;
   return Math.round(base * positionPenalty(naturalZone, assignedZone));
