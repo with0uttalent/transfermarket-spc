@@ -1253,6 +1253,31 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .budget-stat .bs-val.spent { color: #e74c3c; }
 .budget-stat .bs-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
+/* ── Squad table controls ───────────────────────────────────── */
+.squad-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.squad-filter-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.squad-filter-btn {
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.squad-filter-btn:hover { border-color: var(--green); color: var(--green); }
+.squad-filter-btn.active { background: var(--green); border-color: var(--green); color: #fff; }
+.squad-count { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+.sortable-th { white-space: nowrap; }
+.sortable-th:hover { color: var(--green); }
+
 /* ── Users management (admin) ───────────────────────────────── */
 .role-badge { font-size: 10px; padding: 2px 7px; border-radius: 3px; font-weight: 700; text-transform: uppercase; }
 .role-admin { background: rgba(241,196,15,.25); color: #f1c40f; }

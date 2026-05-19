@@ -791,33 +791,116 @@ function renderAboutTab(team) {
   `;
 }
 
-function renderSquadTab(team, isOwnTeam = false) {
-  if (!team.players.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>Игроки отсутствуют</p></div>`;
+let _squadState = { sort: 'market_value', dir: -1, posFilter: 'all', players: [], teamId: null, isOwnTeam: false };
+
+function _squadPosGroup(pos) {
+  if (!pos) return 'other';
+  if (pos === 'Goalkeeper') return 'GK';
+  if (pos.includes('Back') || pos === 'Centre-Back') return 'DEF';
+  if (pos.includes('Midfield')) return 'MID';
+  if (pos.includes('Winger') || pos.includes('Forward') || pos.includes('Striker')) return 'FWD';
+  return 'other';
+}
+
+function squadFilter(group) {
+  _squadState.posFilter = group;
+  _refreshSquadTable();
+}
+
+function squadSort(field) {
+  if (_squadState.sort === field) {
+    _squadState.dir *= -1;
+  } else {
+    _squadState.sort = field;
+    _squadState.dir = (field === 'market_value' || field === 'ovr') ? -1 : 1;
+  }
+  _refreshSquadTable();
+}
+
+function _refreshSquadTable() {
+  const root = document.getElementById('squad-tab-root');
+  if (!root) return;
+  root.innerHTML = _buildSquadInner();
+}
+
+function _buildSquadInner() {
+  const { sort, dir, posFilter, players, teamId, isOwnTeam } = _squadState;
   const showActions = isAdmin() || (isCoach() && isOwnTeam);
-  return `<div class="card">
-    <div class="card-header">Состав ${isAdmin()?`<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showPlayerForm(null,${team.id})">+ Добавить игрока</button>`:''}  </div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>#</th><th>Игрок</th><th>Нац.</th><th>Поз</th><th>Возраст</th><th>Нога</th><th class="text-right">OVR</th><th class="text-right">Ценность</th>${showActions?'<th></th>':''}</tr></thead>
-      <tbody>
-        ${team.players.map(p=>`
-          <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
-            <td class="text-muted">${p.shirt_number||'–'}</td>
-            <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<span class="font-bold">${escHtml(p.name)}</span></div></td>
-            <td>${p.flag_emoji||'–'}</td>
-            <td>${posBadge(p.position)}</td>
-            <td class="text-muted">${calcAge(p.date_of_birth)||'–'}</td>
-            <td class="text-muted">${p.foot||'–'}</td>
-            <td class="text-right">${ovrBadge(calcOverall(p), null, null)||'–'}</td>
-            <td class="text-right mv">${fmtValue(p.market_value)}</td>
-            ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
-              <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
-              <button class="btn-icon" onclick="showQuickTransfer(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Transfer">→</button>
-              <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
-            </td>`:(isCoach()&&isOwnTeam)?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button></td>`:''}
-          </tr>`).join('')}
-      </tbody>
-    </table></div>
-  </div>`;
+
+  const groups = ['all','GK','DEF','MID','FWD'];
+  const groupLabels = { all:'Все', GK:'Вратари', DEF:'Защитники', MID:'Полузащитники', FWD:'Нападающие' };
+
+  let filtered = players.filter(p => {
+    if (posFilter === 'all') return true;
+    return _squadPosGroup(p.position) === posFilter;
+  });
+
+  filtered = filtered.map(p => ({ ...p, _ovr: calcOverall(p) ?? -1 }));
+
+  filtered.sort((a, b) => {
+    let av, bv;
+    if (sort === 'ovr') { av = a._ovr; bv = b._ovr; }
+    else if (sort === 'market_value') { av = a.market_value || 0; bv = b.market_value || 0; }
+    else if (sort === 'position') { av = _squadPosGroup(a.position); bv = _squadPosGroup(b.position); }
+    else if (sort === 'name') { av = a.name || ''; bv = b.name || ''; }
+    else if (sort === 'age') { av = a.date_of_birth || '9999'; bv = b.date_of_birth || '9999'; }
+    else { av = a[sort] ?? ''; bv = b[sort] ?? ''; }
+    if (av < bv) return -dir;
+    if (av > bv) return dir;
+    return 0;
+  });
+
+  const arrow = (field) => sort === field ? (dir > 0 ? ' ↑' : ' ↓') : '';
+  const th = (field, label, cls='') =>
+    `<th class="sortable-th${cls?' '+cls:''}" onclick="squadSort('${field}')" style="cursor:pointer;user-select:none">${label}${arrow(field)}</th>`;
+
+  return `
+    <div class="squad-controls">
+      <div class="squad-filter-btns">
+        ${groups.map(g=>`<button class="squad-filter-btn${posFilter===g?' active':''}" onclick="squadFilter('${g}')">${groupLabels[g]}</button>`).join('')}
+      </div>
+      <span class="squad-count">${filtered.length} игр.</span>
+    </div>
+    <div class="card" style="margin-top:8px">
+      <div class="card-header">Состав ${isAdmin()?`<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none" onclick="showPlayerForm(null,${teamId})">+ Добавить игрока</button>`:''}  </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          ${th('shirt_number','#')}
+          ${th('name','Игрок')}
+          <th>Нац.</th>
+          ${th('position','Поз')}
+          ${th('age','Возраст')}
+          <th>Нога</th>
+          ${th('ovr','OVR','text-right')}
+          ${th('market_value','Ценность','text-right')}
+          ${showActions?'<th></th>':''}
+        </tr></thead>
+        <tbody>
+          ${filtered.length ? filtered.map(p=>`
+            <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
+              <td class="text-muted">${p.shirt_number||'–'}</td>
+              <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<span class="font-bold">${escHtml(p.name)}</span></div></td>
+              <td>${p.flag_emoji||'–'}</td>
+              <td>${posBadge(p.position)}</td>
+              <td class="text-muted">${calcAge(p.date_of_birth)||'–'}</td>
+              <td class="text-muted">${p.foot||'–'}</td>
+              <td class="text-right">${ovrBadge(p._ovr === -1 ? null : p._ovr, null, null)||'–'}</td>
+              <td class="text-right mv">${fmtValue(p.market_value)}</td>
+              ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
+                <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
+                <button class="btn-icon" onclick="showQuickTransfer(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Transfer">→</button>
+                <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
+              </td>`:(isCoach()&&isOwnTeam)?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button></td>`:''}
+            </tr>`).join('') : `<tr><td colspan="${showActions?9:8}" class="text-muted" style="text-align:center;padding:24px">Нет игроков</td></tr>`}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+function renderSquadTab(team, isOwnTeam = false) {
+  _squadState = { sort: 'market_value', dir: -1, posFilter: 'all', players: team.players || [], teamId: team.id, isOwnTeam };
+  if (!team.players.length) return `<div class="empty-state"><div class="empty-icon">⚽</div><p>Игроки отсутствуют</p></div>`;
+  return `<div id="squad-tab-root">${_buildSquadInner()}</div>`;
 }
 
 async function showCoachPlayerEditForm(player) {
