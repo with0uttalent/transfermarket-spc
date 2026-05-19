@@ -2,7 +2,7 @@
 const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
-
+const { sendMatchResult } = require('./telegramBot');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -151,6 +151,22 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
 
   db.prepare(`INSERT INTO news (title, body, type, match_id) VALUES (?,?,?,?)`)
     .run(`${homeTeam} ${homeScore}–${awayScore} ${awayTeam}`, body, 'match', matchId);
+
+  // Telegram: send match result banner
+  const match = db.prepare(`
+    SELECT m.status, m.ot_type, m.pen_home, m.pen_away,
+      ht.logo_url as home_logo, at.logo_url as away_logo
+    FROM matches m
+    JOIN teams ht ON m.home_team_id = ht.id
+    JOIN teams at ON m.away_team_id = at.id
+    WHERE m.id = ?
+  `).get(matchId);
+  sendMatchResult({
+    matchId, homeTeam, awayTeam, homeScore, awayScore,
+    homeLogo: match?.home_logo, awayLogo: match?.away_logo,
+    status: match?.status || 'finished',
+    events,
+  }).catch(() => {});
 
   // Individual news for each match injury
   const injEvents = events.filter(e => e.event_type === 'injury');

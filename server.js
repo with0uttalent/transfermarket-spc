@@ -66,4 +66,11 @@ app.listen(PORT, () => {
   } catch (e) {
     console.warn('Scheduler failed to start:', e.message);
   }
+  // Start Telegram bot
+  try {
+    const { initBot } = require('./services/telegramBot');
+    initBot();
+  } catch (e) {
+    console.warn('TelegramBot failed to start:', e.message);
+  }
 });

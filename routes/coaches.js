@@ -3,6 +3,7 @@
 const express = require('express');
 const { getDb } = require('../database/db');
 const { requireAdmin, requireCoach, requireAuth } = require('../middleware/auth');
+const { sendCoachNews } = require('../services/telegramBot');
 
 const router = express.Router();
 
@@ -175,6 +176,10 @@ router.post('/me/news', requireCoach, (req, res) => {
     INSERT INTO news (title, body, type, team_id, author_name)
     VALUES (?,?,'team',?,?)
   `).run(title, body, coach.team_id, coach.name);
+
+  // Telegram notification
+  const team = db.prepare('SELECT name FROM teams WHERE id=?').get(coach.team_id);
+  sendCoachNews({ coachName: coach.name, teamName: team?.name || '', title, body }).catch(() => {});
 
   res.status(201).json({
     id: result.lastInsertRowid,
