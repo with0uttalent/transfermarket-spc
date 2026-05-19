@@ -149,6 +149,14 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
 
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 
+  // Tournament draw → overtime instead of finishing
+  if (match.tournament_id && result.homeScore === result.awayScore) {
+    db.prepare(`UPDATE matches SET status='overtime' WHERE id=?`).run(match.id);
+    const ht2 = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.home_team_id);
+    const at2 = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.away_team_id);
+    return res.json({ home_score: result.homeScore, away_score: result.awayScore, overtime: true });
+  }
+
   const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.home_team_id);
   const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.away_team_id);
   const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
@@ -178,6 +186,7 @@ function advanceTournamentWinner(match, homeScore, awayScore) {
     // Get winners of this round and create next round matches
     const winners = roundMatches.map(m => {
       if (m.id === match.id) return winnerId;
+      if (m.ot_type === 'penalties') return m.pen_home > m.pen_away ? m.home_team_id : m.away_team_id;
       return m.home_score >= m.away_score ? m.home_team_id : m.away_team_id;
     });
     const nextRound = match.tournament_round + 1;
@@ -218,6 +227,66 @@ function advanceTournamentWinner(match, homeScore, awayScore) {
       .run(`Round ${nextRound} begins`, `${roundMatchCount.c} matches scheduled for round ${nextRound} of "${tournament.name}".`, 'tournament', match.tournament_id);
   }
 }
+
+// ─── Overtime resolution for tournament draws ─────────────────────────────────
+router.post('/:id/overtime', requireAuth, (req, res) => {
+  const db = getDb();
+  const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(req.params.id);
+  if (!match) return res.status(404).json({ error: 'Not found' });
+  if (match.status !== 'overtime') return res.status(400).json({ error: 'Match not in overtime' });
+
+  const { type } = req.body; // 'golden_goal' or 'classic'
+  const homePl = db.prepare(`SELECT market_value FROM players WHERE team_id=? AND status='active'`).all(match.home_team_id);
+  const awayPl = db.prepare(`SELECT market_value FROM players WHERE team_id=? AND status='active'`).all(match.away_team_id);
+
+  const str = pl => pl.reduce((s, p) => s + Math.log10(Math.max(p.market_value || 500000, 100000)), 0);
+  const homeStr = str(homePl), awayStr = str(awayPl);
+  const homeWinProb = (homeStr + awayStr) > 0 ? homeStr / (homeStr + awayStr) : 0.5;
+
+  const goalProb = type === 'golden_goal' ? 0.45 : 0.70;
+
+  if (Math.random() < goalProb) {
+    const homeScores = Math.random() < homeWinProb;
+    const otHome = homeScores ? 1 : 0, otAway = homeScores ? 0 : 1;
+    const newHome = match.home_score + otHome, newAway = match.away_score + otAway;
+    db.prepare(`UPDATE matches SET home_score=?, away_score=?, ot_type=?, ot_home=?, ot_away=?, status='finished' WHERE id=?`)
+      .run(newHome, newAway, type, otHome, otAway, match.id);
+    advanceTournamentWinner(match, newHome, newAway);
+    return res.json({ winner: homeScores ? match.home_team_id : match.away_team_id, home_score: newHome, away_score: newAway, ot_type: type });
+  }
+
+  if (type === 'classic') {
+    db.prepare(`UPDATE matches SET status='penalties' WHERE id=?`).run(match.id);
+    return res.json({ needs_penalties: true });
+  }
+
+  // No goal in golden goal → still overtime (classic button remains available)
+  return res.json({ drew: true, needs_classic: true });
+});
+
+router.post('/:id/penalties', requireAuth, (req, res) => {
+  const db = getDb();
+  const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(req.params.id);
+  if (!match) return res.status(404).json({ error: 'Not found' });
+  if (!['overtime', 'penalties'].includes(match.status)) return res.status(400).json({ error: 'Match not eligible for penalties' });
+
+  const HIT = 0.75;
+  let penHome = 0, penAway = 0;
+  for (let i = 0; i < 5; i++) {
+    if (Math.random() < HIT) penHome++;
+    if (Math.random() < HIT) penAway++;
+  }
+  // Sudden death until winner
+  while (penHome === penAway) {
+    if (Math.random() < HIT) penHome++;
+    if (Math.random() < HIT) penAway++;
+  }
+  const homeWins = penHome > penAway;
+  db.prepare(`UPDATE matches SET pen_home=?, pen_away=?, ot_type='penalties', status='finished' WHERE id=?`)
+    .run(penHome, penAway, match.id);
+  advanceTournamentWinner(match, homeWins ? 1 : 0, homeWins ? 0 : 1);
+  return res.json({ pen_home: penHome, pen_away: penAway, winner: homeWins ? match.home_team_id : match.away_team_id, home_score: match.home_score, away_score: match.away_score });
+});
 
 router.delete('/:id', requireAuth, (req, res) => {
   const db = getDb();

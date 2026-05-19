@@ -174,32 +174,43 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
   if (!roundMatches.length) return res.status(400).json({ error: 'No scheduled matches in current round' });
 
   const results = [];
+  let overtimeCount = 0;
   for (const match of roundMatches) {
     const homePl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.home_team_id);
     const awayPl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.away_team_id);
     const result = simulateMatch(match.home_team_id, match.away_team_id, homePl, awayPl);
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
+
+    // Tournament draw → set to overtime instead of finished
+    if (result.homeScore === result.awayScore) {
+      db.prepare(`UPDATE matches SET status='overtime' WHERE id=?`).run(match.id);
+      overtimeCount++;
+      results.push({ match_id: match.id, home_score: result.homeScore, away_score: result.awayScore, overtime: true });
+      continue;
+    }
+
     const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
     generateMatchNews(match.id, match.home_name, match.away_name, result.homeScore, result.awayScore, evRows);
-
-    // Re-fetch match with updated status
-    const updatedMatch = db.prepare(`SELECT * FROM matches WHERE id=?`).get(match.id);
-    require('./matches').advanceTournamentWinner && null; // handled in match simulate
-
-    // Manually advance (duplicate logic here for bulk simulate)
     const winnerId = result.homeScore >= result.awayScore ? match.home_team_id : match.away_team_id;
     results.push({ match_id: match.id, home_score: result.homeScore, away_score: result.awayScore, winner_id: winnerId });
   }
 
+  if (overtimeCount > 0) {
+    return res.json({ simulated: results.length, results, overtime_count: overtimeCount, message: `${overtimeCount} матч(а) требуют дополнительного времени` });
+  }
+
   // Check if round is complete and advance
   const allDone = db.prepare(
-    `SELECT COUNT(*) as c FROM matches WHERE tournament_id=? AND tournament_round=? AND status!='finished'`
+    `SELECT COUNT(*) as c FROM matches WHERE tournament_id=? AND tournament_round=? AND status NOT IN ('finished')`
   ).get(req.params.id, tour.current_round);
 
   if (allDone.c === 0) {
     const roundMatches2 = db.prepare(`SELECT * FROM matches WHERE tournament_id=? AND tournament_round=?`)
       .all(req.params.id, tour.current_round);
-    const winners = roundMatches2.map(m => m.home_score >= m.away_score ? m.home_team_id : m.away_team_id);
+    const winners = roundMatches2.map(m => {
+      if (m.ot_type === 'penalties') return m.pen_home > m.pen_away ? m.home_team_id : m.away_team_id;
+      return m.home_score >= m.away_score ? m.home_team_id : m.away_team_id;
+    });
     const savedByes = tour.bye_winners ? JSON.parse(tour.bye_winners) : [];
     const allWinners = [...winners, ...savedByes];
     // Clear bye_winners now that they've been used

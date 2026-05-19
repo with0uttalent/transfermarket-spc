@@ -2278,32 +2278,68 @@ function renderBracket(tour) {
   return `<div class="bracket-wrapper"><div class="bracket">
     ${rounds.map(rk=>{
       const round = tour.bracket[rk];
-      const slotCount = round.matches.length;
       return `<div class="bracket-round">
         <div class="bracket-round-header">${escHtml(round.name)}</div>
         <div class="bracket-matches">
           ${round.matches.map(m=>{
-            const homeWon = m.status==='finished' && m.home_score >= m.away_score;
-            const awayWon = m.status==='finished' && m.away_score > m.home_score;
+            const fin = m.status==='finished';
+            const isOT = m.status==='overtime';
+            const isPen = m.status==='penalties';
+            const penWin = fin && m.ot_type==='penalties';
+            const homeWon = fin && (penWin ? m.pen_home > m.pen_away : m.home_score >= m.away_score);
+            const awayWon = fin && (penWin ? m.pen_away > m.pen_home : m.away_score > m.home_score);
+            const scoreH = fin||isOT||isPen ? m.home_score : '';
+            const scoreA = fin||isOT||isPen ? m.away_score : '';
+            const penLabel = penWin ? `<div class="bt-pen">(${m.pen_home}:${m.pen_away} пен.)</div>` : '';
+            const otLabel = fin && m.ot_type && m.ot_type!=='penalties' ? `<span class="badge badge-gray" style="font-size:10px;padding:1px 4px">ДВ</span>` : '';
             return `<div class="bracket-slot">
               <div class="bracket-match" onclick="navigate('/matches/${m.id}')">
                 <div class="bracket-team ${homeWon?'winner':''}">
                   ${teamLogoEl(m.home_logo,m.home_team_name)}
                   <span class="bt-name">${escHtml(m.home_team_name)}</span>
-                  <span class="bt-score">${m.status==='finished'?m.home_score:''}</span>
+                  <span class="bt-score">${scoreH}</span>
                 </div>
                 <div class="bracket-team ${awayWon?'winner':''}">
                   ${teamLogoEl(m.away_logo,m.away_team_name)}
                   <span class="bt-name">${escHtml(m.away_team_name)}</span>
-                  <span class="bt-score">${m.status==='finished'?m.away_score:''}</span>
+                  <span class="bt-score">${scoreA}</span>
                 </div>
+                ${penLabel}
+                ${otLabel}
               </div>
+              ${(isOT||isPen) && isAdmin() ? `<div class="bracket-ot-btns">
+                ${isOT?`<button class="btn btn-sm btn-gold" onclick="event.stopPropagation();playOvertime(${m.id},'golden_goal',${tour.id})">⚡ Золотой гол</button>
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();playOvertime(${m.id},'classic',${tour.id})">⏱ Овертайм (30 мин)</button>`:''}
+                ${isPen?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();playPenalties(${m.id},${tour.id})">🥅 Серия пенальти</button>`:''}
+              </div>`:''}
             </div>`;
           }).join('')}
         </div>
       </div>`;
     }).join('')}
   </div></div>`;
+}
+
+async function playOvertime(matchId, type, tourId) {
+  try {
+    const r = await POST('/matches/'+matchId+'/overtime', { type });
+    if (r.needs_penalties) {
+      toast('Ничья в овертайме! Серия пенальти.');
+    } else if (r.needs_classic) {
+      toast('Золотой гол не забит. Классический овертайм.');
+    } else {
+      toast('Гол в дополнительное время!');
+    }
+    navigate('/tournaments/'+tourId);
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function playPenalties(matchId, tourId) {
+  try {
+    const r = await POST('/matches/'+matchId+'/penalties');
+    toast(`Серия пенальти: ${r.pen_home}:${r.pen_away}`);
+    navigate('/tournaments/'+tourId);
+  } catch(e) { toast(e.message,'error'); }
 }
 
 function renderTournamentTeams(tour, tournamentId) {

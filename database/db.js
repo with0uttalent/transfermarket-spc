@@ -391,6 +391,11 @@ function initSchema() {
     `ALTER TABLE tournaments ADD COLUMN trophy_url TEXT`,
     `ALTER TABLE titles ADD COLUMN tournament_id INTEGER`,
     `ALTER TABLE titles ADD COLUMN trophy_url TEXT`,
+    `ALTER TABLE matches ADD COLUMN ot_type TEXT`,
+    `ALTER TABLE matches ADD COLUMN ot_home INTEGER DEFAULT 0`,
+    `ALTER TABLE matches ADD COLUMN ot_away INTEGER DEFAULT 0`,
+    `ALTER TABLE matches ADD COLUMN pen_home INTEGER DEFAULT 0`,
+    `ALTER TABLE matches ADD COLUMN pen_away INTEGER DEFAULT 0`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }
