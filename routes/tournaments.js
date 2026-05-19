@@ -63,12 +63,14 @@ router.post('/', requireAuth, (req, res) => {
 });
 
 router.put('/:id', requireAuth, (req, res) => {
-  const { name } = req.body;
+  const { name, trophy_url } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
   const db = getDb();
-  const r = db.prepare(`UPDATE tournaments SET name=? WHERE id=?`).run(name, req.params.id);
-  if (!r.changes) return res.status(404).json({ error: 'Not found' });
-  res.json({ id: Number(req.params.id) });
+  const tour = db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id);
+  if (!tour) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE tournaments SET name=?, trophy_url=? WHERE id=?`)
+    .run(name, trophy_url ?? tour.trophy_url, req.params.id);
+  res.json(db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id));
 });
 
 // Add team to tournament
@@ -206,12 +208,15 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
     if (allWinners.length === 1) {
       db.prepare(`UPDATE tournaments SET status='finished' WHERE id=?`).run(req.params.id);
       const champ = db.prepare(`SELECT name FROM teams WHERE id=?`).get(allWinners[0]);
+      // Insert title for the winning team
+      db.prepare(`INSERT INTO titles (team_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?)`)
+        .run(allWinners[0], tour.name, `Турнир ${new Date().getFullYear()}`, new Date().getFullYear(), req.params.id, tour.trophy_url || null);
       db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
-        .run(`🏆 ${champ.name} wins ${tour.name}!`, `${champ.name} is the champion of ${tour.name}!`, 'tournament', req.params.id);
+        .run(`🏆 ${champ.name} выигрывает ${tour.name}!`, `${champ.name} стал чемпионом турнира «${tour.name}»!`, 'tournament', req.params.id);
       const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(allWinners[0]);
       const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
       for (const cp of champPl) {
-        insertAch.run(cp.id, 'tournament_winner', `Won ${tour.name}`, req.params.id);
+        insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tour.name}`, req.params.id);
         const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
         if (pl && pl.market_value > 0) {
           const nv = pl.market_value * 1.05;

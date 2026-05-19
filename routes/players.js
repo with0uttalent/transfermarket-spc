@@ -79,7 +79,11 @@ router.get('/:id', (req, res) => {
   `).all(req.params.id);
 
   const titles = db.prepare(`
-    SELECT ti.*, comp.name as competition_name, comp.trophy_url, comp.logo_url as competition_logo_url, t.name as team_name
+    SELECT ti.*,
+      comp.name as competition_name,
+      COALESCE(ti.trophy_url, comp.trophy_url) as trophy_url,
+      comp.logo_url as competition_logo_url,
+      t.name as team_name
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
     LEFT JOIN teams t ON ti.team_id = t.id

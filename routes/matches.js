@@ -185,13 +185,16 @@ function advanceTournamentWinner(match, homeScore, awayScore) {
       // Tournament champion!
       const p = db.prepare(`SELECT name FROM teams WHERE id=?`).get(winners[0]);
       db.prepare(`UPDATE tournaments SET status='finished' WHERE id=?`).run(match.tournament_id);
+      // Insert title for the winning team
+      db.prepare(`INSERT INTO titles (team_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?)`)
+        .run(winners[0], tournament.name, `Турнир ${new Date().getFullYear()}`, new Date().getFullYear(), match.tournament_id, tournament.trophy_url || null);
       db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
-        .run(`🏆 Tournament Champion!`, `${p.name} has won the tournament "${tournament.name}"!`, 'tournament', match.tournament_id);
+        .run(`🏆 ${p.name} — чемпион турнира!`, `${p.name} выиграл турнир «${tournament.name}»!`, 'tournament', match.tournament_id);
       // Achievements for winning team players
       const champs = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(winners[0]);
       const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
       for (const cp of champs) {
-        insertAch.run(cp.id, 'tournament_winner', `Won ${tournament.name}`, match.tournament_id);
+        insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tournament.name}`, match.tournament_id);
         const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
         if (pl && pl.market_value > 0) {
           const nv = pl.market_value * 1.05;

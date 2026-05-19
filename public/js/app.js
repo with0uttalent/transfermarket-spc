@@ -2241,18 +2241,22 @@ async function renderTournamentDetail(app, id) {
 
     app.innerHTML=`
       <div class="detail-hero" style="gap:20px">
-        <div class="hero-info">
-          <h1>🏆 ${escHtml(tour.name)}</h1>
-          <div class="meta">
-            <span class="badge ${finished?'badge-green':inProg?'badge-gold':'badge-gray'}">${tour.status}</span>
-            <span>${tour.teams.length} Teams</span>
-            ${inProg?`<span>Round ${tour.current_round} of ${tour.total_rounds}</span>`:''}
+        <div class="hero-info" style="display:flex;align-items:center;gap:16px">
+          ${tour.trophy_url ? `<img src="${escHtml(tour.trophy_url)}" style="height:64px;width:auto;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">` : ''}
+          <div>
+            <h1>${escHtml(tour.name)}</h1>
+            <div class="meta">
+              <span class="badge ${finished?'badge-green':inProg?'badge-gold':'badge-gray'}">${({setup:'Настройка',in_progress:'Идёт',finished:'Завершён'}[tour.status]||tour.status)}</span>
+              <span>${tour.teams.length} команд</span>
+              ${inProg?`<span>Раунд ${tour.current_round} из ${tour.total_rounds}</span>`:''}
+            </div>
           </div>
         </div>
         ${isAdmin()?`<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
-          ${inSetup?`<button class="btn btn-green" onclick="showAddTeamToTournament(${id},${JSON.stringify(teams).replace(/"/g,'&quot;')},${JSON.stringify(tour.teams.map(t=>t.team_id))})">+ Add Team</button>
-          <button class="btn-simulate" onclick="startTournament(${id})" ${tour.teams.length<2?'disabled':''}>▶ Start Tournament</button>`:
-          inProg?`<button class="btn-simulate" onclick="simulateTournamentRound(${id})">▶ Simulate Next Round</button>`:''}
+          <button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="showTournamentEditForm(${JSON.stringify(tour).replace(/"/g,'&quot;')})">✏️ Настройки</button>
+          ${inSetup?`<button class="btn btn-green" onclick="showAddTeamToTournament(${id},${JSON.stringify(teams).replace(/"/g,'&quot;')},${JSON.stringify(tour.teams.map(t=>t.team_id))})">+ Добавить команду</button>
+          <button class="btn-simulate" onclick="startTournament(${id})" ${tour.teams.length<2?'disabled':''}>▶ Начать турнир</button>`:
+          inProg?`<button class="btn-simulate" onclick="simulateTournamentRound(${id})">▶ Сыграть раунд</button>`:''}
         </div>`:''}
       </div>
       <div class="detail-tabs">
@@ -2319,15 +2323,39 @@ function renderTournamentTeams(tour, tournamentId) {
 }
 
 async function showTournamentForm() {
-  mkModal('New Tournament', `
-    <div class="form-group"><label>Tournament Name *</label><input type="text" id="torf-name" placeholder="e.g. Champions Cup 2025"/></div>
+  mkModal('Новый турнир', `
+    <div class="form-group"><label>Название *</label><input type="text" id="torf-name" placeholder="Например: Кубок чемпионов 2025"/></div>
+    <div class="form-group">
+      <label>URL картинки трофея</label>
+      <input type="text" id="torf-trophy" placeholder="https://…"/>
+    </div>
   `, async ()=>{
-    const name=document.getElementById('torf-name').value.trim();
-    if(!name){toast('Name required','error');return false;}
-    const r=await POST('/tournaments',{name});
-    toast('Tournament created');
-    navigate('/tournaments/'+r.id);
+    const name = document.getElementById('torf-name').value.trim();
+    const trophy_url = document.getElementById('torf-trophy').value.trim() || null;
+    if (!name) { toast('Название обязательно', 'error'); return false; }
+    const r = await POST('/tournaments', { name });
+    if (trophy_url) await PUT('/tournaments/' + r.id, { name, trophy_url });
+    toast('Турнир создан');
+    navigate('/tournaments/' + r.id);
     return true;
+  });
+}
+
+async function showTournamentEditForm(tour) {
+  mkModal('Настройки турнира', `
+    <div class="form-group"><label>Название *</label><input type="text" id="torf-edit-name" value="${escHtml(tour.name||'')}"/></div>
+    <div class="form-group">
+      <label>URL картинки трофея</label>
+      <input type="text" id="torf-edit-trophy" value="${escHtml(tour.trophy_url||'')}" placeholder="https://…"/>
+      ${tour.trophy_url ? `<img src="${escHtml(tour.trophy_url)}" style="height:60px;margin-top:6px;object-fit:contain" onerror="this.style.display='none'">` : ''}
+    </div>
+  `, async () => {
+    const name = document.getElementById('torf-edit-name').value.trim();
+    const trophy_url = document.getElementById('torf-edit-trophy').value.trim() || null;
+    if (!name) { toast('Название обязательно', 'error'); return false; }
+    await PUT('/tournaments/' + tour.id, { name, trophy_url });
+    toast('Турнир обновлён');
+    navigate('/tournaments/' + tour.id);
   });
 }
 
