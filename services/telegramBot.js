@@ -65,29 +65,35 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status) {
+async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl) {
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
 
-  // Background gradient
-  const grad = ctx.createLinearGradient(0, 0, W, H);
-  grad.addColorStop(0,   '#0d1b2a');
-  grad.addColorStop(0.5, '#1a3350');
-  grad.addColorStop(1,   '#0d1b2a');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
+  // Background: stadium photo or gradient fallback
+  const stadiumImg = await tryLoadImage(stadiumUrl);
+  if (stadiumImg) {
+    // Draw stadium covering full canvas
+    const sx = stadiumImg.width, sy = stadiumImg.height;
+    const scale = Math.max(W / sx, H / sy);
+    const dw = sx * scale, dh = sy * scale;
+    ctx.drawImage(stadiumImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    // Dark overlay so text is readable
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0,   '#0d1b2a');
+    grad.addColorStop(0.5, '#1a3350');
+    grad.addColorStop(1,   '#0d1b2a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
 
-  // Grid overlay
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
-
-  // Center glow
-  const glow = ctx.createRadialGradient(W/2, H/2, 20, W/2, H/2, 260);
-  glow.addColorStop(0, 'rgba(22,163,74,0.18)');
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow;
+  // Subtle vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, H*0.2, W/2, H/2, H*0.9);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vig;
   ctx.fillRect(0, 0, W, H);
 
   // Logo circles
@@ -161,10 +167,10 @@ function escTg(str) {
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
-async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, events }) {
+async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, status, events }) {
   if (!agent) return;
   try {
-    const imgBuf  = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status);
+    const imgBuf  = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl);
     const evText  = formatEvents(events || []);
     const caption = `🏟 <b>${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>\n\n${evText}`.slice(0, 1024);
     const result  = await tgSendPhoto(imgBuf, caption);

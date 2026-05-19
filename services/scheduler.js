@@ -154,16 +154,21 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
 
   // Telegram: send match result banner
   const match = db.prepare(`
-    SELECT m.status, m.ot_type, m.pen_home, m.pen_away,
-      ht.logo_url as home_logo, at.logo_url as away_logo
+    SELECT m.status,
+      ht.logo_url as home_logo, ht.stadium_url as home_stadium,
+      at.logo_url as away_logo
     FROM matches m
     JOIN teams ht ON m.home_team_id = ht.id
     JOIN teams at ON m.away_team_id = at.id
     WHERE m.id = ?
   `).get(matchId);
+  const base = `http://localhost:${process.env.PORT || 3000}`;
+  const toUrl = u => u ? (u.startsWith('http') ? u : base + u) : null;
   sendMatchResult({
     matchId, homeTeam, awayTeam, homeScore, awayScore,
-    homeLogo: match?.home_logo, awayLogo: match?.away_logo,
+    homeLogo:    toUrl(match?.home_logo),
+    awayLogo:    toUrl(match?.away_logo),
+    stadiumUrl:  toUrl(match?.home_stadium),
     status: match?.status || 'finished',
     events,
   }).catch(() => {});
