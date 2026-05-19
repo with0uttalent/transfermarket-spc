@@ -2862,7 +2862,7 @@ async function renderLeagueDetail(app, id) {
     app.innerHTML = `
       <div class="page-header" style="flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:14px">
-          ${lg.trophy_url?`<img src="${escHtml(lg.trophy_url)}" style="height:56px;width:auto;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">`:''}
+          ${lg.logo_url?`<img src="${escHtml(lg.logo_url)}" style="height:56px;width:auto;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">`:''}
           <div>
             <h1 class="page-title">${escHtml(lg.name)}</h1>
             <div style="font-size:13px;color:var(--text-muted);margin-top:2px">Season ${lg.season} · ${statusBadge} · Matchday ${lg.current_matchday}/${lg.total_matchdays}</div>
