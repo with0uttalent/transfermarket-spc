@@ -376,6 +376,12 @@ function initSchema() {
     `ALTER TABLE teams ADD COLUMN about_text TEXT`,
     `ALTER TABLE teams ADD COLUMN team_photo_url TEXT`,
     `ALTER TABLE matches ADD COLUMN match_time TEXT DEFAULT '15:00'`,
+    `ALTER TABLE competitions ADD COLUMN trophy_url TEXT`,
+    `ALTER TABLE players ADD COLUMN contract_until DATE`,
+    `ALTER TABLE players ADD COLUMN birthplace TEXT`,
+    `ALTER TABLE players ADD COLUMN national_team TEXT`,
+    `ALTER TABLE players ADD COLUMN national_caps INTEGER DEFAULT 0`,
+    `ALTER TABLE players ADD COLUMN national_goals INTEGER DEFAULT 0`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

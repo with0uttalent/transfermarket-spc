@@ -41,24 +41,24 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', requireAuth, (req, res) => {
-  const { name, country_id, type, logo_url } = req.body;
+  const { name, country_id, type, logo_url, trophy_url } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
   const result = db.prepare(
-    'INSERT INTO competitions (name, country_id, type, logo_url) VALUES (?, ?, ?, ?)'
-  ).run(name, country_id || null, type || 'league', logo_url || null);
-  res.status(201).json({ id: result.lastInsertRowid, name, country_id, type, logo_url });
+    'INSERT INTO competitions (name, country_id, type, logo_url, trophy_url) VALUES (?, ?, ?, ?, ?)'
+  ).run(name, country_id || null, type || 'league', logo_url || null, trophy_url || null);
+  res.status(201).json({ id: result.lastInsertRowid, name, country_id, type, logo_url, trophy_url });
 });
 
 router.put('/:id', requireAuth, (req, res) => {
-  const { name, country_id, type, logo_url } = req.body;
+  const { name, country_id, type, logo_url, trophy_url } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
   const result = db.prepare(
-    'UPDATE competitions SET name=?, country_id=?, type=?, logo_url=? WHERE id=?'
-  ).run(name, country_id || null, type || 'league', logo_url || null, req.params.id);
+    'UPDATE competitions SET name=?, country_id=?, type=?, logo_url=?, trophy_url=? WHERE id=?'
+  ).run(name, country_id || null, type || 'league', logo_url || null, trophy_url || null, req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
-  res.json({ id: Number(req.params.id), name, country_id, type, logo_url });
+  res.json({ id: Number(req.params.id), name, country_id, type, logo_url, trophy_url });
 });
 
 router.delete('/:id', requireAuth, (req, res) => {

@@ -7,10 +7,14 @@ const router = express.Router();
 const BASE_QUERY = `
   SELECT p.*,
     co.name as nationality_name, co.flag_emoji,
-    t.name as team_name, t.id as team_id
+    t.name as team_name, t.id as team_id,
+    t.logo_url as team_logo_url,
+    comp.name as competition_name,
+    comp.logo_url as competition_logo_url
   FROM players p
   LEFT JOIN countries co ON p.nationality_id = co.id
   LEFT JOIN teams t ON p.team_id = t.id
+  LEFT JOIN competitions comp ON t.competition_id = comp.id
 `;
 
 router.get('/', (req, res) => {
@@ -60,7 +64,7 @@ router.get('/:id', (req, res) => {
   `).all(req.params.id);
 
   const titles = db.prepare(`
-    SELECT ti.*, comp.name as competition_name, t.name as team_name
+    SELECT ti.*, comp.name as competition_name, comp.trophy_url, comp.logo_url as competition_logo_url, t.name as team_name
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
     LEFT JOIN teams t ON ti.team_id = t.id
@@ -102,7 +106,8 @@ router.post('/', requireAuth, (req, res) => {
 });
 
 router.put('/:id', requireAuth, (req, res) => {
-  const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status } = req.body;
+  const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status,
+          contract_until, birthplace, national_team, national_caps, national_goals } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
     const sn = parseInt(shirt_number);
@@ -114,11 +119,14 @@ router.put('/:id', requireAuth, (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   const result = db.prepare(`
-    UPDATE players SET name=?, date_of_birth=?, nationality_id=?, position=?, sub_position=?, foot=?, height=?, team_id=?, shirt_number=?, market_value=?, image_url=?, status=?
+    UPDATE players SET name=?, date_of_birth=?, nationality_id=?, position=?, sub_position=?, foot=?, height=?, team_id=?, shirt_number=?, market_value=?, image_url=?, status=?,
+      contract_until=?, birthplace=?, national_team=?, national_caps=?, national_goals=?
     WHERE id=?
   `).run(name, date_of_birth || null, nationality_id || null, position || null,
     sub_position || null, foot || null, height || null, team_id || null,
-    shirt_number || null, market_value || 0, image_url || null, status || 'active', req.params.id);
+    shirt_number || null, market_value || 0, image_url || null, status || 'active',
+    contract_until || null, birthplace || null, national_team || null,
+    national_caps || 0, national_goals || 0, req.params.id);
 
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
 

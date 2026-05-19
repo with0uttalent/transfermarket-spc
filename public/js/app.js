@@ -914,8 +914,33 @@ async function showPlayerForm(player, defaultTeamId) {
       <div class="form-group"><label>Рыночная стоимость (€)</label><input type="number" id="pf-mv" value="${player?.market_value||0}" min="0" step="100000"/></div>
       <div class="form-group"><label>URL фото</label><input type="text" id="pf-img" value="${escHtml(player?.image_url||'')}"/></div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>Место рождения</label><input type="text" id="pf-birthplace" value="${escHtml(player?.birthplace||'')}"/></div>
+      <div class="form-group"><label>Контракт до</label><input type="date" id="pf-contract" value="${player?.contract_until?.substring(0,10)||''}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Сборная</label><input type="text" id="pf-natteam" value="${escHtml(player?.national_team||'')}" placeholder="Россия"/></div>
+      <div class="form-group"><label>Матчи / голы (сборная)</label><div style="display:flex;gap:8px"><input type="number" id="pf-caps" value="${player?.national_caps||0}" min="0" style="width:80px"/> / <input type="number" id="pf-natgoals" value="${player?.national_goals||0}" min="0" style="width:80px"/></div></div>
+    </div>
   `, async () => {
-    const payload = { name:document.getElementById('pf-name').value.trim(), date_of_birth:document.getElementById('pf-dob').value||null, nationality_id:document.getElementById('pf-nat').value||null, position:document.getElementById('pf-pos').value||null, foot:document.getElementById('pf-foot').value||null, height:parseInt(document.getElementById('pf-height').value)||null, team_id:document.getElementById('pf-team').value||null, shirt_number:parseInt(document.getElementById('pf-shirt').value)||null, market_value:parseFloat(document.getElementById('pf-mv').value)||0, image_url:document.getElementById('pf-img').value.trim()||null, status:document.getElementById('pf-status').value };
+    const payload = {
+      name:document.getElementById('pf-name').value.trim(),
+      date_of_birth:document.getElementById('pf-dob').value||null,
+      nationality_id:document.getElementById('pf-nat').value||null,
+      position:document.getElementById('pf-pos').value||null,
+      foot:document.getElementById('pf-foot').value||null,
+      height:parseInt(document.getElementById('pf-height').value)||null,
+      team_id:document.getElementById('pf-team').value||null,
+      shirt_number:parseInt(document.getElementById('pf-shirt').value)||null,
+      market_value:parseFloat(document.getElementById('pf-mv').value)||0,
+      image_url:document.getElementById('pf-img').value.trim()||null,
+      status:document.getElementById('pf-status').value,
+      birthplace:document.getElementById('pf-birthplace').value.trim()||null,
+      contract_until:document.getElementById('pf-contract').value||null,
+      national_team:document.getElementById('pf-natteam').value.trim()||null,
+      national_caps:parseInt(document.getElementById('pf-caps').value)||0,
+      national_goals:parseInt(document.getElementById('pf-natgoals').value)||0,
+    };
     if (!payload.name){toast('Имя обязательно','error');return false;}
     if (payload.shirt_number !== null && (payload.shirt_number < 1 || payload.shirt_number > 10000)){toast('Номер должен быть от 1 до 10000','error');return false;}
     if (isEdit) await PUT('/players/'+player.id, payload); else await POST('/players', payload);
@@ -937,32 +962,118 @@ async function renderPlayerDetail(app, id) {
     try { careerStats = await GET('/players/'+id+'/career-stats'); } catch{}
     try { playerSkills = await GET('/players/'+id+'/skills'); } catch{}
 
+    // ── Trophy strip: group titles by competition ─────────────────────────
+    const titlesStrip = (() => {
+      if (!player.titles?.length) return '';
+      const groups = {};
+      for (const t of player.titles) {
+        const key = t.competition_id || t.title_name;
+        if (!groups[key]) groups[key] = { title: t, count: 0 };
+        groups[key].count++;
+      }
+      const chips = Object.values(groups).map(g => {
+        const img = g.title.trophy_url
+          ? `<img src="${escHtml(g.title.trophy_url)}" class="trophy-icon-img" onerror="this.style.display='none'">`
+          : `<span class="trophy-icon-emoji">🏆</span>`;
+        return `<div class="trophy-chip" title="${escHtml(g.title.competition_name||g.title.title_name)} (${g.count}x)" onclick="document.querySelector('[data-tab=titles]').click()">
+          <div class="trophy-chip-icon">${img}</div>
+          <span class="trophy-chip-count">${g.count}</span>
+        </div>`;
+      }).join('');
+      return `<div class="trophy-strip">${chips}<span class="trophy-strip-more" onclick="document.querySelector('[data-tab=titles]').click()">›</span></div>`;
+    })();
+
+    // ── Bio rows ──────────────────────────────────────────────────────────
+    const fmtDob = (dob) => {
+      if (!dob) return '–';
+      const d = new Date(dob);
+      return d.toLocaleDateString('ru-RU', {day:'2-digit',month:'short',year:'numeric'}).replace(' г.','') + (age ? ` (${age})` : '');
+    };
+    const fmtHeight = h => h ? `${(h/100).toFixed(2).replace('.',',')} м` : '–';
+    const fmtContract = d => {
+      if (!d) return '–';
+      return new Date(d).toLocaleDateString('ru-RU',{day:'2-digit',month:'long',year:'numeric'});
+    };
+    const joinedDate = (() => {
+      const tr = (player.transfers||[]).filter(t=>t.to_team_id===player.team_id).sort((a,b)=>new Date(b.transfer_date)-new Date(a.transfer_date));
+      if (!tr.length) return null;
+      return new Date(tr[0].transfer_date).toLocaleDateString('ru-RU',{day:'2-digit',month:'short',year:'numeric'});
+    })();
+    const lastMvDate = player.market_value_history?.at(-1)?.recorded_at;
+
+    const bioRows = [
+      ['Род./возраст', fmtDob(player.date_of_birth)],
+      player.birthplace ? ['Место рождения', escHtml(player.birthplace)] : null,
+      ['Национальность', player.flag_emoji ? `${player.flag_emoji} ${escHtml(player.nationality_name||'–')}` : (escHtml(player.nationality_name||'–'))],
+      player.height ? ['Рост', fmtHeight(player.height)] : null,
+      player.sub_position||player.position ? ['Амплуа', escHtml(player.sub_position||player.position||'–')] : null,
+      player.foot ? ['Нога', escHtml(player.foot)] : null,
+      player.national_team ? ['Сборная', escHtml(player.national_team)] : null,
+      (player.national_caps||player.national_goals) ? ['Матчи/голы (сборная)', `${player.national_caps||0} / ${player.national_goals||0}`] : null,
+    ].filter(Boolean);
+
+    const playerJson = JSON.stringify(player).replace(/"/g,'&quot;');
+    const actionBtns = isAdmin()
+      ? `<div class="pp-actions">
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="showPlayerForm(${playerJson})">✏️ Редактировать</button>
+          <button class="btn btn-green" onclick="showQuickTransfer(${playerJson})">→ Перевести</button>
+        </div>`
+      : isCoach()&&player.team_id!==State.coachProfile?.team_id
+        ? `<div class="pp-actions"><button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button></div>`
+        : '';
+
     app.innerHTML=`
-      <div class="detail-hero">
-        ${avatarEl(player.image_url,player.name,true)}
-        <div class="hero-info">
-          <h1>${escHtml(player.name)}</h1>
-          <div class="meta">
-            ${player.flag_emoji?`<span>${player.flag_emoji} ${escHtml(player.nationality_name||'')}</span>`:''}
-            ${player.position?`<span>${posBadge(player.position)}</span>`:''}
-            ${age?`<span>🎂 ${age} yrs</span>`:''}
-            ${player.team_name?`<span>🏟️ <a href="#/teams/${player.team_id}" style="color:rgba(255,255,255,.85);text-decoration:underline">${escHtml(player.team_name)}</a></span>`:'<span>🔓 Free Agent</span>'}
-            ${player.foot?`<span>👟 ${player.foot}</span>`:''}
-            ${player.height?`<span>📏 ${player.height}cm</span>`:''}
+      <div class="pp-wrap">
+        <!-- LEFT: photo -->
+        <div class="pp-photo-col">
+          <div class="pp-photo-frame">
+            ${player.image_url
+              ? `<img src="${escHtml(player.image_url)}" class="pp-photo" onerror="this.src=''">`
+              : `<div class="pp-photo-placeholder">${escHtml(player.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase())}</div>`}
           </div>
         </div>
-        <div class="hero-mv"><div class="mv-label">Рыночная стоимость</div><div class="mv-value">${fmtValue(player.market_value)}</div></div>
-        ${isAdmin()?`<div style="margin-left:16px;display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="showPlayerForm(${JSON.stringify(player).replace(/"/g,'&quot;')})">Редактировать</button>
-          <button class="btn btn-green" onclick="showQuickTransfer(${JSON.stringify(player).replace(/"/g,'&quot;')})">→ Перевести</button>
-        </div>`:isCoach()&&player.team_id!==State.coachProfile?.team_id?`<div style="margin-left:16px">
-          <button class="btn btn-green" onclick="showQuickOffer(${JSON.stringify(player).replace(/"/g,'&quot;')})">📨 Предложить трансфер</button>
-        </div>`:''}
+
+        <!-- CENTER: name + bio -->
+        <div class="pp-center-col">
+          <div class="pp-name-row">
+            ${player.shirt_number?`<span class="pp-shirt">#${player.shirt_number}</span>`:''}
+            <h1 class="pp-name">${escHtml(player.name)}</h1>
+          </div>
+          ${titlesStrip}
+          <table class="pp-bio-table">
+            ${bioRows.map(([k,v])=>`<tr><td class="pp-bio-key">${k}</td><td class="pp-bio-val">${v}</td></tr>`).join('')}
+          </table>
+          ${actionBtns}
+        </div>
+
+        <!-- RIGHT: team card + MV -->
+        <div class="pp-right-col">
+          ${player.team_id ? `
+          <div class="pp-team-card">
+            <div class="pp-team-logo-row">
+              ${player.team_logo_url
+                ? `<img src="${escHtml(player.team_logo_url)}" class="pp-team-logo" onerror="this.style.display='none'">`
+                : `<div class="pp-team-logo-ph">${escHtml((player.team_name||'?')[0])}</div>`}
+              <div>
+                <a href="#/teams/${player.team_id}" class="pp-team-name">${escHtml(player.team_name||'–')}</a>
+                ${player.competition_name?`<div class="pp-comp-name">${escHtml(player.competition_name)}</div>`:''}
+              </div>
+            </div>
+            ${joinedDate?`<div class="pp-team-row"><span>В команде с:</span><span>${joinedDate}</span></div>`:''}
+            ${player.contract_until?`<div class="pp-team-row"><span>Контракт до:</span><span>${fmtContract(player.contract_until)}</span></div>`:''}
+          </div>` : `<div class="pp-team-card"><div style="color:var(--text-muted);font-size:13px">🔓 Свободный агент</div></div>`}
+
+          <div class="pp-mv-box">
+            <div class="pp-mv-value">${fmtValue(player.market_value)}</div>
+            ${lastMvDate?`<div class="pp-mv-label">Последнее изменение: ${new Date(lastMvDate).toLocaleDateString('ru-RU',{day:'2-digit',month:'short',year:'numeric'})}</div>`:''}
+          </div>
+        </div>
       </div>
-      <div class="detail-tabs">
+
+      <div class="detail-tabs" style="margin-top:20px">
         <button class="detail-tab active" data-tab="stats">Статистика</button>
         <button class="detail-tab" data-tab="transfers">Трансферы</button>
-        <button class="detail-tab" data-tab="titles">Титулы</button>
+        <button class="detail-tab" data-tab="titles">Титулы (${player.titles?.length||0})</button>
         <button class="detail-tab" data-tab="achievements">Достижения (${achRows.length})</button>
         <button class="detail-tab" data-tab="market">История стоимости</button>
       </div>
@@ -1400,8 +1511,20 @@ async function showCompForm(comp) {
       <div class="form-group"><label>Country</label><select id="cf-country"><option value="">– International –</option>${countries.map(c=>`<option value="${c.id}"${comp?.country_id==c.id?' selected':''}>${c.flag_emoji||''} ${escHtml(c.name)}</option>`).join('')}</select></div>
       <div class="form-group"><label>Type</label><select id="cf-type"><option value="league"${comp?.type==='league'?' selected':''}>League</option><option value="cup"${comp?.type==='cup'?' selected':''}>Cup</option><option value="international"${comp?.type==='international'?' selected':''}>International</option></select></div>
     </div>
+    <div class="form-group"><label>URL логотипа лиги</label><input type="text" id="cf-logo" value="${escHtml(comp?.logo_url||'')}" placeholder="https://…"/></div>
+    <div class="form-group">
+      <label>URL кубка/трофея <small style="color:var(--text-muted)">(показывается в профиле победителей)</small></label>
+      <input type="text" id="cf-trophy" value="${escHtml(comp?.trophy_url||'')}" placeholder="https://…"/>
+      ${comp?.trophy_url?`<img src="${escHtml(comp.trophy_url)}" style="height:48px;margin-top:6px;object-fit:contain" onerror="this.style.display='none'">`:''}
+    </div>
   `, async () => {
-    const payload={name:document.getElementById('cf-name').value.trim(),country_id:document.getElementById('cf-country').value||null,type:document.getElementById('cf-type').value};
+    const payload={
+      name:document.getElementById('cf-name').value.trim(),
+      country_id:document.getElementById('cf-country').value||null,
+      type:document.getElementById('cf-type').value,
+      logo_url:document.getElementById('cf-logo').value.trim()||null,
+      trophy_url:document.getElementById('cf-trophy').value.trim()||null,
+    };
     if(!payload.name){toast('Name required','error');return false;}
     if(isEdit) await PUT('/competitions/'+comp.id,payload); else await POST('/competitions',payload);
     toast(isEdit?'Updated':'Added');
