@@ -151,6 +151,22 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
 
   db.prepare(`INSERT INTO news (title, body, type, match_id) VALUES (?,?,?,?)`)
     .run(`${homeTeam} ${homeScore}–${awayScore} ${awayTeam}`, body, 'match', matchId);
+
+  // Individual news for each match injury
+  const injEvents = events.filter(e => e.event_type === 'injury');
+  const injTypes = ['растяжение мышцы', 'травма подколенного сухожилия', 'растяжение связок голеностопа', 'проблема с икрой'];
+  for (const ev of injEvents) {
+    if (!ev.player_id) continue;
+    const player = db.prepare(`SELECT p.name, t.name as team_name FROM players p LEFT JOIN teams t ON p.team_id=t.id WHERE p.id=?`).get(ev.player_id);
+    if (!player) continue;
+    const injType = injTypes[Math.floor(Math.random() * injTypes.length)];
+    db.prepare(`INSERT INTO news (title, body, type, match_id, player_id) VALUES (?,?,?,?,?)`)
+      .run(
+        `${player.name} получил травму в матче`,
+        `${player.name} (${player.team_name}) покинул поле в матче ${homeTeam} ${homeScore}–${awayScore} ${awayTeam} на ${ev.minute}-й минуте. Предварительный диагноз: ${injType}. Игрок пропустит несколько ближайших матчей.`,
+        'injury', matchId, ev.player_id
+      );
+  }
 }
 
 function generateTeamMatchNews(matchId, homeTeamId, awayTeamId, homeTeamName, awayTeamName, homeScore, awayScore) {
@@ -266,8 +282,6 @@ function generateRandomPlayerNews() {
       { title:`${otherTeam.name} готовятся сделать предложение за ${player.name}`, body:`По слухам, ${otherTeam.name} готовят официальное предложение. Личные условия контракта ещё не обсуждались.`, type:'rumor' },
       { title:`Переговоры по контракту ${player.name} зашли в тупик`, body:`Переговоры о продлении соглашения с ${player.name} забуксовали. Источники сообщают, что ${otherTeam.name} внимательно следит за ситуацией.`, type:'rumor' },
       { title:`${player.name} хочет сменить обстановку`, body:`По имеющимся данным, ${player.name} выразил желание получать больше игрового времени. Несколько клубов уже проявили интерес.`, type:'rumor' },
-      { title:`Тревога за здоровье: ${player.name}`, body:`${player.name} получил повреждение на тренировке. Медицинский штаб оценивает его состояние перед предстоящими матчами.`, type:'injury' },
-      { title:`${player.name} выбудет на несколько недель`, body:`${player.name} ожидает пауза из-за мышечной травмы. Клуб внимательно следит за динамикой восстановления.`, type:'injury' },
       { title:`Скандал в тренировочном центре с участием ${player.name}`, body:`По данным инсайдеров, у ${player.name} произошёл конфликт с тренерским штабом. Клуб опроверг серьёзность инцидента.`, type:'scandal' },
       { title:`${player.name} оштрафован за нарушение дисциплины`, body:`${player.name} получил штраф от ${player.team_name||'клуба'} за нарушение профессиональных стандартов.`, type:'scandal' },
       { title:`Анализ формы: ${player.name} в ударе`, body:`${player.name} стал одним из ярких исполнителей этого сезона. Эксперты ставят ${player.position?`этого ${player.position}`:'игрока'} в число лучших на своей позиции.`, type:'rumor' },
