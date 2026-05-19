@@ -2594,6 +2594,32 @@ async function renderSearch(app, query) {
 // ═══════════════════════════════════════════════════════════
 //  LEAGUES
 // ═══════════════════════════════════════════════════════════
+async function showLeagueEditForm(lg) {
+  mkModal('Настройки лиги', `
+    <div class="form-group"><label>Название</label><input type="text" id="le-name" value="${escHtml(lg.name||'')}"/></div>
+    <div class="form-group"><label>Сезон</label><input type="number" id="le-season" value="${lg.season||1}" min="1"/></div>
+    <div class="form-group">
+      <label>URL логотипа лиги</label>
+      <input type="text" id="le-logo" value="${escHtml(lg.logo_url||'')}" placeholder="https://…"/>
+      ${lg.logo_url?`<img src="${escHtml(lg.logo_url)}" style="height:40px;margin-top:6px;object-fit:contain" onerror="this.style.display='none'">`:''}
+    </div>
+    <div class="form-group">
+      <label>URL картинки трофея</label>
+      <input type="text" id="le-trophy" value="${escHtml(lg.trophy_url||'')}" placeholder="https://…"/>
+      ${lg.trophy_url?`<img src="${escHtml(lg.trophy_url)}" style="height:60px;margin-top:6px;object-fit:contain" onerror="this.style.display='none'">`:''}
+    </div>
+  `, async () => {
+    const name = document.getElementById('le-name').value.trim();
+    const season = parseInt(document.getElementById('le-season').value) || lg.season;
+    const logo_url = document.getElementById('le-logo').value.trim() || null;
+    const trophy_url = document.getElementById('le-trophy').value.trim() || null;
+    if (!name) { toast('Название обязательно', 'error'); return false; }
+    await PUT('/leagues/'+lg.id, { name, season, logo_url, trophy_url });
+    toast('Лига обновлена');
+    navigate('/leagues/'+lg.id);
+  });
+}
+
 async function renderLeagues(app) {
   app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
@@ -2677,11 +2703,15 @@ async function renderLeagueDetail(app, id) {
     const statusBadge = `<span class="season-badge season-${lg.status}">${({active:'Активна',transfer_window:'Трансферное окно',pending:'Ожидание',finished:'Завершена',setup:'Настройка'}[lg.status]||lg.status.replace('_',' '))}</span>`;
     app.innerHTML = `
       <div class="page-header" style="flex-wrap:wrap;gap:8px">
-        <div>
-          <h1 class="page-title">${escHtml(lg.name)}</h1>
-          <div style="font-size:13px;color:var(--text-muted);margin-top:2px">Season ${lg.season} · ${statusBadge} · Matchday ${lg.current_matchday}/${lg.total_matchdays}</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          ${lg.trophy_url?`<img src="${escHtml(lg.trophy_url)}" style="height:56px;width:auto;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">`:''}
+          <div>
+            <h1 class="page-title">${escHtml(lg.name)}</h1>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:2px">Season ${lg.season} · ${statusBadge} · Matchday ${lg.current_matchday}/${lg.total_matchdays}</div>
+          </div>
         </div>
         ${isAdmin() ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="showLeagueEditForm(${JSON.stringify(lg).replace(/"/g,'&quot;')})">✏️ Настройки</button>
           ${lg.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${lg.id})">Начать сезон</button>`:''}
           ${lg.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${lg.id})">▶ Сыграть тур</button>`:''}
           ${lg.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${lg.id})">→ Следующий сезон</button>`:''}

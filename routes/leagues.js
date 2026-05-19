@@ -219,9 +219,9 @@ router.put('/:id', requireAdmin, (req, res) => {
   const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(req.params.id);
   if (!league) return res.status(404).json({ error: 'League not found' });
 
-  const { name, season } = req.body;
-  db.prepare(`UPDATE leagues SET name=COALESCE(?,name), season=COALESCE(?,season) WHERE id=?`)
-    .run(name || null, season || null, league.id);
+  const { name, season, trophy_url, logo_url } = req.body;
+  db.prepare(`UPDATE leagues SET name=COALESCE(?,name), season=COALESCE(?,season), trophy_url=?, logo_url=? WHERE id=?`)
+    .run(name || null, season || null, trophy_url ?? league.trophy_url, logo_url ?? league.logo_url, league.id);
   res.json(db.prepare('SELECT * FROM leagues WHERE id=?').get(league.id));
 });
 
