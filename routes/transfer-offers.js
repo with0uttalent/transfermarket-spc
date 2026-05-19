@@ -69,11 +69,14 @@ router.get('/', requireAuth, (req, res) => {
     SELECT o.*,
            ft.name AS from_team_name,
            tt.name AS to_team_name,
-           p.name AS player_name, p.position, p.market_value AS player_market_value
+           p.name AS player_name, p.position, p.market_value AS player_market_value,
+           o.swap_player_id,
+           p2.name AS swap_player_name
     FROM transfer_offers o
     JOIN teams ft ON o.from_team_id = ft.id
     JOIN teams tt ON o.to_team_id = tt.id
     JOIN players p ON o.player_id = p.id
+    LEFT JOIN players p2 ON o.swap_player_id = p2.id
     ${whereClause}
     ORDER BY o.created_at DESC
   `).all(...params);
@@ -105,10 +108,10 @@ router.post('/', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Cannot make an offer to your own team' });
   }
 
-  const validTypes = ['buy', 'loan'];
+  const validTypes = ['buy', 'loan', 'swap'];
   const offerType = offer_type || 'buy';
   if (!validTypes.includes(offerType)) {
-    return res.status(400).json({ error: 'offer_type must be buy or loan' });
+    return res.status(400).json({ error: 'offer_type must be buy, loan, or swap' });
   }
 
   const player = db.prepare('SELECT * FROM players WHERE id=?').get(player_id);
@@ -133,6 +136,26 @@ router.post('/', requireAuth, (req, res) => {
   }
 
   const offerAmount = parseFloat(amount) || 0;
+
+  if (offerType === 'swap') {
+    if (!swap_player_id) return res.status(400).json({ error: 'swap_player_id required for swap offers' });
+    const swapPlayer = db.prepare('SELECT * FROM players WHERE id=?').get(swap_player_id);
+    if (!swapPlayer) return res.status(404).json({ error: 'Swap player not found' });
+    if (swapPlayer.team_id != from_team_id) return res.status(400).json({ error: 'Swap player must belong to your team' });
+    // Check for pending offer on swap player
+    const pendingSwap = db.prepare(`SELECT id FROM transfer_offers WHERE player_id=? AND status='pending'`).get(swap_player_id);
+    if (pendingSwap) return res.status(400).json({ error: 'Swap player already has a pending offer' });
+    // Budget check: if amount > 0, from_team pays
+    if (!isAdmin && offerAmount > 0) {
+      const buyingTeam = db.prepare('SELECT transfer_budget, transfer_budget_spent FROM teams WHERE id=?').get(from_team_id);
+      const totalBudget = buyingTeam ? (buyingTeam.transfer_budget || 10000000) : 10000000;
+      const spent = buyingTeam ? (buyingTeam.transfer_budget_spent || 0) : 0;
+      const available = totalBudget - spent;
+      if (offerAmount > available) {
+        return res.status(400).json({ error: `Недостаточно бюджета. Доступно: ${fmtV(available)}, запрошено: ${fmtV(offerAmount)}` });
+      }
+    }
+  }
 
   if (offerType === 'buy') {
     // Amount must be >= market value
@@ -162,9 +185,9 @@ router.post('/', requireAuth, (req, res) => {
 
   const result = db.prepare(`
     INSERT INTO transfer_offers
-      (from_team_id, to_team_id, player_id, offer_type, amount, loan_months, message, status)
-    VALUES (?,?,?,?,?,?,?,'pending')
-  `).run(from_team_id, to_team_id, player_id, offerType, offerAmount, loan_months || 6, message || null);
+      (from_team_id, to_team_id, player_id, offer_type, amount, loan_months, message, status, swap_player_id)
+    VALUES (?,?,?,?,?,?,?,'pending',?)
+  `).run(from_team_id, to_team_id, player_id, offerType, offerAmount, loan_months || 6, message || null, swap_player_id || null);
 
   const offer = db.prepare('SELECT * FROM transfer_offers WHERE id=?').get(result.lastInsertRowid);
   res.status(201).json(offer);
@@ -234,6 +257,36 @@ router.put('/:id/accept', requireAuth, (req, res) => {
         player.id
       );
 
+    } else if (offer.offer_type === 'swap') {
+      // Move player_id: to_team → from_team
+      db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.from_team_id, offer.player_id);
+      // Move swap_player_id: from_team → to_team
+      db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.to_team_id, offer.swap_player_id);
+      // Cash top-up: if amount > 0, from_team pays to_team
+      if (offer.amount > 0) {
+        db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?')
+          .run(offer.amount, offer.from_team_id);
+      } else if (offer.amount < 0) {
+        // to_team pays from_team
+        db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?')
+          .run(Math.abs(offer.amount), offer.to_team_id);
+      }
+      // Transfer records
+      const now2 = new Date().toISOString().slice(0, 10);
+      db.prepare(`INSERT INTO transfers (player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type) VALUES (?,?,?,?,?,'permanent')`).run(offer.player_id, offer.to_team_id, offer.from_team_id, 0, now2);
+      db.prepare(`INSERT INTO transfers (player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type) VALUES (?,?,?,?,?,'permanent')`).run(offer.swap_player_id, offer.from_team_id, offer.to_team_id, 0, now2);
+      // Recalculate market values
+      for (const tid of [offer.from_team_id, offer.to_team_id]) {
+        const tot = db.prepare('SELECT COALESCE(SUM(market_value),0) AS t FROM players WHERE team_id=?').get(tid);
+        db.prepare('UPDATE teams SET market_value=? WHERE id=?').run(tot.t, tid);
+      }
+      const swapP = db.prepare('SELECT name FROM players WHERE id=?').get(offer.swap_player_id);
+      const cashStr = offer.amount > 0 ? ` + доплата ${fmtV(offer.amount)}` : offer.amount < 0 ? ` + доплата ${fmtV(Math.abs(offer.amount))} обратно` : '';
+      db.prepare(`INSERT INTO news (title, body, type) VALUES (?,?,?)`).run(
+        `Обмен: ${player.name} ↔ ${swapP ? swapP.name : 'неизвестно'}`,
+        `${fromTeam.name} и ${toTeam.name} обменялись игроками: ${player.name} перешёл в ${fromTeam.name}, ${swapP ? swapP.name : 'игрок'} — в ${toTeam.name}${cashStr}.`,
+        'transfer'
+      );
     } else if (offer.offer_type === 'loan') {
       const endDate = new Date();
       endDate.setMonth(endDate.getMonth() + (offer.loan_months || 6));

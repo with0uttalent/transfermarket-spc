@@ -1022,12 +1022,12 @@ async function renderPlayers(app, params) {
         <select id="player-status-filter"><option value="">All Status</option><option value="active">Active</option><option value="retired">Retired</option><option value="free_agent">Free Agent</option></select>
       </div>
       <div class="card"><div class="table-wrap"><table>
-        <thead><tr><th>Игрок</th><th>Нац.</th><th>Позиция</th><th>Возраст</th><th>Команда</th><th>Нога</th><th class="text-right">Ценность</th>${isAdmin()?'<th></th>':''}</tr></thead>
+        <thead><tr><th>Игрок</th><th>Нац.</th><th>Позиция</th><th>Возраст</th><th>Команда</th><th>Нога</th><th class="text-right">OVR</th><th class="text-right">Ценность</th>${isAdmin()?'<th></th>':''}</tr></thead>
         <tbody id="players-tbody"></tbody>
       </table></div></div>`;
     const renderRows = list => {
       const tbody = document.getElementById('players-tbody');
-      if (!list.length){tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">⚽</div><p>Игроки отсутствуют</p></div></td></tr>`;return;}
+      if (!list.length){tbody.innerHTML=`<tr><td colspan="${isAdmin()?10:9}"><div class="empty-state"><div class="empty-icon">⚽</div><p>Игроки отсутствуют</p></div></td></tr>`;return;}
       tbody.innerHTML = list.map(p=>`
         <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
           <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><div class="font-bold">${escHtml(p.name)}</div>${p.status!=='active'?`<span class="badge badge-gray">${p.status}</span>`:''}</div></div></td>
@@ -1036,6 +1036,7 @@ async function renderPlayers(app, params) {
           <td class="text-muted">${calcAge(p.date_of_birth)||'–'}</td>
           <td class="text-muted">${escHtml(p.team_name||'Free Agent')}</td>
           <td class="text-muted">${p.foot||'–'}</td>
+          <td class="text-right">${ovrBadge(calcOverall(p), null, null)||'–'}</td>
           <td class="text-right mv">${fmtValue(p.market_value)}</td>
           ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
             <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
@@ -1189,7 +1190,7 @@ async function renderPlayerDetail(app, id) {
           <button class="btn btn-green" onclick="showQuickTransfer(${playerJson})">→ Перевести</button>
         </div>`
       : isCoach()&&player.team_id!==State.coachProfile?.team_id
-        ? `<div class="pp-actions"><button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button></div>`
+        ? `<div class="pp-actions"><button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button><button class="btn btn-outline" onclick="showSwapOfferForm(${playerJson},${State.coachProfile?.team_id})">🔄 Обмен</button></div>`
         : '';
 
     app.innerHTML=`
@@ -1552,6 +1553,45 @@ function selectQoRole(type) {
     el.style.borderColor = active ? 'var(--green)' : 'var(--border)';
     el.style.background  = active ? 'rgba(46,204,113,.12)' : 'none';
     el.style.color       = active ? 'var(--green)' : '';
+  });
+}
+
+async function showSwapOfferForm(targetPlayer, coachTeamId) {
+  const myTeam = await GET('/teams/' + coachTeamId);
+  const myPlayers = (myTeam.players || []).filter(p => p.id !== targetPlayer.id);
+  mkModal('Предложить обмен', `
+    <div style="margin-bottom:12px;padding:10px;background:var(--bg-darker);border-radius:6px">
+      <strong>Запрашиваемый игрок:</strong> ${escHtml(targetPlayer.name)} (${fmtValue(targetPlayer.market_value)})
+    </div>
+    <div class="form-group">
+      <label>Ваш игрок *</label>
+      <select id="swap-my-player">
+        <option value="">— выберите игрока —</option>
+        ${myPlayers.map(p => `<option value="${p.id}">${escHtml(p.name)} (${posBadge(p.position)}) — ${fmtValue(p.market_value)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Доплата (положительная = вы платите, отрицательная = они платят)</label>
+      <input type="number" id="swap-cash" value="0" step="100000" placeholder="0"/>
+    </div>
+    <div class="form-group">
+      <label>Сообщение</label>
+      <input type="text" id="swap-msg" placeholder="Необязательно…"/>
+    </div>
+  `, async () => {
+    const swapPlayerId = document.getElementById('swap-my-player').value;
+    const cash = parseFloat(document.getElementById('swap-cash').value) || 0;
+    const msg = document.getElementById('swap-msg').value.trim() || null;
+    if (!swapPlayerId) { toast('Выберите вашего игрока', 'error'); return false; }
+    await POST('/transfer-offers', {
+      to_team_id: targetPlayer.team_id,
+      player_id: targetPlayer.id,
+      swap_player_id: parseInt(swapPlayerId),
+      offer_type: 'swap',
+      amount: cash,
+      message: msg,
+    });
+    toast('Предложение обмена отправлено');
   });
 }
 
@@ -3396,6 +3436,7 @@ function renderTransferOffersTab(offers, myTeamId) {
       </div>
       <div class="offer-amount">${fmtValue(o.amount)}</div>
       ${o.offer_type==='loan'?`<div class="offer-meta">Срок аренды: ${o.loan_months} мес.</div>`:''}
+      ${o.offer_type==='swap'&&o.swap_player_name?`<div class="offer-meta">Обмен на: <strong>${escHtml(o.swap_player_name)}</strong></div>`:''}
       ${o.message?`<div class="offer-meta" style="margin-top:6px;font-style:italic">"${escHtml(o.message)}"</div>`:''}
       <div class="offer-meta">${fmtDate(o.created_at)}</div>
       ${isReceived&&o.status==='pending'?`

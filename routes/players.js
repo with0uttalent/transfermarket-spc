@@ -17,10 +17,25 @@ const BASE_QUERY = `
   LEFT JOIN competitions comp ON t.competition_id = comp.id
 `;
 
+const LIST_QUERY = `
+  SELECT p.*,
+    co.name as nationality_name, co.flag_emoji,
+    t.name as team_name, t.id as team_id,
+    t.logo_url as team_logo_url,
+    comp.name as competition_name,
+    comp.logo_url as competition_logo_url,
+    ps.pace, ps.shooting, ps.passing, ps.defending, ps.physical
+  FROM players p
+  LEFT JOIN countries co ON p.nationality_id = co.id
+  LEFT JOIN teams t ON p.team_id = t.id
+  LEFT JOIN competitions comp ON t.competition_id = comp.id
+  LEFT JOIN player_skills ps ON ps.player_id = p.id
+`;
+
 router.get('/', (req, res) => {
   const db = getDb();
   const { search, team_id, position, status } = req.query;
-  let query = BASE_QUERY;
+  let query = LIST_QUERY;
   const params = [];
   const conditions = [];
 
