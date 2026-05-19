@@ -47,6 +47,13 @@ function fmtValue(v) {
   if (v >= 1e3) return '€' + (v / 1e3).toFixed(0) + 'K';
   return '€' + v;
 }
+function fmtValueTM(v) {
+  if (!v || v === 0) return '–';
+  if (v >= 1e9) return (v / 1e9).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' млрд €';
+  if (v >= 1e6) return (v / 1e6).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' млн €';
+  if (v >= 1e3) return (v / 1e3).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' тыс. €';
+  return v + ' €';
+}
 function fmtDate(d) {
   if (!d) return '–';
   return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -705,7 +712,7 @@ async function renderTeamDetail(app, id) {
             </div>
           </div>` : ''}
           <div class="tp-mv-box">
-            <div class="tp-mv-val">${fmtValue(team.market_value)}</div>
+            <div class="tp-mv-val">${fmtValueTM(team.market_value)}</div>
             <div class="tp-mv-label">Общая стоимость</div>
           </div>
         </div>
@@ -1221,15 +1228,12 @@ async function renderPlayerDetail(app, id) {
         <div class="pp-right-col">
           ${player.team_id ? `
           <div class="pp-team-card">
-            <div class="pp-team-logo-row">
+            <a href="#/teams/${player.team_id}" class="pp-team-logo-link">
               ${player.team_logo_url
-                ? `<img src="${escHtml(player.team_logo_url)}" class="pp-team-logo" onerror="this.style.display='none'">`
-                : `<div class="pp-team-logo-ph">${escHtml((player.team_name||'?')[0])}</div>`}
-              <div>
-                <a href="#/teams/${player.team_id}" class="pp-team-name">${escHtml(player.team_name||'–')}</a>
-                ${player.competition_name?`<div class="pp-comp-name">${escHtml(player.competition_name)}</div>`:''}
-              </div>
-            </div>
+                ? `<img src="${escHtml(player.team_logo_url)}" class="pp-team-logo-big" onerror="this.style.display='none'">`
+                : `<div class="pp-team-logo-ph-big">${escHtml((player.team_name||'?')[0])}</div>`}
+            </a>
+            ${player.competition_name?`<div class="pp-comp-name" style="text-align:center;margin-top:6px">${escHtml(player.competition_name)}</div>`:''}
             ${joinedDate?`<div class="pp-team-row"><span>В команде с:</span><span>${joinedDate}</span></div>`:''}
             ${player.contract_until?`<div class="pp-team-row"><span>Контракт до:</span><span>${fmtContract(player.contract_until)}</span></div>`:''}
           </div>` : `<div class="pp-team-card"><div style="color:var(--text-muted);font-size:13px">🔓 Свободный агент</div></div>`}
