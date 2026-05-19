@@ -33,11 +33,13 @@ async function tgSendPhoto(photoBuffer, caption) {
   return res.json();
 }
 
-async function tgSendMessage(text) {
+async function tgSendMessage(text, replyToMessageId) {
+  const payload = { chat_id: CHAT_ID, text, parse_mode: 'HTML' };
+  if (replyToMessageId) payload.reply_to_message_id = replyToMessageId;
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: 'HTML' }),
+    body: JSON.stringify(payload),
     agent,
   });
   return res.json();
@@ -170,11 +172,28 @@ function escTg(str) {
 async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, status, events }) {
   if (!agent) return;
   try {
-    const imgBuf  = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl);
-    const evText  = formatEvents(events || []);
-    const caption = `🏟 <b>${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>\n\n${evText}`.slice(0, 1024);
-    const result  = await tgSendPhoto(imgBuf, caption);
-    if (!result.ok) console.warn('[TelegramBot] sendPhoto failed:', result.description);
+    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl);
+    const caption = `🏟 <b>${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>`;
+    const photoResult = await tgSendPhoto(imgBuf, caption);
+    if (!photoResult.ok) { console.warn('[TelegramBot] sendPhoto failed:', photoResult.description); return; }
+
+    // Send all events as a reply to the photo
+    const evText = formatEvents(events || []);
+    if (evText) {
+      const photoMsgId = photoResult.result?.message_id;
+      // Split into chunks of 4000 chars (Telegram message limit)
+      const chunks = [];
+      let cur = '';
+      for (const line of evText.split('\n')) {
+        if ((cur + '\n' + line).length > 4000) { chunks.push(cur); cur = line; }
+        else cur = cur ? cur + '\n' + line : line;
+      }
+      if (cur) chunks.push(cur);
+      for (let i = 0; i < chunks.length; i++) {
+        const msgResult = await tgSendMessage(chunks[i], i === 0 ? photoMsgId : undefined);
+        if (!msgResult.ok) console.warn('[TelegramBot] sendMessage failed:', msgResult.description);
+      }
+    }
   } catch (err) {
     console.warn('[TelegramBot] sendMatchResult error:', err.message);
   }
