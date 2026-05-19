@@ -295,6 +295,11 @@ router.post('/:id/start', requireAdmin, (req, res) => {
     insertBudget.run(team.id, league.id, Math.round(base));
   }
 
+  // Reset transfer budgets for all participating teams at season start
+  for (const tid of teamIds) {
+    db.prepare(`UPDATE teams SET transfer_budget = 10000000, transfer_budget_spent = 0 WHERE id = ?`).run(tid);
+  }
+
   // Reset standings
   db.prepare(`
     UPDATE league_standings
@@ -534,6 +539,11 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
       else if (mv > 1.3 * med) base *= 0.85;
     }
     insertBudget.run(team.id, league.id, Math.round(base));
+  }
+
+  // Reset transfer budgets for new season
+  for (const tid of teamIds) {
+    db.prepare(`UPDATE teams SET transfer_budget = 10000000, transfer_budget_spent = 0 WHERE id = ?`).run(tid);
   }
 
   db.prepare(`

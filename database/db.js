@@ -382,6 +382,8 @@ function initSchema() {
     `ALTER TABLE players ADD COLUMN national_team TEXT`,
     `ALTER TABLE players ADD COLUMN national_caps INTEGER DEFAULT 0`,
     `ALTER TABLE players ADD COLUMN national_goals INTEGER DEFAULT 0`,
+    `ALTER TABLE teams ADD COLUMN transfer_budget REAL DEFAULT 10000000`,
+    `ALTER TABLE teams ADD COLUMN transfer_budget_spent REAL DEFAULT 0`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

@@ -2746,8 +2746,9 @@ async function renderCoachDashboard(app) {
     const lineup = { slots: lineupData.lineup || [] };
     const offers = Array.isArray(offersData) ? offersData : [];
     const pendingCount = offers.filter(o=>o.status==='pending').length;
-    const activeLeague = await GET('/leagues').then(ls=>ls.find(l=>l.status==='active'||l.status==='transfer_window')).catch(()=>null);
-    const budget = activeLeague ? await GET('/leagues/'+activeLeague.id+'/budget/'+coach.team_id).catch(()=>null) : null;
+    const totalBudget = team.transfer_budget != null ? team.transfer_budget : 10000000;
+    const budgetSpent = team.transfer_budget_spent || 0;
+    const budgetAvailable = Math.max(0, totalBudget - budgetSpent);
 
     app.innerHTML = `
       <div class="coach-hero">
@@ -2771,16 +2772,15 @@ async function renderCoachDashboard(app) {
           <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:12px" onclick="showCoachClubForm(${JSON.stringify(coach).replace(/"/g,'&quot;')},${JSON.stringify(team).replace(/"/g,'&quot;')})">🏟️ Клуб</button>
         </div>
       </div>
-      ${budget?`
       <div class="card mb-2" style="padding:16px">
-        <div class="card-header" style="margin:-16px -16px 12px;border-radius:10px 10px 0 0">Бюджет сезона</div>
-        <div class="budget-bar"><div class="budget-bar-fill${(budget.spent||0)>budget.total_budget?' over':''}" style="width:${Math.min(100,Math.round(((budget.spent||0)/Math.max(budget.total_budget,1))*100))}%"></div></div>
+        <div class="card-header" style="margin:-16px -16px 12px;border-radius:10px 10px 0 0">Трансферный бюджет сезона</div>
+        <div class="budget-bar"><div class="budget-bar-fill${budgetSpent>totalBudget?' over':''}" style="width:${Math.min(100,Math.round((budgetSpent/Math.max(totalBudget,1))*100))}%"></div></div>
         <div class="budget-stats">
-          <div class="budget-stat"><div class="bs-val">${fmtValue(budget.total_budget)}</div><div class="bs-label">Всего бюджет</div></div>
-          <div class="budget-stat"><div class="bs-val spent">${fmtValue(budget.spent||0)}</div><div class="bs-label">Потрачено</div></div>
-          <div class="budget-stat"><div class="bs-val">${fmtValue((budget.total_budget||0)+(budget.income||0)-(budget.spent||0))}</div><div class="bs-label">Доступно</div></div>
+          <div class="budget-stat"><div class="bs-val">${fmtValue(totalBudget)}</div><div class="bs-label">Всего бюджет</div></div>
+          <div class="budget-stat"><div class="bs-val spent">${fmtValue(budgetSpent)}</div><div class="bs-label">Потрачено</div></div>
+          <div class="budget-stat"><div class="bs-val" style="color:${budgetAvailable>0?'#1565c0':'#d32f2f'}">${fmtValue(budgetAvailable)}</div><div class="bs-label">Доступно</div></div>
         </div>
-      </div>` : ''}
+      </div>
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="lineup">Состав</button>
         <button class="detail-tab" data-tab="offers">Трансферы ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>

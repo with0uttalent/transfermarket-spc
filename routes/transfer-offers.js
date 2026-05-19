@@ -142,13 +142,15 @@ router.post('/', requireAuth, (req, res) => {
       });
     }
 
-    // Check budget
-    const budget = getActiveBudget(db, from_team_id);
-    if (budget) {
-      const available = budget.total_budget + budget.income - budget.spent;
+    // Enforce team transfer budget (coaches only — admins bypass)
+    if (!isAdmin) {
+      const buyingTeam = db.prepare('SELECT transfer_budget, transfer_budget_spent FROM teams WHERE id=?').get(from_team_id);
+      const totalBudget = buyingTeam ? (buyingTeam.transfer_budget || 10000000) : 10000000;
+      const spent = buyingTeam ? (buyingTeam.transfer_budget_spent || 0) : 0;
+      const available = totalBudget - spent;
       if (offerAmount > available) {
         return res.status(400).json({
-          error: `Insufficient budget. Available: ${fmtV(available)}, Requested: ${fmtV(offerAmount)}`,
+          error: `Недостаточно бюджета. Доступно: ${fmtV(available)}, запрошено: ${fmtV(offerAmount)}`,
         });
       }
     }
@@ -200,7 +202,11 @@ router.put('/:id/accept', requireAuth, (req, res) => {
         VALUES (?,?,?,?,?,'permanent')
       `).run(offer.player_id, offer.to_team_id, offer.from_team_id, offer.amount, now);
 
-      // Update season_budgets for buying team (spent)
+      // Deduct from buying team's transfer budget
+      db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?')
+        .run(offer.amount, offer.from_team_id);
+
+      // Update season_budgets for buying team (spent) if active league exists
       const buyBudget = getActiveBudget(db, offer.from_team_id);
       if (buyBudget) {
         db.prepare('UPDATE season_budgets SET spent = spent + ? WHERE id=?')
