@@ -2686,19 +2686,36 @@ function renderPitchZones(lineupSlots) {
 
 function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
   const inStarters = new Set(lineupSlots.filter(s=>s.slot>=1&&s.slot<=11).map(s=>s.player_id));
+  // Build injuredIds from lineup slot data AND from allPlayers injury data
+  const injuredIds = new Set();
+  for (const s of lineupSlots) {
+    if (s.injury_matches_remaining > 0) injuredIds.add(s.player_id);
+  }
+  for (const p of allPlayers) {
+    if (p.injury_matches_remaining > 0) injuredIds.add(p.id);
+  }
+
   const available = allPlayers.filter(p => !inStarters.has(p.id));
   if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все расставлены в основе ✓</div>';
   return available.map(p => {
     const sel = p.id === selectedId;
+    const injured = injuredIds.has(p.id);
     const ovr = calcOverall(p);
-    const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
-    return `<div class="pb-player-row${sel?' pb-selected':''}" onclick="pitchPlayerClick(${p.id})">
+    const ovrColor = injured ? '#e74c3c' : !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+    const injLabel = injured ? `<span style="font-size:10px;color:#e74c3c;font-weight:700;display:block">🚑 Травма (${p.injury_matches_remaining} матч.)</span>` : '';
+    return `<div class="pb-player-row${sel?' pb-selected':''}${injured?' pb-player-injured':''}" onclick="${injured?'injuredPlayerClick()':'pitchPlayerClick('+p.id+')'}">
       ${avatarEl(p.image_url,p.name)}
-      <div style="flex:1;min-width:0"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
-      <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr ?? '?'}</span>
-      ${sel?`<span style="color:var(--green,#2ecc71);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
+      <div style="flex:1;min-width:0">
+        <div class="font-bold" style="font-size:13px;${injured?'color:#e74c3c':''}">${escHtml(p.name)}</div>
+        ${injured ? injLabel : posBadge(p.position)}
+      </div>
+      <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${injured?'❌':(ovr??'?')}</span>
     </div>`;
   }).join('');
+}
+
+function injuredPlayerClick() {
+  toast('Игрок травмирован и не может выйти на поле', 'error');
 }
 
 function renderReservesList(lineupSlots, allPlayers, teamId) {
@@ -2753,6 +2770,12 @@ function pitchPlayerClick(playerId) {
 async function pitchZoneClick(zoneId) {
   const pid = _pitchState.selectedPlayerId;
   if (!pid) return;
+  // Block injured players
+  const player = _pitchState.players.find(p => p.id === pid);
+  if (player && player.injury_matches_remaining > 0) {
+    toast('Игрок травмирован и не может выйти на поле', 'error');
+    return;
+  }
   const tid = _pitchState.teamId;
   const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
   if (starters.length >= 11) { toast('Основной состав заполнен (11/11)', 'error'); return; }

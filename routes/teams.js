@@ -42,10 +42,13 @@ router.get('/:id', (req, res) => {
 
   const players = db.prepare(`
     SELECT p.*, co.name as nationality_name, co.flag_emoji,
-      ps.pace, ps.shooting, ps.passing, ps.defending, ps.physical
+      ps.pace, ps.shooting, ps.passing, ps.defending, ps.physical,
+      pi.matches_remaining AS injury_matches_remaining,
+      pi.injury_type
     FROM players p
     LEFT JOIN countries co ON p.nationality_id = co.id
     LEFT JOIN player_skills ps ON ps.player_id = p.id
+    LEFT JOIN player_injuries pi ON pi.player_id = p.id AND pi.matches_remaining > 0
     WHERE p.team_id = ?
     ORDER BY p.market_value DESC
   `).all(req.params.id);
