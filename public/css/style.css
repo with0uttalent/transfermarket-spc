@@ -1375,3 +1375,23 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 /* ── Injured player in sidebar ────────────────────────────── */
 .pb-player-injured { opacity: .75; cursor: not-allowed !important; background: rgba(231,76,60,.07) !important; border-left: 3px solid #e74c3c; }
 .pb-player-injured:hover { background: rgba(231,76,60,.12) !important; }
+
+/* ── Bench 3-column grid ──────────────────────────────────── */
+.bench-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
+.bench-col { background: var(--surface); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+.bench-col-header { padding: 8px 12px; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
+.bench-header-priority { background: rgba(241,196,15,.15); color: #f1c40f; }
+.bench-header-bench    { background: rgba(52,152,219,.12); color: #3498db; }
+.bench-header-injured  { background: rgba(231,76,60,.12);  color: #e74c3c; }
+.bench-count { font-size: 11px; opacity: .8; }
+.bench-col-body { padding: 6px; display: flex; flex-direction: column; gap: 5px; }
+.bench-card { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px; background: var(--bg); font-size: 13px; cursor: pointer; transition: background .15s; }
+.bench-card:hover { background: rgba(255,255,255,.06); }
+.bench-priority { border-left: 3px solid #f1c40f; }
+.bench-injured-card { opacity: .7; cursor: default; border-left: 3px solid #e74c3c; }
+.bench-injured-card:hover { background: var(--bg) !important; }
+.bench-card-num { font-size: 11px; color: var(--text-muted); min-width: 18px; text-align: center; }
+.bench-card-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bench-card-pos { font-size: 10px; color: var(--text-muted); }
+.bench-card-inj { font-size: 10px; color: #e74c3c; margin-left: auto; white-space: nowrap; }
+.bench-empty { color: var(--text-muted); font-size: 12px; padding: 10px 4px; text-align: center; font-style: italic; }

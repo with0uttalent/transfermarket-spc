@@ -2622,7 +2622,6 @@ function renderLineupEditor(team, lineup) {
   const slots = lineup.slots || [];
   const allPlayers = team.players || [];
   const starterCount = slots.filter(s=>s.slot>=1&&s.slot<=11).length;
-  const reserveCount = slots.filter(s=>s.slot>11&&s.slot<=22).length;
   _pitchState = { teamId: team.id, lineup: slots, players: allPlayers, selectedPlayerId: null };
 
   return `
@@ -2639,10 +2638,7 @@ function renderLineupEditor(team, lineup) {
           <div id="pb-player-list">${renderPitchSidebar(allPlayers, slots, null)}</div>
         </div>
       </div>
-      <div style="margin-top:12px">
-        <div class="lineup-col-header">Запасные <span id="pb-reserve-count" class="badge" style="background:rgba(255,255,255,.1)">${reserveCount}/11</span></div>
-        <div id="pb-reserves" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${renderReservesList(slots, allPlayers, team.id)}</div>
-      </div>
+      <div id="pb-bench-section" style="margin-top:16px">${renderBenchSection(slots, allPlayers, team.id)}</div>
     </div>`;
 }
 
@@ -2684,38 +2680,102 @@ function renderPitchZones(lineupSlots) {
   return `<div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${html}</div></div>`;
 }
 
-function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
-  const inStarters = new Set(lineupSlots.filter(s=>s.slot>=1&&s.slot<=11).map(s=>s.player_id));
-  // Build injuredIds from lineup slot data AND from allPlayers injury data
-  const injuredIds = new Set();
-  for (const s of lineupSlots) {
-    if (s.injury_matches_remaining > 0) injuredIds.add(s.player_id);
-  }
-  for (const p of allPlayers) {
-    if (p.injury_matches_remaining > 0) injuredIds.add(p.id);
-  }
+function _buildInjuredIds(lineupSlots, allPlayers) {
+  const ids = new Set();
+  for (const s of lineupSlots) { if (s.injury_matches_remaining > 0) ids.add(s.player_id); }
+  for (const p of allPlayers)  { if (p.injury_matches_remaining > 0) ids.add(p.id); }
+  return ids;
+}
 
-  const available = allPlayers.filter(p => !inStarters.has(p.id));
-  if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все расставлены в основе ✓</div>';
+function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
+  // Show only players not assigned to ANY slot (neither starters nor bench)
+  const inAnySlot = new Set(lineupSlots.map(s=>s.player_id));
+  const injuredIds = _buildInjuredIds(lineupSlots, allPlayers);
+  const available = allPlayers.filter(p => !inAnySlot.has(p.id) && !injuredIds.has(p.id));
+  if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все игроки распределены ✓</div>';
   return available.map(p => {
     const sel = p.id === selectedId;
-    const injured = injuredIds.has(p.id);
     const ovr = calcOverall(p);
-    const ovrColor = injured ? '#e74c3c' : !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
-    const injLabel = injured ? `<span style="font-size:10px;color:#e74c3c;font-weight:700;display:block">🚑 Травма (${p.injury_matches_remaining} матч.)</span>` : '';
-    return `<div class="pb-player-row${sel?' pb-selected':''}${injured?' pb-player-injured':''}" onclick="${injured?'injuredPlayerClick()':'pitchPlayerClick('+p.id+')'}">
+    const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+    return `<div class="pb-player-row${sel?' pb-selected':''}" onclick="pitchPlayerClick(${p.id})">
       ${avatarEl(p.image_url,p.name)}
-      <div style="flex:1;min-width:0">
-        <div class="font-bold" style="font-size:13px;${injured?'color:#e74c3c':''}">${escHtml(p.name)}</div>
-        ${injured ? injLabel : posBadge(p.position)}
-      </div>
-      <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${injured?'❌':(ovr??'?')}</span>
+      <div style="flex:1;min-width:0"><div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>${posBadge(p.position)}</div>
+      <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
+      ${sel?`<span style="color:var(--green,#2ecc71);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
     </div>`;
   }).join('');
 }
 
 function injuredPlayerClick() {
   toast('Игрок травмирован и не может выйти на поле', 'error');
+}
+
+// ─── Bench section: 3 columns ────────────────────────────────────────────────
+function renderBenchSection(lineupSlots, allPlayers, teamId) {
+  const benchSlots = lineupSlots.filter(s=>s.slot>11&&s.slot<=22);
+  const injuredIds = _buildInjuredIds(lineupSlots, allPlayers);
+
+  // Priority subs (priority_sub=1, max 3)
+  const priority = benchSlots.filter(s => s.priority_sub && !injuredIds.has(s.player_id));
+  // Regular bench (not priority, not injured)
+  const regular  = benchSlots.filter(s => !s.priority_sub && !injuredIds.has(s.player_id));
+  // Injured players from entire squad (not just bench)
+  const allInjuredPlayers = allPlayers.filter(p => injuredIds.has(p.id));
+
+  function benchCard(s, opts={}) {
+    const p = allPlayers.find(pl=>pl.id===s.player_id);
+    if (!p) return '';
+    const ovr = calcOverall(p);
+    const ovrColor = !ovr?'#888':ovr>=80?'#f1c40f':ovr>=70?'#2ecc71':ovr>=60?'#3498db':'#95a5a6';
+    return `<div class="bench-card${opts.priority?' bench-priority':''}">
+      <div style="position:relative;flex-shrink:0">${avatarEl(p.image_url,p.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.name)}</div>
+        <div>${posBadge(p.position)}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
+        <span style="font-size:11px;font-weight:800;color:${ovrColor}">${ovr??'?'}</span>
+        ${opts.showPriority?`<label class="priority-sub-label" title="Приоритетная замена"><input type="checkbox" ${s.priority_sub?'checked':''} onchange="togglePrioritySub(${p.id},${teamId},this.checked)"> ⭐</label>`:''}
+        <button class="btn-icon" onclick="pitchReserveToStarter(${p.id},${teamId})" title="В основу">⚡</button>
+        <button class="btn-icon danger" onclick="pitchRemoveFromLineup(${p.id},${teamId})" title="Убрать">✕</button>
+      </div>
+    </div>`;
+  }
+
+  function injCard(p) {
+    const ovr = calcOverall(p);
+    const mr = p.injury_matches_remaining || 0;
+    return `<div class="bench-card bench-injured-card">
+      <div style="flex-shrink:0">${avatarEl(p.image_url,p.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:#e74c3c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.name)}</div>
+        <div>${posBadge(p.position)}</div>
+        <div style="font-size:10px;color:#e74c3c;margin-top:2px">🚑 ещё ${mr} матч${mr===1?'':'а(ей)'}</div>
+      </div>
+      <span style="font-size:11px;font-weight:800;color:#e74c3c">${ovr??'?'}</span>
+    </div>`;
+  }
+
+  return `<div class="bench-grid">
+    <div class="bench-col">
+      <div class="bench-col-header bench-header-priority">⭐ Замены в приоритете <span class="bench-count">${priority.length}/3</span></div>
+      <div class="bench-col-body">${priority.length
+        ? priority.map(s=>benchCard(s,{priority:true,showPriority:true})).join('')
+        : '<div class="bench-empty">Отметьте ⭐ у запасных</div>'}</div>
+    </div>
+    <div class="bench-col">
+      <div class="bench-col-header bench-header-bench">🪑 Скамейка запасных <span class="bench-count">${regular.length}</span></div>
+      <div class="bench-col-body">${regular.length
+        ? regular.map(s=>benchCard(s,{showPriority:true})).join('')
+        : '<div class="bench-empty">Нет запасных</div>'}</div>
+    </div>
+    <div class="bench-col">
+      <div class="bench-col-header bench-header-injured">🚑 Лазарет <span class="bench-count">${allInjuredPlayers.length}</span></div>
+      <div class="bench-col-body">${allInjuredPlayers.length
+        ? allInjuredPlayers.map(injCard).join('')
+        : '<div class="bench-empty">Травмированных нет</div>'}</div>
+    </div>
+  </div>`;
 }
 
 function renderReservesList(lineupSlots, allPlayers, teamId) {
@@ -2754,8 +2814,8 @@ async function togglePrioritySub(playerId, teamId, checked) {
     await PUT('/lineups/'+teamId, { lineup: current });
     _pitchState.lineup = current;
     // re-render reserves only
-    const el = document.getElementById('pb-reserves');
-    if (el) el.innerHTML = renderReservesList(_pitchState.lineup, _pitchState.players, teamId);
+    const el = document.getElementById('pb-bench-section');
+    if (el) el.innerHTML = renderBenchSection(_pitchState.lineup, _pitchState.players, teamId);
   } catch(e) { toast(e.message,'error'); }
 }
 
@@ -2837,7 +2897,7 @@ async function refreshPitchEditor() {
     const $ = id => document.getElementById(id);
     if ($('pb-pitch')) $('pb-pitch').innerHTML = renderPitchZones(_pitchState.lineup);
     if ($('pb-player-list')) $('pb-player-list').innerHTML = renderPitchSidebar(_pitchState.players, _pitchState.lineup, null);
-    if ($('pb-reserves')) $('pb-reserves').innerHTML = renderReservesList(_pitchState.lineup, _pitchState.players, tid);
+    if ($('pb-bench-section')) $('pb-bench-section').innerHTML = renderBenchSection(_pitchState.lineup, _pitchState.players, tid);
     if ($('pb-starter-count')) $('pb-starter-count').textContent = `${starters.length}/11 основных`;
     if ($('pb-formation-label')) $('pb-formation-label').textContent = computeFormation(_pitchState.lineup);
     if ($('pb-reserve-count')) $('pb-reserve-count').textContent = `${reserves.length}/11`;
