@@ -225,30 +225,30 @@ function ovrBadge(ovr, assignedZone, naturalZone) {
 // Interactive pitch builder state
 let _pitchState = { teamId: null, lineup: [], players: [], selectedPlayerId: null };
 
-const PITCH_SVG = `<svg viewBox="0 0 280 400" xmlns="http://www.w3.org/2000/svg" class="pitch-svg">
-  <rect width="280" height="400" fill="#2d8a4e" rx="6"/>
-  <rect x="0" y="0" width="280" height="50" fill="#2a8548" opacity=".45"/>
-  <rect x="0" y="100" width="280" height="50" fill="#2a8548" opacity=".45"/>
-  <rect x="0" y="200" width="280" height="50" fill="#2a8548" opacity=".45"/>
-  <rect x="0" y="300" width="280" height="50" fill="#2a8548" opacity=".45"/>
-  <rect x="10" y="10" width="260" height="380" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
-  <line x1="10" y1="200" x2="270" y2="200" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
-  <circle cx="140" cy="200" r="40" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
-  <circle cx="140" cy="200" r="2.5" fill="rgba(255,255,255,.9)"/>
-  <rect x="115" y="0" width="50" height="10" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
-  <rect x="88" y="10" width="104" height="30" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
-  <rect x="58" y="10" width="164" height="82" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
-  <circle cx="140" cy="75" r="2.5" fill="rgba(255,255,255,.9)"/>
-  <path d="M 107 92 A 42 42 0 0 1 173 92" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
-  <rect x="115" y="390" width="50" height="10" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
-  <rect x="88" y="360" width="104" height="30" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
-  <rect x="58" y="308" width="164" height="82" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
-  <circle cx="140" cy="325" r="2.5" fill="rgba(255,255,255,.9)"/>
-  <path d="M 107 308 A 42 42 0 0 0 173 308" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+const PITCH_SVG = `<svg viewBox="0 0 320 400" xmlns="http://www.w3.org/2000/svg" class="pitch-svg">
+  <rect width="320" height="400" fill="#2d8a4e" rx="6"/>
+  <rect x="0" y="0" width="320" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="0" y="100" width="320" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="0" y="200" width="320" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="0" y="300" width="320" height="50" fill="#2a8548" opacity=".45"/>
+  <rect x="10" y="10" width="300" height="380" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
+  <line x1="10" y1="200" x2="310" y2="200" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
+  <circle cx="160" cy="200" r="40" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.8"/>
+  <circle cx="160" cy="200" r="2.5" fill="rgba(255,255,255,.9)"/>
+  <rect x="135" y="0" width="50" height="10" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="108" y="10" width="104" height="30" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="78" y="10" width="164" height="82" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <circle cx="160" cy="75" r="2.5" fill="rgba(255,255,255,.9)"/>
+  <path d="M 127 92 A 42 42 0 0 1 193 92" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="135" y="390" width="50" height="10" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="108" y="360" width="104" height="30" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <rect x="78" y="308" width="164" height="82" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
+  <circle cx="160" cy="325" r="2.5" fill="rgba(255,255,255,.9)"/>
+  <path d="M 127 308 A 42 42 0 0 0 193 308" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
   <path d="M 10 28 A 18 18 0 0 1 28 10" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
-  <path d="M 252 10 A 18 18 0 0 1 270 28" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+  <path d="M 292 10 A 18 18 0 0 1 310 28" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
   <path d="M 10 372 A 18 18 0 0 0 28 390" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
-  <path d="M 252 390 A 18 18 0 0 0 270 372" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+  <path d="M 292 390 A 18 18 0 0 0 310 372" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
 </svg>`;
 function renderPitch(players, isAway = false) {
   if (!players || !players.length) return `<div class="empty-state"><p>Нет данных об игроках</p></div>`;
@@ -335,7 +335,7 @@ function renderCombinedMatchPitch(homeSlots, awaySlots, matchStats, homeTeamName
       if (!zPlayers.length) continue;
       const y = yMap[zoneId];
       zPlayers.forEach((s, i) => {
-        const x = zPlayers.length === 1 ? 50 : 10 + 80 * (i / (zPlayers.length - 1));
+        const x = zPlayers.length === 1 ? 50 : 8 + 84 * (i / (zPlayers.length - 1));
         dots += playerDot(s, y, x, isAway);
       });
     }

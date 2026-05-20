@@ -988,11 +988,11 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .pitch-container {
   position: relative;
   width: 100%;
-  max-width: 320px;
+  max-width: 480px;
   margin: 0 auto;
   user-select: none;
 }
-.pitch-container.match-pitch { max-width: 280px; }
+.pitch-container.match-pitch { max-width: 380px; }
 .pitch-svg { display: block; width: 100%; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
 .pitch-overlay { position: absolute; inset: 0; }
 .pitch-player {
@@ -1135,7 +1135,7 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .mp-container {
   position: relative;
   width: 100%;
-  max-width: 380px;
+  max-width: 540px;
   margin: 0 auto;
   user-select: none;
 }
