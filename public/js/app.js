@@ -276,6 +276,96 @@ function renderPitch(players, isAway = false) {
   return `<div class="pitch-container"><div style="position:relative">${PITCH_SVG}<div class="pitch-overlay">${dots}</div></div></div>`;
 }
 
+function renderCombinedMatchPitch(homeSlots, awaySlots, matchStats, homeTeamName, awayTeamName) {
+  // matchStats is an array from match.stats: [{player_id, rating, goals, assists, yellow_cards, red_cards, team_id}, ...]
+  const statsById = {};
+  for (const s of (matchStats || [])) statsById[s.player_id] = s;
+
+  const homeStarters = homeSlots.filter(s => s.slot >= 1 && s.slot <= 11);
+  const awayStarters = awaySlots.filter(s => s.slot >= 1 && s.slot <= 11);
+
+  // Zone Y positions on the COMBINED pitch (0% = top edge, 100% = bottom edge)
+  const HOME_Y = { GK: 5.5, DEF: 19, DMF: 30, MID: 37, AMF: 43, FWD: 48 };
+  const AWAY_Y = { GK: 94.5, DEF: 81, DMF: 70, MID: 63, AMF: 57, FWD: 52 };
+
+  function buildZones(starters) {
+    const zones = { GK: [], DEF: [], DMF: [], MID: [], AMF: [], FWD: [] };
+    for (const s of starters) {
+      const z = ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(s.position);
+      zones[z].push(s);
+    }
+    return zones;
+  }
+
+  function playerDot(s, yPct, xPct, isAway) {
+    const st = statsById[s.player_id] || {};
+    const rating = st.rating ? st.rating.toFixed(1) : null;
+    const rColor = !rating ? '#888' : rating >= 7.5 ? '#27ae60' : rating >= 6.5 ? '#f39c12' : '#e74c3c';
+    const name = s.player_name || s.name || '?';
+    const lastName = name.split(' ').slice(-1)[0];
+    const ini = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const num = s.shirt_number || '';
+    const goals = st.goals || 0;
+    const yc = st.yellow_cards || 0;
+    const rc = st.red_cards || 0;
+    const teamColor = isAway ? '#c0392b' : '#1a6b32';
+    const borderColor = isAway ? '#e74c3c' : '#27ae60';
+    const avatarHtml = s.image_url
+      ? `<img src="${escHtml(s.image_url)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+      + `<span class="mp-ini" style="display:none">${escHtml(ini)}</span>`
+      : `<span class="mp-ini">${escHtml(ini)}</span>`;
+    const events = (goals > 0 ? `<span class="mp-ev-goal" title="${goals} гол(а)">⚽</span>`.repeat(Math.min(goals,3)) : '')
+                 + (yc > 0 && rc === 0 ? `<span class="mp-ev-card yc" title="Жёлтая карточка">◼</span>` : '')
+                 + (rc > 0 ? `<span class="mp-ev-card rc" title="Красная карточка">◼</span>` : '');
+    return `<div class="mp-player${isAway?' away':''}" style="left:${xPct.toFixed(1)}%;top:${yPct.toFixed(1)}%" title="${escHtml(name)}">
+      <div class="mp-av-wrap">
+        ${rating ? `<span class="mp-rating" style="background:${rColor}">${rating}</span>` : ''}
+        ${events ? `<span class="mp-events">${events}</span>` : ''}
+        <div class="mp-av" style="border-color:${borderColor};background:${teamColor}">${avatarHtml}</div>
+      </div>
+      ${num ? `<div class="mp-num">${num}</div>` : ''}
+      <div class="mp-name">${escHtml(lastName)}</div>
+    </div>`;
+  }
+
+  function renderTeamDots(starters, yMap, isAway) {
+    const zones = buildZones(starters);
+    let dots = '';
+    for (const [zoneId, zPlayers] of Object.entries(zones)) {
+      if (!zPlayers.length) continue;
+      const y = yMap[zoneId];
+      zPlayers.forEach((s, i) => {
+        const x = zPlayers.length === 1 ? 50 : 10 + 80 * (i / (zPlayers.length - 1));
+        dots += playerDot(s, y, x, isAway);
+      });
+    }
+    return dots;
+  }
+
+  const homeDots = renderTeamDots(homeStarters, HOME_Y, false);
+  const awayDots = renderTeamDots(awayStarters, AWAY_Y, true);
+
+  const homeFormation = computeFormation(homeSlots);
+  const awayFormation = computeFormation(awaySlots);
+
+  return `<div class="mp-container">
+    <div style="position:relative">
+      ${PITCH_SVG}
+      <div class="pitch-overlay">
+        ${homeDots}${awayDots}
+        <div class="mp-team-label home">
+          <span class="mp-formation-badge">${escHtml(homeFormation)}</span>
+          <span class="mp-team-name-badge">${escHtml(homeTeamName)}</span>
+        </div>
+        <div class="mp-team-label away">
+          <span class="mp-team-name-badge">${escHtml(awayTeamName)}</span>
+          <span class="mp-formation-badge">${escHtml(awayFormation)}</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderPitchFromLineup(lineupSlots, isAway = false) {
   const starters = lineupSlots.filter(s => s.slot >= 1 && s.slot <= 11);
   if (!starters.length) return `<div class="empty-state"><p>Нет игроков в стартовом составе</p></div>`;
@@ -290,6 +380,9 @@ function renderPitchFromLineup(lineupSlots, isAway = false) {
     zones[z].push(s);
   }
 
+  const teamColor = isAway ? '#c0392b' : '#1a6b32';
+  const borderColor = isAway ? '#e74c3c' : '#27ae60';
+
   let dots = '';
   for (const [zoneId, zPlayers] of Object.entries(zones)) {
     if (!zPlayers.length) continue;
@@ -297,11 +390,20 @@ function renderPitchFromLineup(lineupSlots, isAway = false) {
     zPlayers.forEach((s, i) => {
       const x = zPlayers.length === 1 ? 50 : 10 + 80 * (i / (zPlayers.length - 1));
       const name = s.player_name || s.name || '?';
-      const firstName = name.split(' ')[0];
-      const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-      dots += `<div class="pitch-player${isAway?' away':''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" title="${escHtml(name)} (${s.position||zoneId})">
-        <div class="pc-av"><div class="pc-ini">${escHtml(initials)}</div></div>
-        <div class="pl">${escHtml(firstName)}</div>
+      const lastName = name.split(' ').slice(-1)[0];
+      const ini = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+      const ovr = typeof calcOverall === 'function' ? calcOverall(s, s.position_override) : null;
+      const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+      const avatarHtml = s.image_url
+        ? `<img src="${escHtml(s.image_url)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          + `<span class="mp-ini" style="display:none">${escHtml(ini)}</span>`
+        : `<span class="mp-ini">${escHtml(ini)}</span>`;
+      dots += `<div class="mp-player${isAway?' away':''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" title="${escHtml(name)}">
+        <div class="mp-av-wrap">
+          ${ovr ? `<span class="mp-rating" style="background:${ovrColor};color:${ovr>=80?'#222':'#fff'}">${ovr}</span>` : ''}
+          <div class="mp-av" style="border-color:${borderColor};background:${teamColor}">${avatarHtml}</div>
+        </div>
+        <div class="mp-name">${escHtml(lastName)}</div>
       </div>`;
     });
   }
@@ -2047,17 +2149,9 @@ async function renderMatchDetail(app, id) {
           ]);
           const homeSlots = (homeLineup.lineup||[]).filter(s=>s.slot<=11);
           const awaySlots = (awayLineup.lineup||[]).filter(s=>s.slot<=11);
-          panel.innerHTML = `
-            <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:16px">
-              <div class="pitch-section">
-                <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.home_team_name)}</div>
-                ${renderPitchFromLineup(homeSlots, false)}
-              </div>
-              <div class="pitch-section">
-                <div style="font-weight:700;margin-bottom:8px;text-align:center">${escHtml(match.away_team_name)}</div>
-                ${renderPitchFromLineup(awaySlots, true)}
-              </div>
-            </div>`;
+          panel.innerHTML = `<div style="padding:16px;max-width:380px;margin:0 auto">
+            ${renderCombinedMatchPitch(homeSlots, awaySlots, match.stats, match.home_team_name, match.away_team_name)}
+          </div>`;
         } catch { panel.innerHTML = '<div class="empty-state"><p>Ошибка загрузки составов</p></div>'; }
       }, { once: true });
     }
