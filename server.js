@@ -68,8 +68,12 @@ app.listen(PORT, () => {
   }
   // Start Telegram bot
   try {
-    const { initBot } = require('./services/telegramBot');
+    const { initBot, setEnabled } = require('./services/telegramBot');
     initBot();
+    // Restore saved enabled state
+    const { getDb } = require('./database/db');
+    const saved = getDb().prepare("SELECT value FROM app_settings WHERE key='telegram_enabled'").get();
+    if (saved) setEnabled(saved.value === '1');
   } catch (e) {
     console.warn('TelegramBot failed to start:', e.message);
   }

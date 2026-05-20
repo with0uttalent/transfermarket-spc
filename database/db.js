@@ -396,6 +396,8 @@ function initSchema() {
     `ALTER TABLE matches ADD COLUMN ot_away INTEGER DEFAULT 0`,
     `ALTER TABLE matches ADD COLUMN pen_home INTEGER DEFAULT 0`,
     `ALTER TABLE matches ADD COLUMN pen_away INTEGER DEFAULT 0`,
+    `ALTER TABLE matches ADD COLUMN is_friendly INTEGER DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

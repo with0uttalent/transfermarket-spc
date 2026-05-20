@@ -64,6 +64,7 @@ img { max-width: 100%; display: block; }
 .badge-gold { background: #fff8e1; color: #b7860a; }
 .badge-red { background: #fdecea; color: var(--red); }
 .badge-gray { background: #f0f0f0; color: #555; }
+.badge-blue { background: #e8f0fe; color: #1a56a0; }
 
 /* ─── Header ───────────────────────────────────────────── */
 #header {

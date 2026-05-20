@@ -154,12 +154,14 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
 
   // Telegram: send match result banner
   const match = db.prepare(`
-    SELECT m.status,
+    SELECT m.status, m.home_team_id, m.away_team_id, m.league_id, m.is_friendly,
       ht.logo_url as home_logo, ht.stadium_url as home_stadium,
-      at.logo_url as away_logo
+      at.logo_url as away_logo,
+      lg.name as league_name, lg.logo_url as league_logo
     FROM matches m
     JOIN teams ht ON m.home_team_id = ht.id
     JOIN teams at ON m.away_team_id = at.id
+    LEFT JOIN leagues lg ON m.league_id = lg.id
     WHERE m.id = ?
   `).get(matchId);
   const base = `http://localhost:${process.env.PORT || 3000}`;
@@ -179,12 +181,14 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
 
   sendMatchResult({
     matchId, homeTeam, awayTeam, homeScore, awayScore,
-    homeLogo:    toUrl(match?.home_logo),
-    awayLogo:    toUrl(match?.away_logo),
-    stadiumUrl:  toUrl(match?.home_stadium),
-    homeTeamId:  db.prepare('SELECT home_team_id FROM matches WHERE id=?').get(matchId)?.home_team_id,
-    awayTeamId:  db.prepare('SELECT away_team_id FROM matches WHERE id=?').get(matchId)?.away_team_id,
-    status:      match?.status || 'finished',
+    homeLogo:      toUrl(match?.home_logo),
+    awayLogo:      toUrl(match?.away_logo),
+    stadiumUrl:    toUrl(match?.home_stadium),
+    homeTeamId:    match?.home_team_id,
+    awayTeamId:    match?.away_team_id,
+    status:        match?.status || 'finished',
+    leagueName:    match?.league_name || null,
+    leagueLogoUrl: toUrl(match?.league_logo),
     events,
     goalEvents,
   }).catch(() => {});

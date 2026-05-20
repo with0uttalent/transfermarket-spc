@@ -1959,6 +1959,7 @@ function matchCardHtml(m) {
     </div>
     <div class="mc-score">
       ${m.tournament_name?`<div style="margin-bottom:4px"><span class="badge badge-gold">${escHtml(m.tournament_name)}</span></div>`:''}
+      ${m.is_friendly?`<div style="margin-bottom:4px"><span class="badge badge-gray">⚑ Товарищеский</span></div>`:''}
       <div class="mc-score-val">${scoreStr}</div>
       <div><span class="match-status-badge ${statusCls}">${m.status}</span></div>
       ${m.match_date?`<div class="mc-date">${fmtDate(m.match_date)}</div>`:''}
@@ -2010,6 +2011,8 @@ async function renderMatchDetail(app, id) {
       </div>
       <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         ${match.tournament_name?`<span class="badge badge-gold">🏆 ${escHtml(match.tournament_name)}</span>`:''}
+        ${match.league_name?`<span class="badge badge-blue" style="display:flex;align-items:center;gap:5px">${match.league_logo_url?`<img src="${escHtml(match.league_logo_url)}" style="height:14px;width:auto;object-fit:contain">`:''}${escHtml(match.league_name)}</span>`:''}
+        ${match.is_friendly?`<span class="badge badge-gray">⚑ Товарищеский</span>`:''}
         ${isAdmin()&&!isFinished?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ Simulate Match</button>`:''}
         ${isFinished?`<button class="btn btn-green" onclick="startMatchReplay(${id})">▶ Watch Replay</button>`:''}
       </div>
@@ -2239,11 +2242,16 @@ async function showMatchForm() {
       <div class="form-group"><label>Away Team *</label><select id="mf-away"><option value="">–</option>${teams.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select></div>
     </div>
     <div class="form-group"><label>Match Date</label><input type="date" id="mf-date" value="${new Date().toISOString().substring(0,10)}"/></div>
+    <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-top:4px">
+      <label class="toggle-switch"><input type="checkbox" id="mf-friendly"><span class="toggle-slider"></span></label>
+      <span>Товарищеский матч <span style="color:var(--text-muted);font-size:13px">(результат не влияет на стату и стоимость)</span></span>
+    </div>
   `, async ()=>{
     const home=document.getElementById('mf-home').value;const away=document.getElementById('mf-away').value;
     if(!home||!away){toast('Both teams required','error');return false;}
     if(home===away){toast('Teams must be different','error');return false;}
-    const r=await POST('/matches',{home_team_id:home,away_team_id:away,match_date:document.getElementById('mf-date').value||null});
+    const friendly=document.getElementById('mf-friendly').checked;
+    const r=await POST('/matches',{home_team_id:home,away_team_id:away,match_date:document.getElementById('mf-date').value||null,is_friendly:friendly});
     toast('Match scheduled');
     navigate('/matches/'+r.id);
     return true;
@@ -2593,6 +2601,18 @@ async function renderAdmin(app) {
         </tbody>
       </table></div>
     </div>
+    <!-- Telegram settings -->
+    <div class="card mt-3" id="tg-settings-card">
+      <div class="card-header">Telegram Уведомления</div>
+      <div class="card-body" style="display:flex;align-items:center;gap:16px">
+        <label class="toggle-switch"><input type="checkbox" id="tg-enabled-toggle" onchange="saveTgEnabled(this.checked)"><span class="toggle-slider"></span></label>
+        <div>
+          <div style="font-weight:600">Отправка в Telegram</div>
+          <div style="font-size:13px;color:var(--text-muted)" id="tg-status-text">Загрузка…</div>
+        </div>
+      </div>
+    </div>
+
     <div class="card mt-3">
       <div class="card-header">Change Password</div>
       <div class="card-body">
@@ -2605,6 +2625,15 @@ async function renderAdmin(app) {
       </div>
     </div>
   `;
+  // Load Telegram toggle state
+  GET('/admin/settings').then(s => {
+    const toggle = document.getElementById('tg-enabled-toggle');
+    const txt = document.getElementById('tg-status-text');
+    if (!toggle) return;
+    const on = s.telegram_enabled === '1';
+    toggle.checked = on;
+    txt.textContent = on ? 'Включено — результаты матчей и новости тренеров отправляются в группу' : 'Выключено — уведомления не отправляются';
+  }).catch(()=>{});
 }
 
 async function generateTeam() {
@@ -2680,6 +2709,15 @@ async function showAssignCoachForm(userId, username) {
     else await POST('/coaches', {user_id:userId,team_id,name,age,height,playing_style});
     toast(`Клуб назначен: ${username}!`);
   });
+}
+
+async function saveTgEnabled(checked) {
+  try {
+    await PUT('/admin/settings', { telegram_enabled: checked });
+    const txt = document.getElementById('tg-status-text');
+    if (txt) txt.textContent = checked ? 'Включено — результаты матчей и новости тренеров отправляются в группу' : 'Выключено — уведомления не отправляются';
+    toast(checked ? 'Telegram уведомления включены' : 'Telegram уведомления выключены');
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function changePassword() {

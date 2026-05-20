@@ -9,11 +9,13 @@ const BASE = `
   SELECT m.*,
     ht.name as home_team_name, ht.logo_url as home_logo, ht.stadium_url as home_stadium_url,
     at.name as away_team_name, at.logo_url as away_logo,
-    t.name as tournament_name
+    t.name as tournament_name,
+    lg.name as league_name, lg.logo_url as league_logo_url
   FROM matches m
   JOIN teams ht ON m.home_team_id = ht.id
   JOIN teams at ON m.away_team_id = at.id
   LEFT JOIN tournaments t ON m.tournament_id = t.id
+  LEFT JOIN leagues lg ON m.league_id = lg.id
 `;
 
 router.get('/', (req, res) => {
@@ -67,14 +69,14 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', requireAuth, (req, res) => {
-  const { home_team_id, away_team_id, match_date, tournament_id, tournament_round } = req.body;
+  const { home_team_id, away_team_id, match_date, tournament_id, tournament_round, is_friendly } = req.body;
   if (!home_team_id || !away_team_id) return res.status(400).json({ error: 'Both teams required' });
   if (home_team_id === away_team_id) return res.status(400).json({ error: 'Teams must be different' });
   const db = getDb();
   const r = db.prepare(
-    `INSERT INTO matches (home_team_id,away_team_id,match_date,tournament_id,tournament_round)
-     VALUES (?,?,?,?,?)`
-  ).run(home_team_id, away_team_id, match_date||null, tournament_id||null, tournament_round||0);
+    `INSERT INTO matches (home_team_id,away_team_id,match_date,tournament_id,tournament_round,is_friendly)
+     VALUES (?,?,?,?,?,?)`
+  ).run(home_team_id, away_team_id, match_date||null, tournament_id||null, tournament_round||0, is_friendly ? 1 : 0);
   res.status(201).json({ id: r.lastInsertRowid });
 });
 
@@ -147,13 +149,22 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
     result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
   }
 
+  if (match.is_friendly) {
+    // Friendly match: save score/events but skip MV/stats/skills/injuries
+    db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='finished' WHERE id=?`)
+      .run(result.homeScore, result.awayScore, match.id);
+    const insertEvent = db.prepare(
+      `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
+    );
+    for (const e of result.events) insertEvent.run(match.id, e.minute, e.event_type, e.team_id, e.player_id, e.player2_id, e.description);
+    return res.json({ home_score: result.homeScore, away_score: result.awayScore, friendly: true, events_count: result.events.length });
+  }
+
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 
   // Tournament draw → overtime instead of finishing
   if (match.tournament_id && result.homeScore === result.awayScore) {
     db.prepare(`UPDATE matches SET status='overtime' WHERE id=?`).run(match.id);
-    const ht2 = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.home_team_id);
-    const at2 = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.away_team_id);
     return res.json({ home_score: result.homeScore, away_score: result.awayScore, overtime: true });
   }
 

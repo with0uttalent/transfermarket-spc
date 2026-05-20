@@ -10,6 +10,10 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const PROXY   = 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
 
 let agent = null;
+let _enabled = true; // runtime toggle; persisted via app_settings in DB
+
+function setEnabled(val) { _enabled = !!val; }
+function isEnabled()     { return _enabled; }
 
 function initBot() {
   if (!TOKEN || !CHAT_ID) {
@@ -65,7 +69,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl) {
+async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl) {
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
 
@@ -141,6 +145,35 @@ async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, hom
   ctx.font = 'bold 13px sans-serif';
   ctx.fillText(badgeLabel, W / 2, by + 19);
 
+  // League strip at top (if league info provided)
+  if (leagueName) {
+    const stripH = 36;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 0, W, stripH);
+    // Thin accent line
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(0, stripH - 1, W, 1);
+
+    const leagueImg = await tryLoadImage(leagueLogoUrl);
+    let textX = W / 2;
+    if (leagueImg) {
+      const logoSize = 22;
+      const logoX = W / 2 - 80;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(logoX + logoSize / 2, stripH / 2, logoSize / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(leagueImg, logoX, (stripH - logoSize) / 2, logoSize, logoSize);
+      ctx.restore();
+      textX = logoX + logoSize + 8;
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = leagueImg ? 'left' : 'center';
+    ctx.fillText(leagueName, textX, stripH / 2 + 5);
+    ctx.textAlign = 'center';
+  }
+
   return canvas.toBuffer('image/png');
 }
 
@@ -167,10 +200,10 @@ function escTg(str) {
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
-async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, status, goalEvents }) {
-  if (!agent) return;
+async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, status, goalEvents, leagueName, leagueLogoUrl }) {
+  if (!agent || !_enabled) return;
   try {
-    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl);
+    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl);
 
     const homeGoals = (goalEvents || []).filter(e => e.team_id === homeTeamId);
     const awayGoals = (goalEvents || []).filter(e => e.team_id === awayTeamId);
@@ -178,7 +211,8 @@ async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awaySco
     const awayStr = awayGoals.map(g => `${g.minute}' ${escTg(g.player_name || '?')}`).join(', ');
     const goalsLine = (homeStr || awayStr) ? `\n${homeStr}  ⚽  ${awayStr}` : '';
 
-    const caption = `🏟 <b>${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>${goalsLine}`.slice(0, 1024);
+    const leaguePrefix = leagueName ? `🏅 <i>${escTg(leagueName)}</i>\n` : '';
+    const caption = `${leaguePrefix}🏟 <b>${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>${goalsLine}`.slice(0, 1024);
     const photoResult = await tgSendPhoto(imgBuf, caption);
     if (!photoResult.ok) console.warn('[TelegramBot] sendPhoto failed:', photoResult.description);
   } catch (err) {
@@ -187,7 +221,7 @@ async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awaySco
 }
 
 async function sendCoachNews({ coachName, teamName, title, body }) {
-  if (!agent) return;
+  if (!agent || !_enabled) return;
   try {
     const text = `📢 <b>Тренер ${escTg(teamName)}</b> — <i>${escTg(coachName)}</i> — заявил:\n\n<b>${escTg(title)}</b>\n\n${escTg(body)}`;
     const result = await tgSendMessage(text);
@@ -197,4 +231,4 @@ async function sendCoachNews({ coachName, teamName, title, body }) {
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews };
+module.exports = { initBot, sendMatchResult, sendCoachNews, setEnabled, isEnabled, generateMatchBanner };

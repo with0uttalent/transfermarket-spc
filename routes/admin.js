@@ -3,8 +3,30 @@
 const express = require('express');
 const { getDb } = require('../database/db');
 const { requireAdmin } = require('../middleware/auth');
+const telegramBot = require('../services/telegramBot');
 
 const router = express.Router();
+
+// ─── App settings ─────────────────────────────────────────────────────────────
+router.get('/settings', requireAdmin, (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT key, value FROM app_settings').all();
+  const settings = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  // Sync runtime state
+  settings.telegram_enabled = telegramBot.isEnabled() ? '1' : '0';
+  res.json(settings);
+});
+
+router.put('/settings', requireAdmin, (req, res) => {
+  const db = getDb();
+  const { telegram_enabled } = req.body;
+  if (telegram_enabled !== undefined) {
+    const val = telegram_enabled ? '1' : '0';
+    db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)').run('telegram_enabled', val);
+    telegramBot.setEnabled(telegram_enabled);
+  }
+  res.json({ ok: true });
+});
 
 // ─── Name pools for player generation ───────────────────────────────────────
 const FIRST_NAMES = [
