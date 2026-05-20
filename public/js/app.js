@@ -285,8 +285,8 @@ function renderCombinedMatchPitch(homeSlots, awaySlots, matchStats, homeTeamName
   const awayStarters = awaySlots.filter(s => s.slot >= 1 && s.slot <= 11);
 
   // Zone Y positions on the COMBINED pitch (0% = top edge, 100% = bottom edge)
-  const HOME_Y = { GK: 5.5, DEF: 19, DMF: 30, MID: 37, AMF: 43, FWD: 48 };
-  const AWAY_Y = { GK: 94.5, DEF: 81, DMF: 70, MID: 63, AMF: 57, FWD: 52 };
+  const HOME_Y = { GK: 2.5, DEF: 12, DMF: 21, MID: 30, AMF: 39, FWD: 47 };
+  const AWAY_Y = { GK: 97.5, DEF: 88, DMF: 79, MID: 70, AMF: 61, FWD: 53 };
 
   function buildZones(starters) {
     const zones = { GK: [], DEF: [], DMF: [], MID: [], AMF: [], FWD: [] };
