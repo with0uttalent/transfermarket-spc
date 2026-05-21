@@ -867,6 +867,10 @@ async function renderTeamDetail(app, id) {
             </label>
           </div>
           <div id="tp-ovr-panel-${team.id}" class="tp-ovr-panel" style="display:none">${ovrPanel}</div>` : ''}
+          ${isCoach() && State.coachProfile?.team_id && State.coachProfile.team_id !== team.id ? `
+          <div style="margin-top:10px">
+            <button class="btn btn-green" style="width:100%" onclick="showSendChallengeToTeam(${team.id},'${escHtml(team.name)}')">⚔️ Вызвать на матч</button>
+          </div>` : ''}
         </div>
       </div>
 
@@ -3141,14 +3145,17 @@ async function renderCoachDashboard(app) {
     const coach = State.coachProfile || await GET('/coaches/me');
     if (!coach) { app.innerHTML = `<div class="empty-state"><div class="empty-icon">⚽</div><p>No coach profile found. Contact admin.</p></div>`; return; }
     State.coachProfile = coach;
-    const [team, lineupData, offersData] = await Promise.all([
+    const [team, lineupData, offersData, challengesData] = await Promise.all([
       GET('/teams/'+coach.team_id),
       GET('/lineups/'+coach.team_id).catch(()=>({lineup:[]})),
       GET('/transfer-offers').catch(()=>[]),
+      GET('/match-challenges').catch(()=>({incoming:[],outgoing:[]})),
     ]);
     const lineup = { slots: lineupData.lineup || [] };
     const offers = Array.isArray(offersData) ? offersData : [];
     const pendingCount = offers.filter(o=>o.status==='pending').length;
+    const challenges = challengesData || { incoming: [], outgoing: [] };
+    const pendingChallenges = challenges.incoming.length;
     const totalBudget = team.transfer_budget != null ? team.transfer_budget : 10000000;
     const budgetSpent = team.transfer_budget_spent || 0;
     const budgetAvailable = Math.max(0, totalBudget - budgetSpent);
@@ -3187,12 +3194,14 @@ async function renderCoachDashboard(app) {
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="lineup">Состав</button>
         <button class="detail-tab" data-tab="offers">Трансферы ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
+        <button class="detail-tab" data-tab="challenges">⚔️ Вызовы ${pendingChallenges?`<span class="badge badge-gold">${pendingChallenges}</span>`:''}</button>
         <button class="detail-tab" data-tab="post-news">Новость клуба</button>
         <button class="detail-tab" data-tab="squad">Весь состав</button>
         <button class="detail-tab" data-tab="settings">⚙️ Настройки</button>
       </div>
       <div id="tab-lineup" class="tab-panel active"></div>
       <div id="tab-offers" class="tab-panel"></div>
+      <div id="tab-challenges" class="tab-panel"></div>
       <div id="tab-post-news" class="tab-panel"></div>
       <div id="tab-squad" class="tab-panel"></div>
       <div id="tab-settings" class="tab-panel"></div>
@@ -3204,6 +3213,9 @@ async function renderCoachDashboard(app) {
 
     // Render offers tab
     document.getElementById('tab-offers').innerHTML = renderTransferOffersTab(offers, coach.team_id);
+
+    // Render challenges tab
+    document.getElementById('tab-challenges').innerHTML = renderChallengesTab(challenges, coach.team_id);
 
     // Render post news
     document.getElementById('tab-post-news').innerHTML = `
@@ -3762,6 +3774,138 @@ async function loadTeamPlayersForOffer() {
   if (!teamId) { sel.innerHTML='<option value="">Сначала выберите команду…</option>'; return; }
   const players = await GET('/players?team_id='+teamId).catch(()=>[]);
   sel.innerHTML = players.map(p=>`<option value="${p.id}">${escHtml(p.name)} (${fmtValue(p.market_value)})</option>`).join('');
+}
+
+// ── Match challenges tab ──────────────────────────────────────────────────────
+function renderChallengesTab(data, myTeamId) {
+  const { incoming = [], outgoing = [] } = data;
+  const statusLabel = { pending:'🕐 Ожидает', accepted:'✅ Принято', declined:'❌ Отклонено' };
+  const statusCls   = { pending:'badge-gold', accepted:'badge-green', declined:'badge-red' };
+
+  const incomingHtml = incoming.length
+    ? incoming.map(c => `
+      <div class="challenge-card" id="ch-card-${c.id}">
+        <div class="challenge-from">
+          ${c.from_team_logo ? `<img src="${escHtml(c.from_team_logo)}" class="challenge-logo" onerror="this.style.display='none'">` : ''}
+          <strong>${escHtml(c.from_team_name)}</strong>
+          <span class="text-muted" style="font-size:12px">вызывает вас на товарищеский матч</span>
+        </div>
+        ${c.message ? `<div class="challenge-msg">"${escHtml(c.message)}"</div>` : ''}
+        <div class="challenge-meta">${fmtDate(c.created_at)}</div>
+        <div class="challenge-actions">
+          <button class="btn btn-green" onclick="respondChallenge(${c.id},'accept')">✅ Принять</button>
+          <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="respondChallenge(${c.id},'decline')">❌ Отклонить</button>
+        </div>
+      </div>`).join('')
+    : '<div class="empty-state" style="padding:20px"><p>Входящих вызовов нет</p></div>';
+
+  const outgoingHtml = outgoing.length
+    ? outgoing.map(c => `
+      <div class="challenge-card">
+        <div class="challenge-from">
+          ${c.to_team_logo ? `<img src="${escHtml(c.to_team_logo)}" class="challenge-logo" onerror="this.style.display='none'">` : ''}
+          <strong>${escHtml(c.to_team_name)}</strong>
+          <span class="badge ${statusCls[c.status]||'badge-gray'}" style="margin-left:8px">${statusLabel[c.status]||c.status}</span>
+        </div>
+        ${c.message ? `<div class="challenge-msg">"${escHtml(c.message)}"</div>` : ''}
+        <div class="challenge-meta">${fmtDate(c.created_at)}</div>
+        ${c.status==='pending'
+          ? `<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);margin-top:6px" onclick="cancelChallenge(${c.id},this)">Отменить</button>`
+          : c.status==='accepted' && c.match_id
+            ? `<button class="btn btn-sm btn-green" style="margin-top:6px" onclick="navigate('/matches/${c.match_id}')">Перейти к матчу →</button>`
+            : ''}
+      </div>`).join('')
+    : '<div class="empty-state" style="padding:20px"><p>Исходящих вызовов нет</p></div>';
+
+  return `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px 0">
+      <div class="card" style="flex:1;min-width:260px">
+        <div class="card-header">Входящие вызовы ${incoming.length ? `<span class="badge badge-gold">${incoming.length}</span>` : ''}</div>
+        <div style="padding:12px">${incomingHtml}</div>
+      </div>
+      <div class="card" style="flex:1;min-width:260px">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+          Исходящие вызовы
+          <button class="btn btn-sm btn-green" onclick="showSendChallengeModal()">⚔️ Вызвать</button>
+        </div>
+        <div style="padding:12px">${outgoingHtml}</div>
+      </div>
+    </div>`;
+}
+
+async function respondChallenge(id, action) {
+  try {
+    const r = await PUT(`/match-challenges/${id}/${action}`, {});
+    if (action === 'accept') {
+      toast('Матч создан! Перейдите в раздел матчей.');
+      navigate('/matches/' + r.match_id);
+    } else {
+      toast('Вызов отклонён');
+      const card = document.getElementById('ch-card-' + id);
+      if (card) card.remove();
+    }
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function cancelChallenge(id, btn) {
+  try {
+    await DEL('/match-challenges/' + id);
+    toast('Вызов отменён');
+    btn.closest('.challenge-card').remove();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function showSendChallengeToTeam(teamId, teamName) {
+  mkModal(`⚔️ Вызов на матч: ${teamName}`, `
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Вызов на <strong>товарищеский матч</strong> будет отправлен тренеру команды <strong>${escHtml(teamName)}</strong>. Матч будет создан после подтверждения.</p>
+    <div class="form-group">
+      <label>Сообщение (необязательно)</label>
+      <textarea id="ch-msg-direct" rows="2" placeholder="Привет! Сыграем товарищеский матч?"></textarea>
+    </div>
+  `, async () => {
+    const message = document.getElementById('ch-msg-direct').value.trim() || null;
+    await POST('/match-challenges', { to_team_id: teamId, message });
+    toast(`Вызов отправлен команде ${teamName}!`);
+    return true;
+  });
+}
+
+async function showSendChallengeModal() {
+  const teams = await GET('/teams').catch(()=>[]);
+  const myTeamId = State.coachProfile?.team_id;
+  const others = teams.filter(t => t.id !== myTeamId);
+  mkModal('⚔️ Вызов на товарищеский матч', `
+    <div class="form-group">
+      <label>Команда соперника *</label>
+      <select id="ch-to-team">
+        <option value="">Выберите команду…</option>
+        ${others.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Сообщение (необязательно)</label>
+      <textarea id="ch-msg" rows="2" placeholder="Привет! Сыграем товарищеский матч?"></textarea>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted)">Вызов будет отправлен тренеру команды. Матч состоится после подтверждения.</p>
+  `, async () => {
+    const to_team_id = document.getElementById('ch-to-team').value;
+    const message = document.getElementById('ch-msg').value.trim() || null;
+    if (!to_team_id) { toast('Выберите команду', 'error'); return false; }
+    await POST('/match-challenges', { to_team_id: parseInt(to_team_id), message });
+    toast('Вызов отправлен!');
+    navigate('/coach');
+    return true;
+  });
+}
+
+// Challenge button on team profile (for coaches only)
+async function challengeTeam(teamId, teamName) {
+  if (!isCoach()) return;
+  const message = null;
+  try {
+    await POST('/match-challenges', { to_team_id: teamId, message });
+    toast(`Вызов на матч отправлен команде ${teamName}!`);
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function showCoachEditForm(coach) {

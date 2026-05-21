@@ -398,6 +398,17 @@ function initSchema() {
     `ALTER TABLE matches ADD COLUMN pen_away INTEGER DEFAULT 0`,
     `ALTER TABLE matches ADD COLUMN is_friendly INTEGER DEFAULT 0`,
     `CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`,
+    `CREATE TABLE IF NOT EXISTS match_challenges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_team_id INTEGER NOT NULL,
+      to_team_id   INTEGER NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      match_id     INTEGER,
+      message      TEXT,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (to_team_id)   REFERENCES teams(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

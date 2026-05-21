@@ -48,8 +48,9 @@ app.use('/api/loans',        require('./routes/loans'));
 app.use('/api/leagues',         require('./routes/leagues'));
 app.use('/api/coaches',         require('./routes/coaches'));
 app.use('/api/transfer-offers', require('./routes/transfer-offers'));
-app.use('/api/lineups',         require('./routes/lineups'));
-app.use('/api/admin',           require('./routes/admin'));
+app.use('/api/lineups',           require('./routes/lineups'));
+app.use('/api/match-challenges',  require('./routes/match-challenges'));
+app.use('/api/admin',             require('./routes/admin'));
 
 // SPA fallback
 app.get('*', (req, res) => {

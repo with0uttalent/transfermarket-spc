@@ -1326,6 +1326,14 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .offer-card.offer-accepted { border-left: 3px solid var(--green); }
 .offer-card.offer-rejected { border-left: 3px solid #e74c3c; opacity: .7; }
 .offer-card.offer-cancelled { border-left: 3px solid var(--text-muted); opacity: .6; }
+
+/* ── Match challenge cards ───────────────────────────────────── */
+.challenge-card { background: var(--bg); border: 1px solid var(--border); border-left: 3px solid #3498db; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+.challenge-from { display: flex; align-items: center; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+.challenge-logo { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; }
+.challenge-msg { font-style: italic; color: var(--text-muted); font-size: 13px; margin: 8px 0 4px; }
+.challenge-meta { font-size: 11px; color: var(--text-muted); margin: 4px 0 8px; }
+.challenge-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .offer-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .offer-type-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; text-transform: uppercase; }
 .offer-buy { background: rgba(39,174,96,.2); color: #2ecc71; }
