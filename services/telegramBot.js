@@ -15,6 +15,8 @@ let _enabled = true; // runtime toggle; persisted via app_settings in DB
 function setEnabled(val) { _enabled = !!val; }
 function isEnabled()     { return _enabled; }
 
+let _updateOffset = 0;
+
 function initBot() {
   if (!TOKEN || !CHAT_ID) {
     console.log('[TelegramBot] No TOKEN/CHAT_ID — disabled.');
@@ -22,6 +24,86 @@ function initBot() {
   }
   agent = new SocksProxyAgent(PROXY);
   console.log('[TelegramBot] Ready.');
+  startPolling();
+}
+
+async function tgGetUpdates() {
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${TOKEN}/getUpdates?offset=${_updateOffset}&timeout=5`,
+      { agent }
+    );
+    const data = await res.json();
+    if (!data.ok || !data.result.length) return;
+    for (const upd of data.result) {
+      _updateOffset = upd.update_id + 1;
+      const text = (upd.message?.text || '').trim().toLowerCase();
+      if (text === '/table' || text === 'table') {
+        const replyTo = upd.message.chat.id;
+        handleTableCommand(replyTo).catch(e => console.warn('[Bot] table cmd error:', e.message));
+      }
+    }
+  } catch { /* network errors are fine */ }
+}
+
+function startPolling() {
+  setInterval(tgGetUpdates, 3000);
+}
+
+async function handleTableCommand(chatId) {
+  try {
+    const { getDb } = require('../database/db');
+    const db = getDb();
+
+    const leagues = db.prepare(
+      `SELECT id, name, current_matchday, total_matchdays FROM leagues WHERE status='active' ORDER BY id`
+    ).all();
+
+    if (!leagues.length) {
+      await tgSendMessageTo(chatId, '⚽ Нет активных лиг.');
+      return;
+    }
+
+    for (const league of leagues) {
+      const rows = db.prepare(`
+        SELECT ls.points, ls.played, ls.won, ls.drawn, ls.lost,
+               ls.goals_for, ls.goals_against,
+               ls.goals_for - ls.goals_against AS gd,
+               t.name AS team_name
+        FROM league_standings ls
+        JOIN teams t ON ls.team_id = t.id
+        WHERE ls.league_id = ?
+        ORDER BY ls.points DESC, gd DESC, ls.goals_for DESC
+      `).all(league.id);
+
+      if (!rows.length) continue;
+
+      const maxName = Math.min(16, Math.max(...rows.map(r => r.team_name.length)));
+      const trunc = s => s.length > maxName ? s.slice(0, maxName - 1) + '…' : s.padEnd(maxName);
+      const num = (n, w = 2) => String(n).padStart(w);
+
+      const header = `# ${'Клуб'.padEnd(maxName)}  P  W  D  L  GF GA GD PTS`;
+      const divider = '─'.repeat(header.length);
+      const lines = rows.map((r, i) =>
+        `${num(i+1)}. ${trunc(r.team_name)} ${num(r.played)} ${num(r.won)} ${num(r.drawn)} ${num(r.lost)} ${num(r.goals_for)} ${num(r.goals_against)} ${String(r.gd >= 0 ? '+'+r.gd : r.gd).padStart(3)} ${num(r.points, 3)}`
+      );
+
+      const md = `${league.name}\nТур ${league.current_matchday || 0}/${league.total_matchdays || '?'}\n\n<pre>${header}\n${divider}\n${lines.join('\n')}</pre>`;
+      await tgSendMessageTo(chatId, md);
+    }
+  } catch(e) {
+    console.warn('[Bot] handleTableCommand error:', e.message);
+  }
+}
+
+async function tgSendMessageTo(chatId, text) {
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+    agent,
+  });
+  return res.json();
 }
 
 // ── Raw Telegram API calls ────────────────────────────────────────────────────
