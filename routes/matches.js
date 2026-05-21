@@ -37,7 +37,7 @@ router.get('/:id', (req, res) => {
   if (!match) return res.status(404).json({ error: 'Not found' });
   const events = db.prepare(`
     SELECT e.*,
-      p.name as player_name,
+      p.name as player_name, p.image_url as player_image_url,
       p2.name as player2_name,
       t.name as team_name
     FROM match_events e
