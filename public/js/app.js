@@ -2334,11 +2334,12 @@ function renderMatchFullStats(ms, homeName, awayName) {
   </div>`;
 }
 
-function triggerGoalCelebration(side, match) {
+function triggerGoalCelebration(side, match, ev) {
   const container = document.getElementById('scoreboard');
   if (!container) return;
   const teamName = side === 'home' ? match.home_team_name : match.away_team_name;
   const teamLogo = side === 'home' ? match.home_logo : match.away_logo;
+  const scorerName = ev && ev.player_name ? ev.player_name : '';
 
   // Particle burst inside scoreboard
   const EMOJIS = ['⚽','🎉','🔥','⭐','💥','🏆','👏'];
@@ -2353,15 +2354,28 @@ function triggerGoalCelebration(side, match) {
     setTimeout(() => el.remove(), 2200);
   }
 
-  // Goal banner — appended to body so it's always above the sticky header
+  // Goal banner — centered overlay
   const banner = document.createElement('div');
   banner.className = 'goal-banner';
+
   const logoHtml = teamLogo
-    ? `<img src="${escHtml(teamLogo)}" style="width:40px;height:40px;object-fit:contain;border-radius:50%;background:#fff;padding:3px;flex-shrink:0" onerror="this.style.display='none'">`
+    ? `<img src="${escHtml(teamLogo)}" class="goal-banner-logo" onerror="this.style.display='none'">`
     : '';
-  banner.innerHTML = `${logoHtml}<span>⚽ ГООООЛ!</span><span style="opacity:.85;font-size:0.7em">${escHtml(teamName)}</span>`;
+
+  const marqueeText = '⚽ ГООООООООООООООООООООООООООООЛ! ⚽ ГООООООООООООООООООООООООООООЛ! ⚽ ГООООООООООООООООООООООООООООЛ! ';
+
+  banner.innerHTML = `
+    <div class="goal-banner-top">
+      ${logoHtml}
+      <span class="goal-banner-team">${escHtml(teamName)}</span>
+    </div>
+    <div class="goal-banner-marquee-wrap">
+      <div class="goal-banner-marquee">${escHtml(marqueeText)}</div>
+    </div>
+    ${scorerName ? `<div class="goal-banner-scorer">⚽ ${escHtml(scorerName)}</div>` : ''}
+  `;
   document.body.appendChild(banner);
-  setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(() => banner.remove(), 500); }, 2800);
+  setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(() => banner.remove(), 600); }, 4000);
 }
 
 async function startMatchSimulation(matchId) {
@@ -2412,7 +2426,7 @@ async function startMatchReplay(matchId) {
         const sa = document.getElementById('score-away');
         if (sh) sh.textContent = hScore;
         if (sa) sa.textContent = aScore;
-        if (!isOwnGoal) triggerGoalCelebration(scoringHome ? 'home' : 'away', match);
+        if (!isOwnGoal) triggerGoalCelebration(scoringHome ? 'home' : 'away', match, ev);
         const scoreboard = document.getElementById('scoreboard');
         if (scoreboard) { scoreboard.classList.add('sb-goal-flash'); setTimeout(()=>scoreboard.classList.remove('sb-goal-flash'),700); }
       }
