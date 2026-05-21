@@ -69,6 +69,14 @@ function posBadge(pos) {
   const cls = key==='GK'?'pos-GK':key==='DEF'?'pos-DEF':key==='MID'?'pos-MID':key==='FWD'?'pos-FWD':'pos-default';
   return `<span class="pos ${cls}">${pos}</span>`;
 }
+const ZONE_LABEL = { GK:'GK', DEF:'ЗАЩ', DMF:'ОПР', MID:'ПЗЩ', AMF:'АТМ', FWD:'НПД' };
+const ZONE_COLOR = { GK:'#f39c12', DEF:'#3498db', DMF:'#9b59b6', MID:'#27ae60', AMF:'#16a085', FWD:'#e74c3c' };
+function zoneBadge(zone) {
+  if (!zone) return '';
+  const label = ZONE_LABEL[zone] || zone;
+  const color = ZONE_COLOR[zone] || '#888';
+  return `<span style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:800;color:#fff;background:${color};letter-spacing:.3px">${label}</span>`;
+}
 function ttypeBadge(t) {
   const cls = {permanent:'ttype-permanent',loan:'ttype-loan',free:'ttype-free',youth:'ttype-youth'}[t]||'ttype-free';
   return `<span class="ttype ${cls}">${t||'transfer'}</span>`;
@@ -3551,7 +3559,7 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
       ${avatarEl(p.image_url,p.name)}
       <div style="flex:1;min-width:0">
         <div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${posBadge(p.position)}${p.sub_position?`<span style="font-size:10px;color:var(--text-muted)">${escHtml(p.sub_position)}</span>`:''}</div>
+        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:1px">${posBadge(p.position)}${zoneBadge(natZone)}</div>
       </div>
       <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
       ${sel?`<span style="color:var(--blue);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
@@ -3580,13 +3588,14 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
     if (!p) return '';
     const ovr = calcOverall(p);
     const ovrColor = !ovr?'#888':ovr>=80?'#f1c40f':ovr>=70?'#2ecc71':ovr>=60?'#3498db':'#95a5a6';
+    const assignedZone = s.position_override && ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(p.position);
     return `<div class="bench-card${opts.priority?' bench-priority':''}"
       draggable="true"
       ondragstart="dragPlayerStart(${p.id},'${opts.priority?'priority':'bench'}',event)">
       <div style="position:relative;flex-shrink:0">${avatarEl(p.image_url,p.name)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.name)}</div>
-        <div>${posBadge(p.position)}</div>
+        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:2px">${posBadge(p.position)}${zoneBadge(assignedZone)}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
         <span style="font-size:11px;font-weight:800;color:${ovrColor}">${ovr??'?'}</span>
@@ -3646,11 +3655,12 @@ function renderReservesList(lineupSlots, allPlayers, teamId) {
     if (!p) return '';
     const injured = s.injury_matches_remaining > 0;
     const isPriority = !!s.priority_sub;
+    const assignedZone = s.position_override && ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(p.position);
     return `<div class="player-card${injured?' pc-injured':''}">
       <div style="position:relative">${avatarEl(p.image_url,p.name)}${injured?`<span class="inj-badge" title="Травма: ещё ${s.injury_matches_remaining} матча(ей)">🚑</span>`:''}</div>
       <div class="pc-info">
         <div class="pc-name">${escHtml(p.name)}${injured?` <span style="color:#e74c3c;font-size:10px">(травма ${s.injury_matches_remaining})</span>`:''}</div>
-        <div class="pc-pos">${posBadge(p.position)}</div>
+        <div class="pc-pos" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${posBadge(p.position)}${zoneBadge(assignedZone)}</div>
       </div>
       <div class="pc-btn" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         <label class="priority-sub-label" title="Приоритетная замена — выйдет первым">
