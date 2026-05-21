@@ -24,6 +24,16 @@
   </nav>
   <div class="header-right">
     <input type="search" id="search-global" placeholder="Поиск игроков, команд…" autocomplete="off" />
+    <div class="notif-wrap" id="notif-wrap">
+      <button class="notif-btn" id="notif-btn" title="Уведомления">
+        🔔
+        <span class="notif-badge hidden" id="notif-badge">0</span>
+      </button>
+      <div class="notif-dropdown hidden" id="notif-dropdown">
+        <div class="notif-header">Уведомления</div>
+        <div id="notif-list"><div class="notif-empty">Нет уведомлений</div></div>
+      </div>
+    </div>
     <span id="user-indicator" class="hidden"></span>
     <button id="btn-logout" class="hidden">Выйти</button>
     <button id="btn-login">Войти</button>

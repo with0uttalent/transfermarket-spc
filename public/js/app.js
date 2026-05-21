@@ -434,6 +434,111 @@ async function loadCoachProfile() {
   if (!isCoach()) return;
   try { State.coachProfile = await GET('/coaches/me'); } catch { State.coachProfile = null; }
 }
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+let _notifPollTimer = null;
+
+async function loadNotifications() {
+  if (!isLoggedIn()) { updateNotifBadge([]); return; }
+  try {
+    const items = await buildNotifications();
+    updateNotifBadge(items);
+    renderNotifList(items);
+  } catch { /* silent */ }
+}
+
+async function buildNotifications() {
+  const items = [];
+
+  if (isCoach()) {
+    // Incoming match challenges
+    const ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
+    for (const c of (ch.incoming || [])) {
+      items.push({
+        id: `ch-in-${c.id}`,
+        icon: '⚔️',
+        text: `<strong>${escHtml(c.from_team_name)}</strong> вызывает вас на товарищеский матч`,
+        time: c.created_at,
+        actions: [
+          { label: '✅ Принять',   cls: 'btn-green',   fn: `respondChallenge(${c.id},'accept')` },
+          { label: '❌ Отклонить', cls: 'btn-notif-decline', fn: `respondChallenge(${c.id},'decline')` },
+        ],
+      });
+    }
+    // Accepted outgoing challenges (match ready to play)
+    for (const c of (ch.outgoing || [])) {
+      if (c.status === 'accepted' && c.match_id) {
+        items.push({
+          id: `ch-acc-${c.id}`,
+          icon: '✅',
+          text: `<strong>${escHtml(c.to_team_name)}</strong> принял вызов! Товарищеский матч готов`,
+          time: c.created_at,
+          actions: [{ label: '▶ Перейти к матчу', cls: 'btn-green', fn: `navigate('/matches/${c.match_id}')` }],
+        });
+      }
+    }
+    // Pending transfer offers
+    const offers = await GET('/transfer-offers').catch(() => []);
+    const pending = (Array.isArray(offers) ? offers : []).filter(o => o.status === 'pending' && o.to_team_id === State.coachProfile?.team_id);
+    for (const o of pending.slice(0, 5)) {
+      items.push({
+        id: `of-${o.id}`,
+        icon: '💶',
+        text: `Предложение о трансфере <strong>${escHtml(o.player_name || '?')}</strong> от <strong>${escHtml(o.from_team_name || '?')}</strong> — ${fmtValue(o.amount)}`,
+        time: o.created_at,
+        actions: [{ label: 'Открыть', cls: 'btn-notif-open', fn: `navigate('/coach');setTimeout(()=>document.querySelector('[data-tab=offers]')?.click(),400)` }],
+      });
+    }
+  }
+  return items;
+}
+
+function updateNotifBadge(items) {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  const count = items.length;
+  badge.textContent = count > 9 ? '9+' : count;
+  badge.classList.toggle('hidden', count === 0);
+}
+
+function renderNotifList(items) {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!items.length) { list.innerHTML = '<div class="notif-empty">Нет новых уведомлений</div>'; return; }
+  list.innerHTML = items.map(item => `
+    <div class="notif-item" id="notif-item-${item.id}">
+      <div class="notif-icon">${item.icon}</div>
+      <div class="notif-body">
+        <div class="notif-text">${item.text}</div>
+        ${item.time ? `<div class="notif-time">${fmtDate(item.time)}</div>` : ''}
+        ${item.actions?.length ? `<div class="notif-actions">${item.actions.map(a =>
+          `<button class="btn btn-sm ${a.cls}" onclick="(()=>{closeNotifDropdown();${a.fn};})()">${a.label}</button>`
+        ).join('')}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function closeNotifDropdown() {
+  document.getElementById('notif-dropdown')?.classList.add('hidden');
+}
+
+function startNotifPolling() {
+  if (_notifPollTimer) clearInterval(_notifPollTimer);
+  loadNotifications();
+  _notifPollTimer = setInterval(loadNotifications, 30000);
+}
+
+// Notification bell toggle
+document.getElementById('notif-btn').addEventListener('click', e => {
+  e.stopPropagation();
+  const dd = document.getElementById('notif-dropdown');
+  const isHidden = dd.classList.toggle('hidden');
+  if (!isHidden) loadNotifications();
+});
+document.addEventListener('click', e => {
+  if (!document.getElementById('notif-wrap')?.contains(e.target)) closeNotifDropdown();
+});
+
 document.getElementById('btn-login').addEventListener('click', () => {
   document.getElementById('login-modal').classList.remove('hidden');
   document.getElementById('login-username').focus();
@@ -452,11 +557,11 @@ async function doLogin() {
     localStorage.setItem('tm_token', data.token);
     document.getElementById('login-modal').classList.add('hidden');
     document.getElementById('login-password').value = '';
-    updateAuthUI(); await loadCoachProfile(); toast('Вход выполнен: ' + data.username); router();
+    updateAuthUI(); await loadCoachProfile(); toast('Вход выполнен: ' + data.username); startNotifPolling(); router();
   } catch (err) { errEl.textContent = err.message; errEl.style.display = 'block'; }
 }
 document.getElementById('btn-logout').addEventListener('click', () => {
-  State.token = null; State.role = null; State.coachProfile = null; localStorage.removeItem('tm_token'); updateAuthUI(); toast('Выход выполнен','info'); navigate('/');
+  State.token = null; State.role = null; State.coachProfile = null; localStorage.removeItem('tm_token'); if(_notifPollTimer){clearInterval(_notifPollTimer);_notifPollTimer=null;} updateNotifBadge([]); renderNotifList([]); updateAuthUI(); toast('Выход выполнен','info'); navigate('/');
 });
 
 // ─── Global Search ────────────────────────────────────────────
@@ -534,7 +639,7 @@ function router() {
   app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>Page not found</p></div>`;
 }
 window.addEventListener('hashchange', router);
-window.addEventListener('load', async () => { updateAuthUI(); await loadCoachProfile(); loadBanners(); router(); });
+window.addEventListener('load', async () => { updateAuthUI(); await loadCoachProfile(); loadBanners(); startNotifPolling(); router(); });
 
 // ═══════════════════════════════════════════════════════════
 //  HOME
@@ -2119,7 +2224,7 @@ async function renderMatchDetail(app, id) {
         ${match.tournament_name?`<span class="badge badge-gold">🏆 ${escHtml(match.tournament_name)}</span>`:''}
         ${match.league_name?`<span class="badge badge-blue" style="display:flex;align-items:center;gap:5px">${match.league_logo_url?`<img src="${escHtml(match.league_logo_url)}" style="height:14px;width:auto;object-fit:contain">`:''}${escHtml(match.league_name)}</span>`:''}
         ${match.is_friendly?`<span class="badge badge-gray">⚑ Товарищеский</span>`:''}
-        ${isAdmin()&&!isFinished?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ Simulate Match</button>`:''}
+        ${!isFinished&&(isAdmin()||(isCoach()&&match.is_friendly&&(match.home_team_id===State.coachProfile?.team_id||match.away_team_id===State.coachProfile?.team_id)))?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ ${match.is_friendly?'Начать матч':'Simulate Match'}</button>`:''}
         ${isFinished?`<button class="btn btn-green" onclick="startMatchReplay(${id})">▶ Watch Replay</button>`:''}
       </div>
       <div class="detail-tabs" id="match-tabs">
@@ -2233,8 +2338,9 @@ function triggerGoalCelebration(side, match) {
   const container = document.getElementById('scoreboard');
   if (!container) return;
   const teamName = side === 'home' ? match.home_team_name : match.away_team_name;
+  const teamLogo = side === 'home' ? match.home_logo : match.away_logo;
 
-  // Particle burst
+  // Particle burst inside scoreboard
   const EMOJIS = ['⚽','🎉','🔥','⭐','💥','🏆','👏'];
   const COUNT = 22;
   for (let i = 0; i < COUNT; i++) {
@@ -2247,12 +2353,15 @@ function triggerGoalCelebration(side, match) {
     setTimeout(() => el.remove(), 2200);
   }
 
-  // Fan cheer banner
+  // Goal banner — appended to body so it's always above the sticky header
   const banner = document.createElement('div');
   banner.className = 'goal-banner';
-  banner.innerHTML = `⚽ ГООООЛ! <span style="opacity:.8;font-size:0.7em">${escHtml(teamName)}</span>`;
-  container.appendChild(banner);
-  setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(()=>banner.remove(), 500); }, 2800);
+  const logoHtml = teamLogo
+    ? `<img src="${escHtml(teamLogo)}" style="width:40px;height:40px;object-fit:contain;border-radius:50%;background:#fff;padding:3px;flex-shrink:0" onerror="this.style.display='none'">`
+    : '';
+  banner.innerHTML = `${logoHtml}<span>⚽ ГООООЛ!</span><span style="opacity:.85;font-size:0.7em">${escHtml(teamName)}</span>`;
+  document.body.appendChild(banner);
+  setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(() => banner.remove(), 500); }, 2800);
 }
 
 async function startMatchSimulation(matchId) {
