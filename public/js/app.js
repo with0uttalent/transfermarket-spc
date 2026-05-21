@@ -2711,8 +2711,9 @@ function startLiveMatchPoll(matchId) {
         badgeEl.className = 'match-status-badge match-status-finished';
       }
       toast(`Финальный свисток: ${data.home_team_name} ${data.home_score}–${data.away_score} ${data.away_team_name}`);
-      // Reload full match to show combined pitch / player stats
-      setTimeout(() => navigate(location.hash || '#/matches'), 2000);
+      // Re-render the full finished match in-place (shows stats, ratings, formations tabs)
+      const app = document.getElementById('app');
+      if (app) setTimeout(() => renderMatchDetail(app, data.id), 800);
     }
   }
 
