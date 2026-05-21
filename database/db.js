@@ -409,6 +409,7 @@ function initSchema() {
       FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE CASCADE,
       FOREIGN KEY (to_team_id)   REFERENCES teams(id) ON DELETE CASCADE
     )`,
+    `ALTER TABLE matches ADD COLUMN started_at TEXT`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

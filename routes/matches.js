@@ -33,9 +33,10 @@ router.get('/', (req, res) => {
 
 router.get('/:id', (req, res) => {
   const db = getDb();
-  const match = db.prepare(BASE + ' WHERE m.id=?').get(req.params.id);
+  let match = db.prepare(BASE + ' WHERE m.id=?').get(req.params.id);
   if (!match) return res.status(404).json({ error: 'Not found' });
-  const events = db.prepare(`
+
+  let allEvents = db.prepare(`
     SELECT e.*,
       p.name as player_name, p.image_url as player_image_url,
       p2.name as player2_name,
@@ -47,6 +48,63 @@ router.get('/:id', (req, res) => {
     WHERE e.match_id=?
     ORDER BY e.minute
   `).all(req.params.id);
+
+  if (match.status === 'in_progress' && match.started_at) {
+    const elapsed = (Date.now() - new Date(match.started_at).getTime()) / 1000;
+    const liveMin = Math.min(90, Math.floor(elapsed));
+
+    if (liveMin >= 90) {
+      // Atomically finalize — only the first request to do this triggers side-effects
+      const nextStatus = (match.tournament_id && match.home_score === match.away_score) ? 'overtime' : 'finished';
+      const r = db.prepare(`UPDATE matches SET status=? WHERE id=? AND status='in_progress'`).run(nextStatus, match.id);
+      if (r.changes > 0) {
+        if (nextStatus === 'finished') {
+          const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.home_team_id);
+          const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.away_team_id);
+          generateMatchNews(match.id, ht.name, at.name, match.home_score, match.away_score, allEvents);
+          if (match.tournament_id) advanceTournamentWinner(match, match.home_score, match.away_score);
+        }
+      }
+      match = { ...match, status: nextStatus };
+    } else {
+      // Return only events up to the live minute
+      const liveEvents = allEvents.filter(e => e.minute <= liveMin);
+      let liveHome = 0, liveAway = 0;
+      for (const e of liveEvents) {
+        if (e.event_type === 'goal') {
+          if (e.team_id === match.home_team_id) liveHome++; else liveAway++;
+        } else if (e.event_type === 'own_goal') {
+          if (e.team_id === match.home_team_id) liveAway++; else liveHome++;
+        }
+      }
+      const playerStats = db.prepare(`
+        SELECT
+          p.id as player_id, p.name as player_name, p.position, p.image_url, p.team_id,
+          COALESCE(s.goals, 0) as goals, COALESCE(s.assists, 0) as assists,
+          COALESCE(s.yellow_cards, 0) as yellow_cards, COALESCE(s.red_cards, 0) as red_cards,
+          COALESCE(s.rating, 6.0) as rating
+        FROM team_lineups tl JOIN players p ON tl.player_id = p.id
+        LEFT JOIN player_match_stats s ON s.player_id = p.id AND s.match_id = ?
+        WHERE tl.team_id IN (
+          SELECT home_team_id FROM matches WHERE id=?
+          UNION SELECT away_team_id FROM matches WHERE id=?
+        ) AND tl.slot <= 11
+        ORDER BY COALESCE(s.rating, 6.0) DESC
+      `).all(req.params.id, req.params.id, req.params.id);
+      const fullStats = db.prepare(`SELECT * FROM match_stats WHERE match_id=?`).get(req.params.id) || null;
+      return res.json({
+        ...match,
+        status: 'in_progress',
+        live_minute: liveMin,
+        home_score: liveHome,
+        away_score: liveAway,
+        events: liveEvents,
+        stats: playerStats,
+        fullStats,
+      });
+    }
+  }
+
   const playerStats = db.prepare(`
     SELECT
       p.id as player_id, p.name as player_name, p.position, p.image_url, p.team_id,
@@ -65,7 +123,7 @@ router.get('/:id', (req, res) => {
     ORDER BY COALESCE(s.rating, 6.0) DESC
   `).all(req.params.id, req.params.id, req.params.id);
   const fullStats = db.prepare(`SELECT * FROM match_stats WHERE match_id=?`).get(req.params.id) || null;
-  res.json({ ...match, events, stats: playerStats, fullStats });
+  res.json({ ...match, events: allEvents, stats: playerStats, fullStats });
 });
 
 router.post('/', requireAuth, (req, res) => {
@@ -107,7 +165,8 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
   const db = getDb();
   const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(req.params.id);
   if (!match) return res.status(404).json({ error: 'Not found' });
-  if (match.status === 'finished') return res.status(400).json({ error: 'Match already simulated' });
+  if (match.status === 'finished') return res.status(400).json({ error: 'Match already finished' });
+  if (match.status === 'in_progress') return res.status(400).json({ error: 'Match is already in progress' });
 
   const home = getLineupInfo(db, match.home_team_id);
   const away = getLineupInfo(db, match.away_team_id);
@@ -149,36 +208,37 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
     result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
   }
 
+  // Save all events and final score now; status becomes in_progress (revealed gradually by GET)
+  const insertEvent = db.prepare(
+    `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
+  );
+  for (const e of result.events) insertEvent.run(match.id, e.minute, e.event_type, e.team_id, e.player_id, e.player2_id, e.description);
+
+  const startedAt = new Date().toISOString();
+
   if (match.is_friendly) {
-    // Friendly match: save score/events but skip MV/stats/skills/injuries
-    db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='finished' WHERE id=?`)
-      .run(result.homeScore, result.awayScore, match.id);
-    const insertEvent = db.prepare(
-      `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
-    );
-    for (const e of result.events) insertEvent.run(match.id, e.minute, e.event_type, e.team_id, e.player_id, e.player2_id, e.description);
-    return res.json({ home_score: result.homeScore, away_score: result.awayScore, friendly: true, events_count: result.events.length });
+    // Friendly: skip MV/stats/skills/injuries; finalization is purely score+status
+    db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='in_progress', started_at=? WHERE id=?`)
+      .run(result.homeScore, result.awayScore, startedAt, match.id);
+    return res.json({ ok: true, started_at: startedAt });
   }
 
+  // Non-friendly: apply player/team stat updates immediately (they don't surface in match view)
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 
-  // Tournament draw → overtime instead of finishing
+  // Tournament draw → overtime — keep existing flow but delay reveal via in_progress
   if (match.tournament_id && result.homeScore === result.awayScore) {
-    db.prepare(`UPDATE matches SET status='overtime' WHERE id=?`).run(match.id);
-    return res.json({ home_score: result.homeScore, away_score: result.awayScore, overtime: true });
+    db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='in_progress', started_at=? WHERE id=?`)
+      .run(result.homeScore, result.awayScore, startedAt, match.id);
+    // Mark overtime after 90s via the GET finalization path — skip for now, set overtime flag later
+    // For simplicity: overtime is set when finalized by GET handler
+    return res.json({ ok: true, started_at: startedAt, overtime_pending: true });
   }
 
-  const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.home_team_id);
-  const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.away_team_id);
-  const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
-  generateMatchNews(match.id, ht.name, at.name, result.homeScore, result.awayScore, evRows);
+  db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='in_progress', started_at=? WHERE id=?`)
+    .run(result.homeScore, result.awayScore, startedAt, match.id);
 
-  // If tournament match: advance winner
-  if (match.tournament_id) {
-    advanceTournamentWinner(match, result.homeScore, result.awayScore);
-  }
-
-  res.json({ home_score: result.homeScore, away_score: result.awayScore, events_count: evRows.length });
+  res.json({ ok: true, started_at: startedAt });
 });
 
 function advanceTournamentWinner(match, homeScore, awayScore) {

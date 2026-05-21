@@ -608,6 +608,7 @@ function renderBannerCol(containerId, banners, featuredPlayer, featuredLabel) {
 // ─── Router ───────────────────────────────────────────────────
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
+  stopLiveMatchPoll(); // cancel live polling when navigating away
   const hash = window.location.hash.replace(/^#/,'') || '/';
   const [rawPath, qs = ''] = hash.split('?');
   const params = Object.fromEntries(new URLSearchParams(qs));
@@ -2191,11 +2192,22 @@ async function renderMatchDetail(app, id) {
   app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
     const match = await GET('/matches/'+id);
-    const isFinished = match.status === 'finished';
+    const isFinished = match.status === 'finished' || match.status === 'overtime';
+    const isLive = match.status === 'in_progress';
+    const canSimulate = !isFinished && !isLive &&
+      (isAdmin() || (isCoach() && match.is_friendly &&
+        (match.home_team_id === State.coachProfile?.team_id || match.away_team_id === State.coachProfile?.team_id)));
 
     const stadiumStyle = match.home_stadium_url
       ? `background-image:linear-gradient(rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url('${escHtml(match.home_stadium_url)}');background-size:cover;background-position:center;`
       : '';
+
+    const initHome = isFinished ? match.home_score : (isLive ? match.home_score : '0');
+    const initAway = isFinished ? match.away_score : (isLive ? match.away_score : '0');
+    const clockInit = isFinished ? `90'` : (isLive ? `${match.live_minute}'` : (match.match_date ? fmtDate(match.match_date) : '–'));
+    const badgeCls = isFinished ? 'match-status-finished' : (isLive ? 'match-status-live' : 'match-status-scheduled');
+    const badgeTxt = isFinished ? 'FINISHED' : (isLive ? 'LIVE' : match.status);
+
     app.innerHTML=`
       <div class="scoreboard" id="scoreboard" style="${stadiumStyle}">
         <div class="score-teams">
@@ -2205,11 +2217,11 @@ async function renderMatchDetail(app, id) {
           </div>
           <div class="score-center">
             <div class="score-display">
-              <div class="score-value" id="score-home">${isFinished?match.home_score:'0'}</div>
+              <div class="score-value" id="score-home">${initHome}</div>
               <div class="score-sep">–</div>
-              <div class="score-value" id="score-away">${isFinished?match.away_score:'0'}</div>
+              <div class="score-value" id="score-away">${initAway}</div>
             </div>
-            <span class="match-status-badge ${isFinished?'match-status-finished':'match-status-scheduled'}" id="match-status-badge">${match.status}</span>
+            <span class="match-status-badge ${badgeCls}" id="match-status-badge">${badgeTxt}</span>
           </div>
           <div class="score-team">
             ${teamLogoXL(match.away_logo,match.away_team_name)}
@@ -2217,15 +2229,14 @@ async function renderMatchDetail(app, id) {
           </div>
         </div>
         <div class="match-clock">
-          <span class="clock-min" id="match-clock">⏱ ${isFinished?'90':match.match_date?fmtDate(match.match_date):'–'}</span>
+          <span class="clock-min" id="match-clock">⏱ ${clockInit}</span>
         </div>
       </div>
       <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         ${match.tournament_name?`<span class="badge badge-gold">🏆 ${escHtml(match.tournament_name)}</span>`:''}
         ${match.league_name?`<span class="badge badge-blue" style="display:flex;align-items:center;gap:5px">${match.league_logo_url?`<img src="${escHtml(match.league_logo_url)}" style="height:14px;width:auto;object-fit:contain">`:''}${escHtml(match.league_name)}</span>`:''}
         ${match.is_friendly?`<span class="badge badge-gray">⚑ Товарищеский</span>`:''}
-        ${!isFinished&&(isAdmin()||(isCoach()&&match.is_friendly&&(match.home_team_id===State.coachProfile?.team_id||match.away_team_id===State.coachProfile?.team_id)))?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ ${match.is_friendly?'Начать матч':'Simulate Match'}</button>`:''}
-        ${isFinished?`<button class="btn btn-green" onclick="startMatchReplay(${id})">▶ Watch Replay</button>`:''}
+        ${canSimulate?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ Начать матч</button>`:''}
       </div>
       <div class="detail-tabs" id="match-tabs">
         <button class="detail-tab active" data-tab="m-events">📋 Events</button>
@@ -2235,7 +2246,7 @@ async function renderMatchDetail(app, id) {
       </div>
       <div id="tab-m-events" class="tab-panel active">
         <div class="event-log" id="event-log">
-          ${isFinished ? renderEventLog(match.events) : '<div style="padding:40px;text-align:center;color:var(--text-muted)">No events yet</div>'}
+          ${isFinished ? renderEventLog(match.events) : (isLive ? renderEventLog(match.events) : '<div style="padding:40px;text-align:center;color:var(--text-muted)">Матч ещё не начался</div>')}
         </div>
       </div>
       <div id="tab-m-ratings" class="tab-panel">
@@ -2263,6 +2274,10 @@ async function renderMatchDetail(app, id) {
           </div>`;
         } catch { panel.innerHTML = '<div class="empty-state"><p>Ошибка загрузки составов</p></div>'; }
       }, { once: true });
+    }
+    // Auto-start live polling for anyone watching an in-progress match
+    if (isLive) {
+      startLiveMatchPoll(id);
     }
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
 }
@@ -2388,79 +2403,100 @@ function triggerGoalCelebration(side, match, ev) {
 
 async function startMatchSimulation(matchId) {
   const btn = document.getElementById('btn-sim');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Simulating…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Запуск…'; }
   try {
     await POST('/matches/'+matchId+'/simulate');
-    toast('Match simulated! Replay starting…');
-    await startMatchReplay(matchId);
-  } catch(e) { toast(e.message,'error'); if(btn){btn.disabled=false;btn.textContent='▶ Simulate Match';} }
+    startLiveMatchPoll(matchId);
+  } catch(e) {
+    toast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Начать матч'; }
+  }
 }
 
-async function startMatchReplay(matchId) {
-  const match = await GET('/matches/'+matchId);
-  if (!match.events || !match.events.length) { toast('No events to replay','info'); return; }
+// Live polling — shared by the initiating coach AND any other user watching the match page
+let _liveMatchTimer = null;
+function stopLiveMatchPoll() {
+  if (_liveMatchTimer) { clearInterval(_liveMatchTimer); _liveMatchTimer = null; }
+}
 
-  // Initialise display
+function startLiveMatchPoll(matchId) {
+  stopLiveMatchPoll();
+
+  // Init UI
+  const badge = document.getElementById('match-status-badge');
+  if (badge) { badge.textContent = 'LIVE'; badge.className = 'match-status-badge match-status-live'; }
   document.getElementById('score-home').textContent = '0';
   document.getElementById('score-away').textContent = '0';
   const logEl = document.getElementById('event-log');
   if (logEl) logEl.innerHTML = '';
-  const badge = document.getElementById('match-status-badge');
-  if (badge) { badge.textContent = 'LIVE'; badge.className = 'match-status-badge match-status-live'; }
+  const btn = document.getElementById('btn-sim');
+  if (btn) btn.remove();
 
-  let hScore = 0, aScore = 0;
-  const TOTAL_MS = 108000; // 108 seconds (≈1.2 s per match minute)
-  const MS_PER_MIN = TOTAL_MS / 90;
-  const clockEl = document.getElementById('match-clock');
+  let seenIds = new Set();
+  let lastMatch = null;
 
-  // Replay timer
-  let clockTimer = setInterval(() => {
-    const elapsed = Date.now() - startTime;
-    const min = Math.min(90, Math.floor(elapsed / MS_PER_MIN));
-    if (clockEl) clockEl.textContent = `⏱ ${min}'`;
-  }, 200);
+  async function poll() {
+    let data;
+    try { data = await GET('/matches/'+matchId); } catch { return; }
 
-  const startTime = Date.now();
+    const clockEl = document.getElementById('match-clock');
+    const sh = document.getElementById('score-home');
+    const sa = document.getElementById('score-away');
 
-  // Schedule each event
-  for (const ev of match.events) {
-    const delay = ev.minute * MS_PER_MIN;
-    setTimeout(() => {
-      if (ev.event_type === 'goal' || ev.event_type === 'own_goal') {
-        const isOwnGoal = ev.event_type === 'own_goal';
-        const scoringHome = isOwnGoal ? ev.team_id !== match.home_team_id : ev.team_id === match.home_team_id;
-        if (scoringHome) hScore++; else aScore++;
-        const sh = document.getElementById('score-home');
-        const sa = document.getElementById('score-away');
-        if (sh) sh.textContent = hScore;
-        if (sa) sa.textContent = aScore;
-        if (!isOwnGoal) triggerGoalCelebration(scoringHome ? 'home' : 'away', match, ev);
-        const scoreboard = document.getElementById('scoreboard');
-        if (scoreboard) { scoreboard.classList.add('sb-goal-flash'); setTimeout(()=>scoreboard.classList.remove('sb-goal-flash'),700); }
-      }
-      const logEl2 = document.getElementById('event-log');
-      if (logEl2) {
-        if (ev.minute > 45 && !logEl2.querySelector('.halftime-divider')) {
-          const ht = document.createElement('div');
-          ht.className = 'halftime-divider'; ht.textContent = '⏸ Перерыв';
-          logEl2.insertBefore(ht, logEl2.firstChild);
+    if (data.status === 'in_progress') {
+      if (clockEl) clockEl.textContent = `⏱ ${data.live_minute}'`;
+      if (sh) sh.textContent = data.home_score;
+      if (sa) sa.textContent = data.away_score;
+
+      // Show newly revealed events
+      for (const ev of (data.events || [])) {
+        if (seenIds.has(ev.id)) continue;
+        seenIds.add(ev.id);
+
+        if (ev.event_type === 'goal' || ev.event_type === 'own_goal') {
+          const isOwnGoal = ev.event_type === 'own_goal';
+          const scoringHome = isOwnGoal
+            ? ev.team_id !== data.home_team_id
+            : ev.team_id === data.home_team_id;
+          if (!isOwnGoal) triggerGoalCelebration(scoringHome ? 'home' : 'away', data, ev);
+          const scoreboard = document.getElementById('scoreboard');
+          if (scoreboard) { scoreboard.classList.add('sb-goal-flash'); setTimeout(()=>scoreboard.classList.remove('sb-goal-flash'),700); }
         }
-        const isBuild = ev.event_type === 'buildup';
-        const item = document.createElement('div');
-        item.className = `event-log-item event-${ev.event_type}${isBuild?' ev-buildup':''}`;
-        item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${escHtml(ev.description||'')}</span>`;
-        logEl2.insertBefore(item, logEl2.firstChild);
+
+        const logEl2 = document.getElementById('event-log');
+        if (logEl2) {
+          if (ev.minute > 45 && !logEl2.querySelector('.halftime-divider')) {
+            const ht = document.createElement('div');
+            ht.className = 'halftime-divider'; ht.textContent = '⏸ Перерыв';
+            logEl2.insertBefore(ht, logEl2.firstChild);
+          }
+          const isBuild = ev.event_type === 'buildup';
+          const item = document.createElement('div');
+          item.className = `event-log-item event-${ev.event_type}${isBuild?' ev-buildup':''}`;
+          item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${escHtml(ev.description||'')}</span>`;
+          logEl2.insertBefore(item, logEl2.firstChild);
+        }
       }
-    }, delay);
+      lastMatch = data;
+    } else {
+      // Match finished (or overtime)
+      stopLiveMatchPoll();
+      if (clockEl) clockEl.textContent = `⏱ 90'`;
+      if (sh) sh.textContent = data.home_score;
+      if (sa) sa.textContent = data.away_score;
+      const badgeEl = document.getElementById('match-status-badge');
+      if (badgeEl) {
+        badgeEl.textContent = data.status === 'overtime' ? 'OVERTIME' : 'FINISHED';
+        badgeEl.className = 'match-status-badge match-status-finished';
+      }
+      toast(`Финальный свисток: ${data.home_team_name} ${data.home_score}–${data.away_score} ${data.away_team_name}`);
+      // Reload full match to show combined pitch / player stats
+      setTimeout(() => navigate(location.hash || '#/matches'), 2000);
+    }
   }
 
-  // Final whistle
-  setTimeout(() => {
-    clearInterval(clockTimer);
-    if (clockEl) clockEl.textContent = '⏱ 90\'';
-    if (badge) { badge.textContent = 'FINISHED'; badge.className = 'match-status-badge match-status-finished'; }
-    toast(`Full time: ${match.home_team_name} ${match.home_score}–${match.away_score} ${match.away_team_name}`);
-  }, TOTAL_MS + 500);
+  poll();
+  _liveMatchTimer = setInterval(poll, 1500);
 }
 
 async function showMatchForm() {
