@@ -455,30 +455,35 @@ const _seenChallengeIds = new Set(); // IDs already shown as push toasts
 async function loadNotifications() {
   if (!isLoggedIn()) { updateNotifBadge([]); return; }
   try {
-    const items = await buildNotifications();
-    updateNotifBadge(items);
-    renderNotifList(items);
-    // Update the Challenges tab badge in the coach dashboard (if visible)
-    const challengesBadge = document.getElementById('coach-challenges-badge');
-    const challengesPanel = document.getElementById('tab-challenges');
-    if (challengesBadge || challengesPanel) {
-      const ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
-      const cnt = (ch.incoming || []).length;
-      if (challengesBadge) {
-        challengesBadge.textContent = cnt || '';
-        challengesBadge.classList.toggle('hidden', cnt === 0);
-      }
-      if (challengesPanel && challengesPanel.classList.contains('active')) {
-        challengesPanel.innerHTML = renderChallengesTab(ch, State.coachProfile?.team_id);
-      }
-      // Show push toast for NEW incoming challenges
-      for (const c of (ch.incoming || [])) {
-        if (!_seenChallengeIds.has(c.id)) {
-          _seenChallengeIds.add(c.id);
-          showChallengePush(c);
-        }
+    // Single fetch for all challenge data — reused for badge, panel, and push toasts
+    const ch = isCoach()
+      ? await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }))
+      : { incoming: [], outgoing: [] };
+
+    // Push toasts for new incoming challenges (runs every 1s — must be fast)
+    for (const c of (ch.incoming || [])) {
+      if (!_seenChallengeIds.has(c.id)) {
+        _seenChallengeIds.add(c.id);
+        showChallengePush(c);
       }
     }
+
+    // Update dashboard badge and panel if on the coach page
+    const challengesBadge = document.getElementById('coach-challenges-badge');
+    const challengesPanel = document.getElementById('tab-challenges');
+    const cnt = (ch.incoming || []).length;
+    if (challengesBadge) {
+      challengesBadge.textContent = cnt || '';
+      challengesBadge.classList.toggle('hidden', cnt === 0);
+    }
+    if (challengesPanel && challengesPanel.classList.contains('active')) {
+      challengesPanel.innerHTML = renderChallengesTab(ch, State.coachProfile?.team_id);
+    }
+
+    // Full badge + dropdown rebuild (includes transfer offers)
+    const items = await buildNotifications(ch);
+    updateNotifBadge(items);
+    renderNotifList(items);
   } catch { /* silent */ }
 }
 
@@ -532,12 +537,12 @@ async function respondChallengePush(id, action, btn) {
   } catch(e) { toast(e.message, 'error'); }
 }
 
-async function buildNotifications() {
+async function buildNotifications(ch) {
   const items = [];
 
   if (isCoach()) {
-    // Incoming match challenges
-    const ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
+    // Use pre-fetched challenge data if provided, otherwise fetch
+    if (!ch) ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
     for (const c of (ch.incoming || [])) {
       items.push({
         id: `ch-in-${c.id}`,
@@ -639,7 +644,7 @@ function closeNotifDropdown() {
 function startNotifPolling() {
   if (_notifPollTimer) clearInterval(_notifPollTimer);
   loadNotifications();
-  _notifPollTimer = setInterval(loadNotifications, 5000);
+  _notifPollTimer = setInterval(loadNotifications, 1000);
 }
 
 // Notification bell toggle
