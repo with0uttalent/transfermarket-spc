@@ -1515,6 +1515,34 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
+/* Team color patterns used on goal banner */
+.goal-banner-pattern {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: .22;
+}
+.goal-banner-pattern-stripes {
+  background: repeating-linear-gradient(
+    45deg, var(--pat-color) 0, var(--pat-color) 10px, transparent 10px, transparent 24px
+  );
+}
+.goal-banner-pattern-hoops {
+  background: repeating-linear-gradient(
+    0deg, var(--pat-color) 0, var(--pat-color) 12px, transparent 12px, transparent 28px
+  );
+}
+.goal-banner-pattern-diamonds {
+  background: repeating-conic-gradient(var(--pat-color) 0% 25%, transparent 0% 50%) 0 0 / 24px 24px;
+}
+.goal-banner-pattern-dots {
+  background-image: radial-gradient(var(--pat-color) 3px, transparent 3px);
+  background-size: 18px 18px;
+}
+.goal-banner-pattern-chevrons {
+  background: repeating-linear-gradient(
+    120deg, var(--pat-color) 0, var(--pat-color) 4px, transparent 4px, transparent 14px
+  ), repeating-linear-gradient(
+    60deg, var(--pat-color) 0, var(--pat-color) 4px, transparent 4px, transparent 14px
+  );
+}
 .goal-banner {
   position: fixed;
   left: 50%; top: 50%;
@@ -1534,7 +1562,10 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .goal-banner-top {
   display: flex; align-items: center; justify-content: center;
   gap: 14px; padding: 22px 24px 14px;
+  position: relative; z-index: 1;
 }
+.goal-banner-marquee-wrap { position: relative; z-index: 1; }
+.goal-banner-scorer { position: relative; z-index: 1; }
 .goal-banner-logo {
   width: 52px; height: 52px; object-fit: contain;
   border-radius: 50%; background: rgba(255,255,255,.2);

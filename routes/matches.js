@@ -8,7 +8,9 @@ const router = express.Router();
 const BASE = `
   SELECT m.*,
     ht.name as home_team_name, ht.logo_url as home_logo, ht.stadium_url as home_stadium_url,
+    ht.color_primary as home_color_primary, ht.color_secondary as home_color_secondary, ht.color_pattern as home_color_pattern,
     at.name as away_team_name, at.logo_url as away_logo,
+    at.color_primary as away_color_primary, at.color_secondary as away_color_secondary, at.color_pattern as away_color_pattern,
     t.name as tournament_name,
     lg.name as league_name, lg.logo_url as league_logo_url
   FROM matches m

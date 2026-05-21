@@ -97,7 +97,7 @@ function escHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function eventIcon(type) {
-  return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',var_review:'📺',injury:'🚑',save:'🧤',near_miss:'🎯',buildup:'🔵'}[type]||'📋';
+  return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',penalty_awarded:'🚨',var_review:'📺',injury:'🚑',save:'🧤',near_miss:'🎯',buildup:'🔵',free_kick:'🟡',corner_kick:'🚩'}[type]||'📋';
 }
 function newsIcon(type) {
   return {match:'⚽',tournament:'🏆',transfer:'🔄',rumor:'💬',injury:'🏥',scandal:'⚠️',team:'🏟️'}[type]||'📰';
@@ -2354,6 +2354,9 @@ function triggerGoalCelebration(side, match, ev) {
   if (!container) return;
   const teamName = side === 'home' ? match.home_team_name : match.away_team_name;
   const teamLogo = side === 'home' ? match.home_logo : match.away_logo;
+  const teamColorPrimary   = (side === 'home' ? match.home_color_primary   : match.away_color_primary)   || null;
+  const teamColorSecondary = (side === 'home' ? match.home_color_secondary : match.away_color_secondary) || null;
+  const teamColorPattern   = (side === 'home' ? match.home_color_pattern   : match.away_color_pattern)   || 'none';
   const scorerName = ev && ev.player_name ? ev.player_name : '';
   const scorerImg = ev && ev.player_image_url ? ev.player_image_url : '';
 
@@ -2370,9 +2373,18 @@ function triggerGoalCelebration(side, match, ev) {
     setTimeout(() => el.remove(), 2200);
   }
 
-  // Goal banner — centered overlay
+  // Goal banner — centered overlay with team colors
   const banner = document.createElement('div');
   banner.className = 'goal-banner';
+
+  // Apply team colors if set
+  if (teamColorPrimary) {
+    banner.style.background = teamColorPrimary;
+  }
+
+  const patternHtml = (teamColorSecondary && teamColorPattern && teamColorPattern !== 'none')
+    ? `<div class="goal-banner-pattern goal-banner-pattern-${escHtml(teamColorPattern)}" style="--pat-color:${escHtml(teamColorSecondary)}"></div>`
+    : '';
 
   const logoHtml = teamLogo
     ? `<img src="${escHtml(teamLogo)}" class="goal-banner-logo" onerror="this.style.display='none'">`
@@ -2381,6 +2393,7 @@ function triggerGoalCelebration(side, match, ev) {
   const marqueeText = '⚽ ГООООООООООООООООООООООООООООЛ! ⚽ ГООООООООООООООООООООООООООООЛ! ⚽ ГООООООООООООООООООООООООООООЛ! ';
 
   banner.innerHTML = `
+    ${patternHtml}
     <div class="goal-banner-top">
       ${logoHtml}
       <span class="goal-banner-team">${escHtml(teamName)}</span>
@@ -4103,11 +4116,50 @@ async function showCoachEditForm(coach) {
   });
 }
 
+const TEAM_PATTERNS = [
+  { value: 'none',     label: 'Нет' },
+  { value: 'stripes',  label: 'Полосы' },
+  { value: 'hoops',    label: 'Кольца' },
+  { value: 'diamonds', label: 'Ромбы' },
+  { value: 'dots',     label: 'Точки' },
+  { value: 'chevrons', label: 'Шевроны' },
+];
+
 async function showCoachClubForm(coach, team) {
+  const patternOpts = TEAM_PATTERNS.map(p =>
+    `<option value="${p.value}" ${(team.color_pattern||'none')===p.value?'selected':''}>${p.label}</option>`
+  ).join('');
+
   mkModal('🏟️ Редактировать клуб', `
     <div class="form-group"><label>Название клуба *</label><input type="text" id="ccf-name" value="${escHtml(team.name||'')}"/></div>
     <div class="form-group"><label>URL логотипа</label><input type="text" id="ccf-logo" value="${escHtml(team.logo_url||'')}" placeholder="https://…"/></div>
     <div class="form-group"><label>URL фото стадиона</label><input type="text" id="ccf-stadium" value="${escHtml(team.stadium_url||'')}" placeholder="https://…"/></div>
+    <div style="border-top:1px solid rgba(255,255,255,.1);margin:14px 0 10px;padding-top:10px">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">🎨 Цвета клуба</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:120px">
+          <label>Акцентный цвет</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="color" id="ccf-color1" value="${team.color_primary||'#e74c3c'}" style="width:44px;height:36px;border:none;border-radius:6px;cursor:pointer;background:none;padding:2px"/>
+            <input type="text" id="ccf-color1-hex" value="${team.color_primary||''}" placeholder="#e74c3c" style="flex:1;font-size:13px" oninput="document.getElementById('ccf-color1').value=this.value||'#e74c3c'"/>
+          </div>
+        </div>
+        <div class="form-group" style="flex:1;min-width:120px">
+          <label>Дополнительный цвет</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="color" id="ccf-color2" value="${team.color_secondary||'#ffffff'}" style="width:44px;height:36px;border:none;border-radius:6px;cursor:pointer;background:none;padding:2px"/>
+            <input type="text" id="ccf-color2-hex" value="${team.color_secondary||''}" placeholder="#ffffff" style="flex:1;font-size:13px" oninput="document.getElementById('ccf-color2').value=this.value||'#ffffff'"/>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Рисунок</label>
+        <select id="ccf-pattern" style="background:var(--bg-darker);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;width:100%">${patternOpts}</select>
+      </div>
+      <div id="ccf-preview" style="height:48px;border-radius:10px;margin-top:4px;overflow:hidden;position:relative">
+        <div id="ccf-preview-pat" style="position:absolute;inset:0;pointer-events:none"></div>
+      </div>
+    </div>
     <div style="border-top:1px solid rgba(255,255,255,.1);margin:14px 0 10px;padding-top:10px">
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📋 Вкладка «О клубе»</div>
       <div class="form-group"><label>Панорамное фото команды</label><input type="text" id="ccf-photo" value="${escHtml(team.team_photo_url||'')}" placeholder="https://… (широкоформатная фотография)"/></div>
@@ -4119,12 +4171,34 @@ async function showCoachClubForm(coach, team) {
     const stadium_url = document.getElementById('ccf-stadium').value.trim()||null;
     const team_photo_url = document.getElementById('ccf-photo').value.trim()||null;
     const about_text = document.getElementById('ccf-about').value.trim()||null;
+    const color_primary = document.getElementById('ccf-color1-hex').value.trim() || document.getElementById('ccf-color1').value || null;
+    const color_secondary = document.getElementById('ccf-color2-hex').value.trim() || document.getElementById('ccf-color2').value || null;
+    const color_pattern = document.getElementById('ccf-pattern').value || 'none';
     if (!team_name) { toast('Название клуба обязательно','error'); return false; }
     await PUT('/coaches/'+coach.id, { team_name, team_logo_url });
-    await PUT('/teams/'+team.id, { ...team, name: team_name, logo_url: team_logo_url||team.logo_url, stadium_url, about_text, team_photo_url });
+    await PUT('/teams/'+team.id, { ...team, name: team_name, logo_url: team_logo_url||team.logo_url, stadium_url, about_text, team_photo_url, color_primary, color_secondary, color_pattern });
     State.coachProfile = null;
     toast('Клуб обновлён');
   });
+
+  // Live preview
+  function updatePreview() {
+    const c1 = document.getElementById('ccf-color1')?.value || '#e74c3c';
+    const c2 = document.getElementById('ccf-color2')?.value || '#ffffff';
+    const pat = document.getElementById('ccf-pattern')?.value || 'none';
+    const preview = document.getElementById('ccf-preview');
+    const patDiv = document.getElementById('ccf-preview-pat');
+    if (!preview) return;
+    preview.style.background = c1;
+    patDiv.className = pat !== 'none' ? `goal-banner-pattern goal-banner-pattern-${pat}` : '';
+    patDiv.style.setProperty('--pat-color', c2);
+  }
+  setTimeout(() => {
+    ['ccf-color1','ccf-color2','ccf-pattern'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', updatePreview);
+    });
+    updatePreview();
+  }, 50);
 }
 
 async function coachChangePassword() {

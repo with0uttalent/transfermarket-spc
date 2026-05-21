@@ -148,6 +148,27 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function rand() { return Math.random(); }
 function ri(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
 
+function getPositionGroup(pos) {
+  if (!pos) return 'MID';
+  if (GK_POSITIONS.has(pos)) return 'GK';
+  if (DEF_POSITIONS.has(pos)) return 'DEF';
+  if (ATTACK_POSITIONS.has(pos)) return 'ATK';
+  return 'MID';
+}
+
+function pickPositionSub(field, bench) {
+  if (!bench.length) return null;
+  const nonGK = field.filter(p => !GK_POSITIONS.has(p.position || ''));
+  const off = nonGK.length ? pick(nonGK) : null;
+  if (!off) return null;
+  const offGroup = getPositionGroup(off.position || '');
+  const sameGroup = bench.filter(p => getPositionGroup(p.position || '') === offGroup);
+  const on = sameGroup.length
+    ? (sameGroup.find(p => p.priority_sub) || pick(sameGroup))
+    : (bench.find(p => p.priority_sub && !GK_POSITIONS.has(p.position || '')) || pick(bench.filter(p => !GK_POSITIONS.has(p.position || ''))) || pick(bench));
+  return on ? { on, off } : null;
+}
+
 // ─── Match simulation core ────────────────────────────────────────────────────
 // useSkillRate: if true uses RATE=0.016 offset=0.5, else RATE=0.0115 offset=4.5
 function simulateMatchCore(
@@ -251,10 +272,13 @@ function simulateMatchCore(
       removePlayer(player, isHome);
       isHome ? homeRed++ : awayRed++;
       delete yellows[player.id];
+      if (rand() < 0.20) addPenaltyAwarded(minute, !isHome);
+      else addFreeKick(minute, !isHome);
     } else {
       stats[player.id].yellow_cards++; stats[player.id].rating -= 0.4;
       addEvent(minute, 'yellow_card', teamId, player.id, null,
         `🟨 Жёлтая карточка: ${player.name}. ${commentaryYellow(player.name)}`);
+      addFreeKick(minute, !isHome);
     }
   }
 
@@ -268,6 +292,8 @@ function simulateMatchCore(
       `🟥 КРАСНАЯ КАРТОЧКА! ${player.name} удалён за грубую игру! ${commentaryDangerousPlay(player.name)}`);
     removePlayer(player, isHome);
     isHome ? homeRed++ : awayRed++;
+    if (rand() < 0.25) addPenaltyAwarded(minute, !isHome);
+    else addFreeKick(minute, !isHome);
   }
 
   function tryInjury(minute, isHome) {
@@ -334,6 +360,59 @@ function simulateMatchCore(
       `🎯 Почти гол! ${shooter.name} — удар в штангу/перекладину! ${commentaryNearMiss(shooter.name)}`);
   }
 
+  function addFreeKick(minute, opponentIsHome) {
+    const attackers = opponentIsHome ? activeHome : activeAway;
+    const teamId = opponentIsHome ? homeTeamId : awayTeamId;
+    if (!attackers.length) return;
+    const fwd = attackers.filter(p => MID_POSITIONS.has(p.position||'') || ATTACK_POSITIONS.has(p.position||''));
+    const taker = fwd.length ? pick(fwd) : pick(attackers);
+    track(taker.id);
+    addEvent(minute, 'free_kick', teamId, taker.id, null,
+      `🟡 Штрафной: ${taker.name} готовится к удару`);
+    if (rand() < 0.18) {
+      stats[taker.id].goals++; stats[taker.id].rating += 1.3;
+      opponentIsHome ? homeScore++ : awayScore++;
+      addEvent(minute, 'goal', teamId, taker.id, null,
+        `⚽ ГОЛ! ${taker.name} забивает со штрафного! ${commentaryGoal(taker.name, null)}`);
+    } else if (rand() < 0.22) {
+      addEvent(minute, 'near_miss', teamId, taker.id, null,
+        `🎯 Штрафной: удар в стенку! ${taker.name} бьёт рядом`);
+    }
+  }
+
+  function addPenaltyAwarded(minute, isHome) {
+    const teamId = isHome ? homeTeamId : awayTeamId;
+    addEvent(minute, 'penalty_awarded', teamId, null, null,
+      `🚨 Судья назначает пенальти!`);
+    tryPenalty(minute, isHome);
+  }
+
+  function addCorner(minute, isHome) {
+    const attackers = isHome ? activeHome : activeAway;
+    const teamId = isHome ? homeTeamId : awayTeamId;
+    if (!attackers.length) return;
+    const nonGK = attackers.filter(p => !GK_POSITIONS.has(p.position||''));
+    const taker = nonGK.length ? pick(nonGK) : pick(attackers);
+    track(taker.id);
+    addEvent(minute, 'corner_kick', teamId, taker.id, null,
+      `🚩 Угловой: ${taker.name} подаёт в штрафную`);
+    if (rand() < 0.08) {
+      const headers = attackers.filter(p => DEF_POSITIONS.has(p.position||'') || ATTACK_POSITIONS.has(p.position||''));
+      const scorer = headers.length ? pick(headers) : pick(attackers);
+      track(scorer.id); stats[scorer.id].goals++; stats[scorer.id].rating += 1.3;
+      track(taker.id); stats[taker.id].assists++; stats[taker.id].rating += 0.6;
+      isHome ? homeScore++ : awayScore++;
+      addEvent(minute, 'goal', teamId, scorer.id, taker.id,
+        `⚽ ГОЛ с углового! ${scorer.name} замыкает подачу! (Ассист: ${taker.name})`);
+    } else if (rand() < 0.15) {
+      const headers = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
+      const shooter = headers.length ? pick(headers) : pick(attackers);
+      track(shooter.id);
+      addEvent(minute, 'near_miss', teamId, shooter.id, null,
+        `🎯 Угловой: удар головой — мимо! ${shooter.name} — неточно`);
+    }
+  }
+
   for (let m = 1; m <= 90; m++) {
     const hAtkEff = homeStr.attack  * Math.pow(0.88, homeRed) * 1.08;
     const hDefEff = homeStr.defense * Math.pow(0.85, homeRed);
@@ -348,30 +427,25 @@ function simulateMatchCore(
     if (m % 45 === 0 && rand() < 0.12) tryInjury(m, rand() < 0.5);
     if (rand() < 0.022) tryBigSave(m, rand() < 0.5);
     if (rand() < 0.018) tryNearMiss(m, rand() < 0.5);
+    if (rand() < 0.04) addCorner(m, rand() < 0.5);
 
     if (m >= 55 && m <= 82) {
       if (subsDone.home < 3 && rand() < 0.055 && activeHome.length > 8) {
-        const off = pick(activeHome);
         const bench = homeReserves.filter(p => !activeHome.find(f => f.id === p.id));
-        if (bench.length) {
-          // prefer priority_sub players
-          const priority = bench.filter(p => p.priority_sub);
-          const on = priority.length ? priority[0] : pick(bench);
-          addEvent(m, 'substitution', homeTeamId, on.id, off.id,
-            `🔄 Замена: ${commentarySub(on.name, off.name)}`);
-          removePlayer(off, true); activeHome.push(on); subsDone.home++;
+        const sub = pickPositionSub(activeHome, bench);
+        if (sub) {
+          addEvent(m, 'substitution', homeTeamId, sub.on.id, sub.off.id,
+            `🔄 Замена: ${commentarySub(sub.on.name, sub.off.name)}`);
+          removePlayer(sub.off, true); activeHome.push(sub.on); subsDone.home++;
         }
       }
       if (subsDone.away < 3 && rand() < 0.055 && activeAway.length > 8) {
-        const off = pick(activeAway);
         const bench = awayReserves.filter(p => !activeAway.find(f => f.id === p.id));
-        if (bench.length) {
-          // prefer priority_sub players
-          const priority = bench.filter(p => p.priority_sub);
-          const on = priority.length ? priority[0] : pick(bench);
-          addEvent(m, 'substitution', awayTeamId, on.id, off.id,
-            `🔄 Замена: ${commentarySub(on.name, off.name)}`);
-          removePlayer(off, false); activeAway.push(on); subsDone.away++;
+        const sub = pickPositionSub(activeAway, bench);
+        if (sub) {
+          addEvent(m, 'substitution', awayTeamId, sub.on.id, sub.off.id,
+            `🔄 Замена: ${commentarySub(sub.on.name, sub.off.name)}`);
+          removePlayer(sub.off, false); activeAway.push(sub.on); subsDone.away++;
         }
       }
     }
