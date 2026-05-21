@@ -4171,8 +4171,8 @@ async function showCoachClubForm(coach, team) {
     const stadium_url = document.getElementById('ccf-stadium').value.trim()||null;
     const team_photo_url = document.getElementById('ccf-photo').value.trim()||null;
     const about_text = document.getElementById('ccf-about').value.trim()||null;
-    const color_primary = document.getElementById('ccf-color1-hex').value.trim() || document.getElementById('ccf-color1').value || null;
-    const color_secondary = document.getElementById('ccf-color2-hex').value.trim() || document.getElementById('ccf-color2').value || null;
+    const color_primary = document.getElementById('ccf-color1').value || document.getElementById('ccf-color1-hex').value.trim() || null;
+    const color_secondary = document.getElementById('ccf-color2').value || document.getElementById('ccf-color2-hex').value.trim() || null;
     const color_pattern = document.getElementById('ccf-pattern').value || 'none';
     if (!team_name) { toast('Название клуба обязательно','error'); return false; }
     await PUT('/coaches/'+coach.id, { team_name, team_logo_url });
@@ -4194,9 +4194,18 @@ async function showCoachClubForm(coach, team) {
     patDiv.style.setProperty('--pat-color', c2);
   }
   setTimeout(() => {
-    ['ccf-color1','ccf-color2','ccf-pattern'].forEach(id => {
-      document.getElementById(id)?.addEventListener('input', updatePreview);
+    // Color picker → hex text sync
+    document.getElementById('ccf-color1')?.addEventListener('input', e => {
+      const hex = document.getElementById('ccf-color1-hex');
+      if (hex) hex.value = e.target.value;
+      updatePreview();
     });
+    document.getElementById('ccf-color2')?.addEventListener('input', e => {
+      const hex = document.getElementById('ccf-color2-hex');
+      if (hex) hex.value = e.target.value;
+      updatePreview();
+    });
+    document.getElementById('ccf-pattern')?.addEventListener('input', updatePreview);
     updatePreview();
   }, 50);
 }

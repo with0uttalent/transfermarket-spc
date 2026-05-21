@@ -96,15 +96,17 @@ router.post('/', requireAuth, (req, res) => {
 });
 
 router.put('/:id', requireAuth, (req, res) => {
-  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value, stadium_url, about_text, team_photo_url } = req.body;
+  const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value, stadium_url, about_text, team_photo_url, color_primary, color_secondary, color_pattern } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
   const result = db.prepare(`
-    UPDATE teams SET name=?, short_name=?, country_id=?, competition_id=?, founded=?, stadium=?, logo_url=?, market_value=?, stadium_url=?, about_text=?, team_photo_url=?
+    UPDATE teams SET name=?, short_name=?, country_id=?, competition_id=?, founded=?, stadium=?, logo_url=?, market_value=?, stadium_url=?, about_text=?, team_photo_url=?, color_primary=?, color_secondary=?, color_pattern=?
     WHERE id=?
   `).run(name, short_name || null, country_id || null, competition_id || null,
     founded || null, stadium || null, logo_url || null, market_value || 0, stadium_url || null,
-    about_text || null, team_photo_url || null, req.params.id);
+    about_text || null, team_photo_url || null,
+    color_primary || null, color_secondary || null, color_pattern || 'none',
+    req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ id: Number(req.params.id), name });
 });
