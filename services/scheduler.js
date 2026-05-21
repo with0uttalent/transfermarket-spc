@@ -152,6 +152,10 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
   db.prepare(`INSERT INTO news (title, body, type, match_id) VALUES (?,?,?,?)`)
     .run(`${homeTeam} ${homeScore}–${awayScore} ${awayTeam}`, body, 'match', matchId);
 
+  // Telegram: skip friendly matches
+  const friendlyCheck = db.prepare(`SELECT is_friendly FROM matches WHERE id=?`).get(matchId);
+  if (friendlyCheck && friendlyCheck.is_friendly) return;
+
   // Telegram: send match result banner
   const match = db.prepare(`
     SELECT m.status, m.home_team_id, m.away_team_id, m.league_id, m.is_friendly,
