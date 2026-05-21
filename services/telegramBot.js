@@ -231,4 +231,19 @@ async function sendCoachNews({ coachName, teamName, title, body }) {
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews, setEnabled, isEnabled, generateMatchBanner };
+async function sendMatchPreview({ homeTeam, awayTeam, leagueName, matchDate, matchTime }) {
+  if (!_enabled || !TOKEN || !CHAT_ID) return;
+  try {
+    const timeStr = matchTime ? matchTime.slice(0, 5) : '–';
+    const text =
+      `⚽ <b>Скоро матч!</b>\n\n` +
+      `🏟 <b>${homeTeam}</b> vs <b>${awayTeam}</b>\n` +
+      `🏆 ${leagueName}\n` +
+      `🕐 Сегодня в ${timeStr}`;
+    await tgSendMessage(text);
+  } catch(err) {
+    console.warn('[TelegramBot] sendMatchPreview error:', err.message);
+  }
+}
+
+module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, setEnabled, isEnabled, generateMatchBanner };

@@ -2,7 +2,7 @@
 const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
-const { sendMatchResult } = require('./telegramBot');
+const { sendMatchResult, sendMatchPreview } = require('./telegramBot');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -527,13 +527,70 @@ function simulateLeagueMatchday(leagueId) {
   }
 }
 
+function checkUpcomingMatches() {
+  try {
+    const db = getDb();
+    const now = new Date();
+    // Build window: notify matches whose kick-off is 28–32 minutes from now
+    const lo = new Date(now.getTime() + 28 * 60 * 1000);
+    const hi = new Date(now.getTime() + 32 * 60 * 1000);
+
+    const pad = n => String(n).padStart(2, '0');
+    const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const fmtTime = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    // Collect candidate dates/times in the window (minute precision)
+    const candidates = [];
+    for (let t = new Date(lo); t <= hi; t = new Date(t.getTime() + 60000)) {
+      candidates.push({ date: fmtDate(t), time: fmtTime(t) });
+    }
+    if (!candidates.length) return;
+
+    const placeholders = candidates.map(() => '(m.match_date=? AND m.match_time=?)').join(' OR ');
+    const params = candidates.flatMap(c => [c.date, c.time]);
+
+    const matches = db.prepare(`
+      SELECT m.id, m.match_date, m.match_time, m.notified_preview,
+        ht.name as home_team, at.name as away_team,
+        lg.name as league_name
+      FROM matches m
+      JOIN teams ht ON m.home_team_id = ht.id
+      JOIN teams at ON m.away_team_id = at.id
+      LEFT JOIN leagues lg ON m.league_id = lg.id
+      WHERE m.status = 'scheduled'
+        AND m.is_friendly = 0
+        AND m.league_id IS NOT NULL
+        AND m.notified_preview IS NULL
+        AND (${placeholders})
+    `).all(...params);
+
+    for (const m of matches) {
+      sendMatchPreview({
+        homeTeam: m.home_team,
+        awayTeam: m.away_team,
+        leagueName: m.league_name || 'Лига',
+        matchDate: m.match_date,
+        matchTime: m.match_time,
+      });
+      db.prepare(`UPDATE matches SET notified_preview=1 WHERE id=?`).run(m.id);
+    }
+  } catch(e) {
+    console.warn('[Scheduler] checkUpcomingMatches error:', e.message);
+  }
+}
+
 function startScheduler() {
   // Every 15 minutes – generate at least 2 player/team news items
   cron.schedule('*/15 * * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  console.log('[Scheduler] Crons: news/15min. Match simulation is manual-only.');
+  // Every minute – check for matches starting in ~30 minutes
+  cron.schedule('* * * * *', () => {
+    checkUpcomingMatches();
+  });
+
+  console.log('[Scheduler] Crons: news/15min, match-preview/1min.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };
