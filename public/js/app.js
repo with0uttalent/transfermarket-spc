@@ -457,6 +457,21 @@ async function loadNotifications() {
     const items = await buildNotifications();
     updateNotifBadge(items);
     renderNotifList(items);
+    // Update the Challenges tab badge in the coach dashboard (if visible)
+    const challengesBadge = document.getElementById('coach-challenges-badge');
+    const challengesPanel = document.getElementById('tab-challenges');
+    if (challengesBadge || challengesPanel) {
+      const ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
+      const cnt = (ch.incoming || []).length;
+      if (challengesBadge) {
+        challengesBadge.textContent = cnt || '';
+        challengesBadge.classList.toggle('hidden', cnt === 0);
+      }
+      // If the challenges tab is currently active, re-render its content too
+      if (challengesPanel && challengesPanel.classList.contains('active')) {
+        challengesPanel.innerHTML = renderChallengesTab(ch, State.coachProfile?.team_id);
+      }
+    }
   } catch { /* silent */ }
 }
 
@@ -683,6 +698,8 @@ function router() {
 }
 window.addEventListener('hashchange', router);
 window.addEventListener('load', async () => { updateAuthUI(); await loadCoachProfile(); loadBanners(); startNotifPolling(); router(); });
+// Re-sync notifications immediately when user switches back to this tab
+document.addEventListener('visibilitychange', () => { if (!document.hidden && isLoggedIn()) loadNotifications(); });
 
 // ═══════════════════════════════════════════════════════════
 //  HOME
@@ -3460,7 +3477,7 @@ async function renderCoachDashboard(app) {
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="lineup">Состав</button>
         <button class="detail-tab" data-tab="offers">Трансферы ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
-        <button class="detail-tab" data-tab="challenges">⚔️ Вызовы ${pendingChallenges?`<span class="badge badge-gold">${pendingChallenges}</span>`:''}</button>
+        <button class="detail-tab" data-tab="challenges" id="coach-tab-challenges">⚔️ Вызовы ${pendingChallenges?`<span class="badge badge-gold" id="coach-challenges-badge">${pendingChallenges}</span>`:`<span class="badge badge-gold hidden" id="coach-challenges-badge"></span>`}</button>
         <button class="detail-tab" data-tab="post-news">Новость клуба</button>
         <button class="detail-tab" data-tab="squad">Весь состав</button>
         <button class="detail-tab" data-tab="settings">⚙️ Настройки</button>
@@ -3482,6 +3499,16 @@ async function renderCoachDashboard(app) {
 
     // Render challenges tab
     document.getElementById('tab-challenges').innerHTML = renderChallengesTab(challenges, coach.team_id);
+
+    // Auto-refresh challenges tab when clicked (always fetch fresh data)
+    app.querySelector('[data-tab="challenges"]')?.addEventListener('click', async () => {
+      const panel = document.getElementById('tab-challenges');
+      if (!panel) return;
+      try {
+        const fresh = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
+        panel.innerHTML = renderChallengesTab(fresh, coach.team_id);
+      } catch { /* silent */ }
+    });
 
     // Render post news
     document.getElementById('tab-post-news').innerHTML = `

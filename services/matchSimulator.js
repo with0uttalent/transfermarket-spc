@@ -459,7 +459,7 @@ function simulateMatchCore(
     if (m % 45 === 0 && rand() < 0.12) tryInjury(m, rand() < 0.5);
     if (rand() < 0.022) tryBigSave(m, rand() < 0.5);
     if (rand() < 0.018) tryNearMiss(m, rand() < 0.5);
-    if (rand() < 0.04) addCorner(m, rand() < 0.5);
+    if (rand() < 0.015) addCorner(m, rand() < 0.5);
 
     if (m >= 55 && m <= 82) {
       if (subsDone.home < 3 && rand() < 0.055 && activeHome.length > 8) {
