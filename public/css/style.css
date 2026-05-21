@@ -1336,12 +1336,12 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .sr-assists { font-size: 18px; font-weight: 900; color: #3498db; width: 32px; text-align: right; flex-shrink: 0; }
 
 /* ── Coach dashboard ────────────────────────────────────────── */
-.coach-hero { display: flex; align-items: center; gap: 20px; padding: 24px; background: var(--bg-card); border-radius: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.coach-hero { display: flex; align-items: center; gap: 20px; padding: 24px; background: var(--bg-card); border-radius: 10px; margin-bottom: 20px; flex-wrap: wrap; color: var(--text); }
 .coach-info { flex: 1; min-width: 180px; }
-.coach-info h1 { font-size: 24px; font-weight: 800; margin: 0 0 8px; }
+.coach-info h1 { font-size: 24px; font-weight: 800; margin: 0 0 8px; color: var(--text); }
 .coach-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--text-muted); }
 .coach-team-badge { margin-left: auto; text-align: right; }
-.coach-team-badge .team-name { font-size: 18px; font-weight: 700; }
+.coach-team-badge .team-name { font-size: 18px; font-weight: 700; color: var(--text); }
 .coach-team-badge .budget-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
 /* ── Lineup editor ──────────────────────────────────────────── */
