@@ -375,6 +375,7 @@ function simulateLeagueMatchday(leagueId) {
     WHERE ls.league_id=? AND ls.matchday=? AND ls.match_id IS NULL
   `).all(leagueId, matchday);
 
+  let matchIndex = 0;
   for (const srow of scheduleRows) {
     // Get lineup starters (slots 1-11) and reserves (slots 12-22)
     const lineupRows = db.prepare(`
@@ -429,13 +430,7 @@ function simulateLeagueMatchday(leagueId) {
       for (const sk of skillRows) skillsMap[sk.player_id] = sk;
     }
 
-    // Create match record — 18:00 Moscow = 15:00 UTC
-    const matchR = db.prepare(`
-      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
-      VALUES (?,?,?,'15:00','scheduled',?,?)
-    `).run(srow.home_team_id, srow.away_team_id, today, leagueId, matchday);
-    const matchId = matchR.lastInsertRowid;
-
+    // Simulate first so we have the result for the INSERT
     let result;
     if (useLineup) {
       result = simulateMatchWithLineup(
@@ -448,10 +443,23 @@ function simulateLeagueMatchday(leagueId) {
       result = simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers);
     }
 
-    applyMatchResults(matchId, srow.home_team_id, srow.away_team_id, result);
+    // Create match record with staggered kick-off (18:00 + index × 15 min)
+    const kickoff = new Date();
+    kickoff.setHours(18, 0, 0, 0);
+    kickoff.setMinutes(kickoff.getMinutes() + matchIndex * 15);
+    const pad2 = n => String(n).padStart(2, '0');
+    const matchTimeStr = `${pad2(kickoff.getHours())}:${pad2(kickoff.getMinutes())}`;
 
-    const evRows = db.prepare('SELECT * FROM match_events WHERE match_id=?').all(matchId);
-    generateMatchNews(matchId, srow.home_name, srow.away_name, result.homeScore, result.awayScore, evRows);
+    const matchR = db.prepare(`
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score)
+      VALUES (?,?,?,?,'in_progress',?,?,?,?,?)
+    `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, leagueId, matchday,
+           kickoff.toISOString(), result.homeScore, result.awayScore);
+    const matchId = matchR.lastInsertRowid;
+
+    // Apply player/team stat updates immediately (hidden from match view until finished)
+    applyMatchResults(matchId, srow.home_team_id, srow.away_team_id, result);
+    // generateMatchNews deferred — fired by finalizeExpiredMatches cron after 90s
 
     // Update league_schedule
     db.prepare('UPDATE league_schedule SET match_id=? WHERE id=?').run(matchId, srow.id);
@@ -507,7 +515,8 @@ function simulateLeagueMatchday(leagueId) {
       );
     }
 
-    console.log(`[Scheduler] League ${leagueId} MD${matchday}: ${srow.home_name} ${homeScore}-${awayScore} ${srow.away_name}`);
+    console.log(`[Scheduler] League ${leagueId} MD${matchday} [${matchTimeStr}]: ${srow.home_name} ${homeScore}-${awayScore} ${srow.away_name}`);
+    matchIndex++;
   }
 
   // Update current_matchday
@@ -579,18 +588,51 @@ function checkUpcomingMatches() {
   }
 }
 
+function finalizeExpiredMatches() {
+  try {
+    const db = getDb();
+    const expired = db.prepare(`
+      SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
+             m.league_id, m.matchday, m.is_friendly, m.tournament_id
+      FROM matches m
+      WHERE m.status = 'in_progress'
+        AND m.started_at IS NOT NULL
+        AND (julianday('now') - julianday(m.started_at)) * 86400 >= 90
+    `).all();
+
+    for (const m of expired) {
+      const r = db.prepare(`UPDATE matches SET status='finished' WHERE id=? AND status='in_progress'`).run(m.id);
+      if (r.changes === 0) continue; // already handled by someone else
+
+      if (!m.is_friendly) {
+        const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(m.home_team_id);
+        const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(m.away_team_id);
+        const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
+        generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
+      }
+
+      if (m.tournament_id) {
+        try { advanceTournamentWinner(m, m.home_score, m.away_score); } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
+      }
+    }
+  } catch(e) {
+    console.warn('[Scheduler] finalizeExpiredMatches error:', e.message);
+  }
+}
+
 function startScheduler() {
   // Every 15 minutes – generate at least 2 player/team news items
   cron.schedule('*/15 * * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  // Every minute – check for matches starting in ~30 minutes
+  // Every minute – match previews + finalize expired live matches
   cron.schedule('* * * * *', () => {
     checkUpcomingMatches();
+    finalizeExpiredMatches();
   });
 
-  console.log('[Scheduler] Crons: news/15min, match-preview/1min.');
+  console.log('[Scheduler] Crons: news/15min, match-preview+finalize/1min.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };

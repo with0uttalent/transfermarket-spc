@@ -30,8 +30,15 @@ router.get('/', (req, res) => {
   if (conds.length) q += ' WHERE ' + conds.join(' AND ');
   q += ' ORDER BY m.match_date DESC, m.id DESC';
   if (limit) q += ' LIMIT ' + parseInt(limit);
+  const now = Date.now();
   const rows = db.prepare(q).all(...p).map(m => {
-    if (m.status === 'in_progress') return { ...m, home_score: null, away_score: null };
+    if (m.status === 'in_progress') {
+      // If started_at is in the future, display as scheduled with no score
+      if (m.started_at && new Date(m.started_at).getTime() > now) {
+        return { ...m, status: 'scheduled', home_score: null, away_score: null };
+      }
+      return { ...m, home_score: null, away_score: null };
+    }
     return m;
   });
   res.json(rows);
@@ -58,6 +65,25 @@ router.get('/:id', (req, res) => {
   if (match.status === 'in_progress' && match.started_at) {
     const elapsed = (Date.now() - new Date(match.started_at).getTime()) / 1000;
     const liveMin = Math.min(90, Math.floor(elapsed));
+
+    // Kick-off hasn't happened yet — show as scheduled (no score, no events)
+    if (elapsed < 0) {
+      const playerStats2 = db.prepare(`
+        SELECT p.id as player_id, p.name as player_name, p.position, p.image_url, p.team_id,
+          COALESCE(s.goals,0) as goals, COALESCE(s.assists,0) as assists,
+          COALESCE(s.yellow_cards,0) as yellow_cards, COALESCE(s.red_cards,0) as red_cards,
+          COALESCE(s.rating,6.0) as rating
+        FROM team_lineups tl JOIN players p ON tl.player_id=p.id
+        LEFT JOIN player_match_stats s ON s.player_id=p.id AND s.match_id=?
+        WHERE tl.team_id IN (SELECT home_team_id FROM matches WHERE id=? UNION SELECT away_team_id FROM matches WHERE id=?) AND tl.slot<=11
+        ORDER BY COALESCE(s.rating,6.0) DESC
+      `).all(req.params.id, req.params.id, req.params.id);
+      return res.json({
+        ...match, status: 'scheduled', live_minute: 0,
+        home_score: null, away_score: null, events: [],
+        stats: playerStats2, fullStats: null,
+      });
+    }
 
     if (liveMin >= 90) {
       // Atomically finalize — only the first request to do this triggers side-effects
