@@ -2160,7 +2160,7 @@ async function renderMatches(app, params) {
 
 function matchCardHtml(m) {
   const statusCls = m.status==='finished'?'match-status-finished':m.status==='in_progress'?'match-status-live':'match-status-scheduled';
-  const scoreStr = m.status==='finished' ? `${m.home_score} – ${m.away_score}` : m.status==='scheduled' ? 'vs' : `${m.home_score} – ${m.away_score}`;
+  const scoreStr = m.status==='finished' ? `${m.home_score} – ${m.away_score}` : m.status==='in_progress' ? '🔴 LIVE' : 'vs';
   const stadiumBg = m.home_stadium_url
     ? `background-image:linear-gradient(rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url('${escHtml(m.home_stadium_url)}');background-size:cover;background-position:center;`
     : '';

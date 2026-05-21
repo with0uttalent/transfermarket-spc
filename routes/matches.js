@@ -30,7 +30,11 @@ router.get('/', (req, res) => {
   if (conds.length) q += ' WHERE ' + conds.join(' AND ');
   q += ' ORDER BY m.match_date DESC, m.id DESC';
   if (limit) q += ' LIMIT ' + parseInt(limit);
-  res.json(db.prepare(q).all(...p));
+  const rows = db.prepare(q).all(...p).map(m => {
+    if (m.status === 'in_progress') return { ...m, home_score: null, away_score: null };
+    return m;
+  });
+  res.json(rows);
 });
 
 router.get('/:id', (req, res) => {
