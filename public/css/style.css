@@ -1827,3 +1827,18 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .kit-card-label { width:100%; padding:10px 12px; font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border); text-align:center; }
 .kit-card-img { width:100%; max-width:240px; object-fit:contain; padding:16px; }
 .kit-card-empty { padding:40px 20px; color:var(--text-muted); font-size:13px; font-style:italic; text-align:center; }
+
+/* ── Home live matches ────────────────────────────────────── */
+.home-live-header { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.8px; color:#fff; margin-bottom:10px; }
+.live-dot { width:9px; height:9px; border-radius:50%; background:#e74c3c; flex-shrink:0; animation:live-pulse 1.4s ease-in-out infinite; }
+@keyframes live-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.25)} }
+.home-live-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px; }
+.home-live-card { background:linear-gradient(135deg,rgba(231,76,60,.12),rgba(192,57,43,.06)); border:1px solid rgba(231,76,60,.35); border-radius:10px; padding:12px 14px; display:flex; align-items:center; gap:10px; cursor:pointer; transition:border-color .2s,transform .15s; }
+.home-live-card:hover { border-color:rgba(231,76,60,.7); transform:translateY(-1px); }
+.hlc-team { display:flex; flex-direction:column; align-items:center; gap:4px; min-width:56px; flex:1; }
+.hlc-team-right { align-items:center; }
+.hlc-name { font-size:11px; font-weight:700; color:var(--text); text-align:center; line-height:1.2; }
+.hlc-score { display:flex; flex-direction:column; align-items:center; gap:3px; flex-shrink:0; padding:0 6px; }
+.hlc-score-val { font-size:22px; font-weight:900; color:#fff; letter-spacing:1px; }
+.hlc-live-badge { font-size:10px; font-weight:700; color:#e74c3c; letter-spacing:.5px; }
+.hlc-league { font-size:10px; color:var(--text-muted); text-align:center; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

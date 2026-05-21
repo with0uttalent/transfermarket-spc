@@ -666,6 +666,7 @@ function renderBannerCol(containerId, banners, featuredPlayer, featuredLabel) {
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
   stopLiveMatchPoll(); // cancel live polling when navigating away
+  if (_homeLivePollTimer) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; }
   const hash = window.location.hash.replace(/^#/,'') || '/';
   const [rawPath, qs = ''] = hash.split('?');
   const params = Object.fromEntries(new URLSearchParams(qs));
@@ -704,11 +705,21 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && is
 // ═══════════════════════════════════════════════════════════
 //  HOME
 // ═══════════════════════════════════════════════════════════
+let _homeLivePollTimer = null;
+
 async function renderHome(app) {
   app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
-    const [stats, newsData] = await Promise.all([GET('/stats'), GET('/news?limit=3')]);
+    const [stats, newsData, liveMatches] = await Promise.all([
+      GET('/stats'),
+      GET('/news?limit=3'),
+      GET('/matches?status=in_progress').catch(() => []),
+    ]);
+
+    const liveBlock = `<div id="home-live-section" style="margin-bottom:20px">${renderHomeLiveMatches(liveMatches)}</div>`;
+
     app.innerHTML = `
+      ${liveBlock}
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-value">${stats.totals.teams}</div><div class="stat-label">Teams</div></div>
         <div class="stat-card"><div class="stat-value">${stats.totals.players}</div><div class="stat-label">Players</div></div>
@@ -782,7 +793,44 @@ async function renderHome(app) {
         </table></div>
       </div>` : ''}
     `;
+
+    // Poll live matches every 4 seconds while on the home page
+    if (_homeLivePollTimer) clearInterval(_homeLivePollTimer);
+    _homeLivePollTimer = setInterval(async () => {
+      const sec = document.getElementById('home-live-section');
+      if (!sec) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; return; }
+      const live = await GET('/matches?status=in_progress').catch(() => []);
+      sec.innerHTML = renderHomeLiveMatches(live);
+    }, 4000);
+
   } catch (err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
+}
+
+function renderHomeLiveMatches(matches) {
+  if (!matches || !matches.length) return '';
+  return `
+    <div class="home-live-header">
+      <span class="live-dot"></span> <span>LIVE</span>
+      <span style="font-size:12px;color:var(--text-muted);margin-left:auto">${matches.length} ${matches.length === 1 ? 'матч' : matches.length < 5 ? 'матча' : 'матчей'}</span>
+    </div>
+    <div class="home-live-grid">
+      ${matches.map(m => `
+        <div class="home-live-card" onclick="navigate('/matches/${m.id}')">
+          <div class="hlc-team">
+            ${teamLogoEl(m.home_logo, m.home_team_name)}
+            <span class="hlc-name">${escHtml(m.home_team_name)}</span>
+          </div>
+          <div class="hlc-score">
+            <span class="hlc-score-val">${m.home_score ?? '–'} : ${m.away_score ?? '–'}</span>
+            <span class="hlc-live-badge">🔴 LIVE</span>
+            ${m.league_name ? `<span class="hlc-league">${escHtml(m.league_name)}</span>` : m.tournament_name ? `<span class="hlc-league">🏆 ${escHtml(m.tournament_name)}</span>` : m.is_friendly ? `<span class="hlc-league">⚑ Товарищеский</span>` : ''}
+          </div>
+          <div class="hlc-team hlc-team-right">
+            ${teamLogoEl(m.away_logo, m.away_team_name)}
+            <span class="hlc-name">${escHtml(m.away_team_name)}</span>
+          </div>
+        </div>`).join('')}
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
