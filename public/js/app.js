@@ -450,6 +450,7 @@ async function loadCoachProfile() {
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 let _notifPollTimer = null;
+const _seenChallengeIds = new Set(); // IDs already shown as push toasts
 
 async function loadNotifications() {
   if (!isLoggedIn()) { updateNotifBadge([]); return; }
@@ -467,12 +468,68 @@ async function loadNotifications() {
         challengesBadge.textContent = cnt || '';
         challengesBadge.classList.toggle('hidden', cnt === 0);
       }
-      // If the challenges tab is currently active, re-render its content too
       if (challengesPanel && challengesPanel.classList.contains('active')) {
         challengesPanel.innerHTML = renderChallengesTab(ch, State.coachProfile?.team_id);
       }
+      // Show push toast for NEW incoming challenges
+      for (const c of (ch.incoming || [])) {
+        if (!_seenChallengeIds.has(c.id)) {
+          _seenChallengeIds.add(c.id);
+          showChallengePush(c);
+        }
+      }
     }
   } catch { /* silent */ }
+}
+
+function showChallengePush(c) {
+  const id = `push-ch-${c.id}`;
+  if (document.getElementById(id)) return; // already shown
+
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = 'challenge-push';
+  el.innerHTML = `
+    <div class="cp-header">
+      <span class="cp-icon">⚔️</span>
+      <span class="cp-title">Вызов на матч!</span>
+      <button class="cp-close" onclick="this.closest('.challenge-push').remove()">✕</button>
+    </div>
+    <div class="cp-body">
+      ${c.from_team_logo ? `<img src="${escHtml(c.from_team_logo)}" class="cp-logo" onerror="this.style.display='none'">` : ''}
+      <div class="cp-info">
+        <div class="cp-team">${escHtml(c.from_team_name)}</div>
+        ${c.message ? `<div class="cp-msg">"${escHtml(c.message)}"</div>` : '<div class="cp-msg">Вызывает вас на товарищеский матч</div>'}
+      </div>
+    </div>
+    <div class="cp-actions">
+      <button class="btn btn-sm btn-green" onclick="respondChallengePush(${c.id},'accept',this)">✅ Принять</button>
+      <button class="btn btn-sm cp-btn-decline" onclick="respondChallengePush(${c.id},'decline',this)">❌ Отклонить</button>
+    </div>
+  `;
+  document.body.appendChild(el);
+  // Animate in
+  requestAnimationFrame(() => el.classList.add('cp-visible'));
+  // Auto-dismiss after 12 seconds
+  setTimeout(() => { el.classList.remove('cp-visible'); setTimeout(() => el.remove(), 400); }, 12000);
+}
+
+async function respondChallengePush(id, action, btn) {
+  try {
+    btn.closest('.cp-actions').innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Обработка…</span>';
+    const r = await PUT(`/match-challenges/${id}/${action}`, {});
+    const push = document.getElementById(`push-ch-${id}`);
+    if (action === 'accept') {
+      toast('Матч создан!');
+      if (push) push.remove();
+      navigate('/matches/' + r.match_id);
+    } else {
+      toast('Вызов отклонён');
+      if (push) { push.classList.remove('cp-visible'); setTimeout(() => push.remove(), 400); }
+    }
+    _seenChallengeIds.add(id);
+    await loadNotifications();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function buildNotifications() {
