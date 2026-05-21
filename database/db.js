@@ -414,6 +414,10 @@ function initSchema() {
     `ALTER TABLE teams ADD COLUMN color_primary TEXT`,
     `ALTER TABLE teams ADD COLUMN color_secondary TEXT`,
     `ALTER TABLE teams ADD COLUMN color_pattern TEXT DEFAULT 'none'`,
+    `ALTER TABLE teams ADD COLUMN goal_banner_url TEXT`,
+    `ALTER TABLE teams ADD COLUMN kit_home_url TEXT`,
+    `ALTER TABLE teams ADD COLUMN kit_away_url TEXT`,
+    `ALTER TABLE teams ADD COLUMN kit_third_url TEXT`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

@@ -9,8 +9,12 @@ const BASE = `
   SELECT m.*,
     ht.name as home_team_name, ht.logo_url as home_logo, ht.stadium_url as home_stadium_url,
     ht.color_primary as home_color_primary, ht.color_secondary as home_color_secondary, ht.color_pattern as home_color_pattern,
+    ht.goal_banner_url as home_goal_banner_url,
+    ht.kit_home_url as home_kit_home_url, ht.kit_away_url as home_kit_away_url, ht.kit_third_url as home_kit_third_url,
     at.name as away_team_name, at.logo_url as away_logo,
     at.color_primary as away_color_primary, at.color_secondary as away_color_secondary, at.color_pattern as away_color_pattern,
+    at.goal_banner_url as away_goal_banner_url,
+    at.kit_home_url as away_kit_home_url, at.kit_away_url as away_kit_away_url, at.kit_third_url as away_kit_third_url,
     t.name as tournament_name,
     lg.name as league_name, lg.logo_url as league_logo_url
   FROM matches m
@@ -62,6 +66,14 @@ router.get('/:id', (req, res) => {
     ORDER BY e.minute
   `).all(req.params.id);
 
+  const _getChallengeMessage = () => {
+    if (!match.is_friendly) return null;
+    const ch = db.prepare(`SELECT message, from_team_id FROM match_challenges WHERE match_id=? AND status='accepted'`).get(match.id);
+    if (!ch?.message) return null;
+    const fromTeam = db.prepare(`SELECT name FROM teams WHERE id=?`).get(ch.from_team_id);
+    return { text: ch.message, from_team_name: fromTeam?.name || null };
+  };
+
   if (match.status === 'in_progress' && match.started_at) {
     const elapsed = (Date.now() - new Date(match.started_at).getTime()) / 1000;
     const liveMin = Math.min(90, Math.floor(elapsed));
@@ -82,6 +94,7 @@ router.get('/:id', (req, res) => {
         ...match, status: 'scheduled', live_minute: 0,
         home_score: null, away_score: null, events: [],
         stats: playerStats2, fullStats: null,
+        challengeMessage: _getChallengeMessage(),
       });
     }
 
@@ -133,6 +146,7 @@ router.get('/:id', (req, res) => {
         events: liveEvents,
         stats: playerStats,
         fullStats,
+        challengeMessage: _getChallengeMessage(),
       });
     }
   }
@@ -155,7 +169,15 @@ router.get('/:id', (req, res) => {
     ORDER BY COALESCE(s.rating, 6.0) DESC
   `).all(req.params.id, req.params.id, req.params.id);
   const fullStats = db.prepare(`SELECT * FROM match_stats WHERE match_id=?`).get(req.params.id) || null;
-  res.json({ ...match, events: allEvents, stats: playerStats, fullStats });
+  let challengeMessage = null;
+  if (match.is_friendly) {
+    const ch = db.prepare(`SELECT message, from_team_id FROM match_challenges WHERE match_id=? AND status='accepted'`).get(match.id);
+    if (ch?.message) {
+      const fromTeam = db.prepare(`SELECT name FROM teams WHERE id=?`).get(ch.from_team_id);
+      challengeMessage = { text: ch.message, from_team_name: fromTeam?.name || null };
+    }
+  }
+  res.json({ ...match, events: allEvents, stats: playerStats, fullStats, challengeMessage });
 });
 
 router.post('/', requireAuth, (req, res) => {

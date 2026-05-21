@@ -122,8 +122,7 @@ router.delete('/:id', requireCoach, (req, res) => {
 
   const challenge = db.prepare('SELECT * FROM match_challenges WHERE id=?').get(req.params.id);
   if (!challenge) return res.status(404).json({ error: 'Вызов не найден' });
-  if (challenge.from_team_id !== coach.team_id) return res.status(403).json({ error: 'Не ваш вызов' });
-  if (challenge.status !== 'pending') return res.status(400).json({ error: 'Нельзя отменить обработанный вызов' });
+  if (challenge.from_team_id !== coach.team_id && challenge.to_team_id !== coach.team_id) return res.status(403).json({ error: 'Не ваш вызов' });
 
   db.prepare('DELETE FROM match_challenges WHERE id=?').run(challenge.id);
   res.json({ ok: true });

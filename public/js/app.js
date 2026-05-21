@@ -69,13 +69,18 @@ function posBadge(pos) {
   const cls = key==='GK'?'pos-GK':key==='DEF'?'pos-DEF':key==='MID'?'pos-MID':key==='FWD'?'pos-FWD':'pos-default';
   return `<span class="pos ${cls}">${pos}</span>`;
 }
-const ZONE_LABEL = { GK:'GK', DEF:'ЗАЩ', DMF:'ОПР', MID:'ПЗЩ', AMF:'АТМ', FWD:'НПД' };
+const ZONE_LABEL = { GK:'ВРТ', DEF:'ЗАЩ', DMF:'ОПН', MID:'ПОЛ', AMF:'АТА', FWD:'НАП' };
+const ZONE_FULL  = { GK:'Вратарь', DEF:'Защитник', DMF:'Опорный', MID:'Полузащитник', AMF:'Атакующий', FWD:'Нападающий' };
 const ZONE_COLOR = { GK:'#f39c12', DEF:'#3498db', DMF:'#9b59b6', MID:'#27ae60', AMF:'#16a085', FWD:'#e74c3c' };
-function zoneBadge(zone) {
+function zoneBadge(zone, player) {
   if (!zone) return '';
   const label = ZONE_LABEL[zone] || zone;
   const color = ZONE_COLOR[zone] || '#888';
-  return `<span style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:800;color:#fff;background:${color};letter-spacing:.3px">${label}</span>`;
+  const ovr = player ? calcOverall(player, zone) : null;
+  const fullName = ZONE_FULL[zone] || zone;
+  const titleTxt = ovr !== null ? `${fullName} · OVR на позиции: ${ovr}` : fullName;
+  const ovrTxt = ovr !== null ? ` ${ovr}` : '';
+  return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:800;color:#fff;background:${color};letter-spacing:.3px;cursor:default" title="${titleTxt}">${label}<span style="font-size:9px;opacity:.75">${ovrTxt}</span></span>`;
 }
 function ttypeBadge(t) {
   const cls = {permanent:'ttype-permanent',loan:'ttype-loan',free:'ttype-free',youth:'ttype-youth'}[t]||'ttype-free';
@@ -509,11 +514,16 @@ function updateNotifBadge(items) {
   badge.classList.toggle('hidden', count === 0);
 }
 
+let _notifExpanded = false;
+const NOTIF_VISIBLE = 5;
+
 function renderNotifList(items) {
   const list = document.getElementById('notif-list');
   if (!list) return;
   if (!items.length) { list.innerHTML = '<div class="notif-empty">Нет новых уведомлений</div>'; return; }
-  list.innerHTML = items.map(item => `
+  const visible = _notifExpanded ? items : items.slice(0, NOTIF_VISIBLE);
+  const hasMore = items.length > NOTIF_VISIBLE;
+  list.innerHTML = visible.map(item => `
     <div class="notif-item" id="notif-item-${item.id}">
       <div class="notif-icon">${item.icon}</div>
       <div class="notif-body">
@@ -523,7 +533,31 @@ function renderNotifList(items) {
           `<button class="btn btn-sm ${a.cls}" onclick="(()=>{closeNotifDropdown();${a.fn};})()">${a.label}</button>`
         ).join('')}</div>` : ''}
       </div>
-    </div>`).join('');
+    </div>`).join('')
+    + (hasMore && !_notifExpanded
+      ? `<div class="notif-show-more" onclick="_notifExpanded=true;loadNotifications()">Показать ещё ${items.length - NOTIF_VISIBLE} →</div>`
+      : '')
+    + (items.length > 0
+      ? `<div class="notif-clear-row"><button class="btn btn-sm btn-outline notif-clear-btn" onclick="clearAllNotifications()">✕ Очистить всё</button></div>`
+      : '');
+}
+
+async function clearAllNotifications() {
+  if (!isCoach()) return;
+  try {
+    // Decline all incoming challenges and clear accepted outgoing
+    const ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
+    for (const c of (ch.incoming || [])) {
+      await PUT(`/match-challenges/${c.id}/decline`, {}).catch(() => {});
+    }
+    // Remove accepted/declined outgoing
+    for (const c of (ch.outgoing || [])) {
+      if (c.status !== 'pending') await DEL('/match-challenges/' + c.id).catch(() => {});
+    }
+    _notifExpanded = false;
+    await loadNotifications();
+    toast('Уведомления очищены');
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 function closeNotifDropdown() {
@@ -533,7 +567,7 @@ function closeNotifDropdown() {
 function startNotifPolling() {
   if (_notifPollTimer) clearInterval(_notifPollTimer);
   loadNotifications();
-  _notifPollTimer = setInterval(loadNotifications, 30000);
+  _notifPollTimer = setInterval(loadNotifications, 5000);
 }
 
 // Notification bell toggle
@@ -993,6 +1027,7 @@ async function renderTeamDetail(app, id) {
         <button class="detail-tab active" data-tab="squad">Состав (${team.players.length})</button>
         <button class="detail-tab" data-tab="formation">Расстановка</button>
         <button class="detail-tab" data-tab="about">О клубе</button>
+        <button class="detail-tab" data-tab="kits">👕 Форма</button>
         <button class="detail-tab" data-tab="titles">Титулы (${team.titles.length})</button>
         <button class="detail-tab" data-tab="transfers">Трансферы</button>
         <button class="detail-tab" data-tab="matches">Матчи</button>
@@ -1001,6 +1036,7 @@ async function renderTeamDetail(app, id) {
       <div id="tab-squad" class="tab-panel active">${renderSquadTab(team, isCoach() && State.coachProfile?.team_id === team.id)}</div>
       <div id="tab-formation" class="tab-panel"><div class="pitch-section" style="padding:20px"><div class="empty-state"><p>Загрузка…</p></div></div></div>
       <div id="tab-about" class="tab-panel">${renderAboutTab(team)}</div>
+      <div id="tab-kits" class="tab-panel">${renderKitsTab(team, isCoach() && State.coachProfile?.team_id === team.id)}</div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(team.titles,team.id,null)}</div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(team.transfers)}</div>
       <div id="tab-matches" class="tab-panel"><div class="empty-state"><p>Загрузка матчей…</p></div></div>
@@ -1066,6 +1102,41 @@ function renderAboutTab(team) {
         <div class="card-body about-text-body">${escHtml(team.about_text).replace(/\n/g,'<br>')}</div>
       </div>` : ''}
   `;
+}
+
+function renderKitsTab(team, isOwnTeam) {
+  const kits = [
+    { key: 'kit_home_url',  label: '🟢 Домашняя', url: team.kit_home_url  },
+    { key: 'kit_away_url',  label: '⬛ Гостевая',  url: team.kit_away_url  },
+    { key: 'kit_third_url', label: '🔵 Третья',    url: team.kit_third_url },
+  ];
+  const editBtn = isOwnTeam
+    ? `<div style="margin-bottom:16px"><button class="btn btn-sm btn-green" onclick="showKitsForm(${JSON.stringify(team).replace(/"/g,'&quot;')})">✏️ Редактировать форму</button></div>`
+    : '';
+  const cards = kits.map(k => `
+    <div class="kit-card">
+      <div class="kit-card-label">${k.label}</div>
+      ${k.url
+        ? `<img src="${escHtml(k.url)}" class="kit-card-img" alt="${k.label}" onerror="this.src='';this.style.display='none'">`
+        : `<div class="kit-card-empty">Не задана</div>`}
+    </div>`).join('');
+  return `<div style="padding:12px 0">${editBtn}<div class="kits-grid">${cards}</div></div>`;
+}
+
+async function showKitsForm(team) {
+  const teamJson = JSON.stringify(team).replace(/"/g,'&quot;');
+  mkModal('👕 Комплекты формы', `
+    <p style="color:var(--text-muted);font-size:12px;margin-bottom:14px">Укажите URL-ссылки на изображения формы. Рекомендуемое разрешение: <strong>300×400px</strong>.</p>
+    <div class="form-group"><label>🟢 Домашняя форма</label><input type="text" id="kit-home" value="${escHtml(team.kit_home_url||'')}" placeholder="https://…"/></div>
+    <div class="form-group"><label>⬛ Гостевая форма</label><input type="text" id="kit-away" value="${escHtml(team.kit_away_url||'')}" placeholder="https://…"/></div>
+    <div class="form-group"><label>🔵 Третья форма</label><input type="text" id="kit-third" value="${escHtml(team.kit_third_url||'')}" placeholder="https://…"/></div>
+  `, async () => {
+    const kit_home_url  = document.getElementById('kit-home').value.trim() || null;
+    const kit_away_url  = document.getElementById('kit-away').value.trim() || null;
+    const kit_third_url = document.getElementById('kit-third').value.trim() || null;
+    await PUT('/teams/'+team.id, { ...team, kit_home_url, kit_away_url, kit_third_url });
+    toast('Форма обновлена');
+  });
 }
 
 let _squadState = { sort: 'market_value', dir: -1, posFilter: 'all', players: [], teamId: null, isOwnTeam: false };
@@ -1747,7 +1818,7 @@ async function showQuickTransfer(player) {
       const lineupData = await GET('/lineups/'+toTeamId);
       const existing = lineupData.lineup || [];
       const starters = existing.filter(s => s.slot >= 1 && s.slot <= 11);
-      const reserves = existing.filter(s => s.slot >= 12 && s.slot <= 22);
+      const reserves = existing.filter(s => s.slot >= 12);
       if (role === 'starter' && starters.length < 11) {
         const used = new Set(starters.map(s => s.slot));
         let slot = 1; while (used.has(slot)) slot++;
@@ -2246,6 +2317,7 @@ async function renderMatchDetail(app, id) {
         ${match.is_friendly?`<span class="badge badge-gray">⚑ Товарищеский</span>`:''}
         ${canSimulate?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ Начать матч</button>`:''}
       </div>
+      ${match.challengeMessage ? `<div class="challenge-match-banner"><span class="challenge-match-icon">⚔️</span><span class="challenge-match-text">«${escHtml(match.challengeMessage.text)}»</span>${match.challengeMessage.from_team_name?`<span class="challenge-match-from">— ${escHtml(match.challengeMessage.from_team_name)}</span>`:''}</div>` : ''}
       <div class="detail-tabs" id="match-tabs">
         <button class="detail-tab active" data-tab="m-events">📋 Events</button>
         <button class="detail-tab" data-tab="m-ratings">👤 Ratings</button>
@@ -2365,6 +2437,7 @@ function triggerGoalCelebration(side, match, ev) {
   const teamColorPrimary   = (side === 'home' ? match.home_color_primary   : match.away_color_primary)   || null;
   const teamColorSecondary = (side === 'home' ? match.home_color_secondary : match.away_color_secondary) || null;
   const teamColorPattern   = (side === 'home' ? match.home_color_pattern   : match.away_color_pattern)   || 'none';
+  const goalBannerUrl      = (side === 'home' ? match.home_goal_banner_url : match.away_goal_banner_url)  || null;
   const scorerName = ev && ev.player_name ? ev.player_name : '';
   const scorerImg = ev && ev.player_image_url ? ev.player_image_url : '';
 
@@ -2381,16 +2454,21 @@ function triggerGoalCelebration(side, match, ev) {
     setTimeout(() => el.remove(), 2200);
   }
 
-  // Goal banner — centered overlay with team colors
+  // Goal banner — centered overlay with team colors or custom image
   const banner = document.createElement('div');
   banner.className = 'goal-banner';
 
-  // Apply team colors if set
-  if (teamColorPrimary) {
+  if (goalBannerUrl) {
+    // Custom banner image — use as background, overlay stays semi-transparent
+    banner.style.backgroundImage = `url('${goalBannerUrl}')`;
+    banner.style.backgroundSize = 'cover';
+    banner.style.backgroundPosition = 'center';
+    banner.classList.add('goal-banner-custom-img');
+  } else if (teamColorPrimary) {
     banner.style.background = teamColorPrimary;
   }
 
-  const patternHtml = (teamColorSecondary && teamColorPattern && teamColorPattern !== 'none')
+  const patternHtml = (!goalBannerUrl && teamColorSecondary && teamColorPattern && teamColorPattern !== 'none')
     ? `<div class="goal-banner-pattern goal-banner-pattern-${escHtml(teamColorPattern)}" style="--pat-color:${escHtml(teamColorSecondary)}"></div>`
     : '';
 
@@ -2419,7 +2497,7 @@ function triggerGoalCelebration(side, match, ev) {
     </div>` : ''}
   `;
   document.body.appendChild(banner);
-  setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(() => banner.remove(), 600); }, 4000);
+  setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(() => banner.remove(), 600); }, 3000);
 }
 
 async function startMatchSimulation(matchId) {
@@ -3559,7 +3637,7 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
       ${avatarEl(p.image_url,p.name)}
       <div style="flex:1;min-width:0">
         <div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>
-        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:1px">${posBadge(p.position)}${zoneBadge(natZone)}</div>
+        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:1px">${posBadge(p.position)}${zoneBadge(natZone, p)}</div>
       </div>
       <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
       ${sel?`<span style="color:var(--blue);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
@@ -3573,7 +3651,7 @@ function injuredPlayerClick() {
 
 // ─── Bench section: 3 columns ────────────────────────────────────────────────
 function renderBenchSection(lineupSlots, allPlayers, teamId) {
-  const benchSlots = lineupSlots.filter(s=>s.slot>11&&s.slot<=22);
+  const benchSlots = lineupSlots.filter(s=>s.slot>11);
   const injuredIds = _buildInjuredIds(lineupSlots, allPlayers);
 
   // Priority subs (priority_sub=1, max 3)
@@ -3595,7 +3673,7 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
       <div style="position:relative;flex-shrink:0">${avatarEl(p.image_url,p.name)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.name)}</div>
-        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:2px">${posBadge(p.position)}${zoneBadge(assignedZone)}</div>
+        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:2px">${posBadge(p.position)}${zoneBadge(assignedZone, p)}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
         <span style="font-size:11px;font-weight:800;color:${ovrColor}">${ovr??'?'}</span>
@@ -3648,7 +3726,7 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
 }
 
 function renderReservesList(lineupSlots, allPlayers, teamId) {
-  const reserves = lineupSlots.filter(s=>s.slot>11&&s.slot<=22).sort((a,b)=>a.slot-b.slot);
+  const reserves = lineupSlots.filter(s=>s.slot>11).sort((a,b)=>a.slot-b.slot);
   if (!reserves.length) return `<div style="color:var(--text-muted);font-size:12px;padding:4px 0">Нет запасных</div>`;
   return reserves.map(s => {
     const p = allPlayers.find(pl=>pl.id===s.player_id);
@@ -3660,7 +3738,7 @@ function renderReservesList(lineupSlots, allPlayers, teamId) {
       <div style="position:relative">${avatarEl(p.image_url,p.name)}${injured?`<span class="inj-badge" title="Травма: ещё ${s.injury_matches_remaining} матча(ей)">🚑</span>`:''}</div>
       <div class="pc-info">
         <div class="pc-name">${escHtml(p.name)}${injured?` <span style="color:#e74c3c;font-size:10px">(травма ${s.injury_matches_remaining})</span>`:''}</div>
-        <div class="pc-pos" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${posBadge(p.position)}${zoneBadge(assignedZone)}</div>
+        <div class="pc-pos" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${posBadge(p.position)}${zoneBadge(assignedZone, p)}</div>
       </div>
       <div class="pc-btn" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         <label class="priority-sub-label" title="Приоритетная замена — выйдет первым">
@@ -3676,6 +3754,16 @@ function renderReservesList(lineupSlots, allPlayers, teamId) {
 }
 
 async function togglePrioritySub(playerId, teamId, checked) {
+  if (checked) {
+    const cnt = _pitchState.lineup.filter(s => s.priority_sub && s.player_id !== playerId && s.slot > 11).length;
+    if (cnt >= 3) {
+      toast('Максимум 3 приоритетных замены', 'error');
+      // Reset the checkbox UI
+      const el = document.getElementById('pb-bench-section');
+      if (el) el.innerHTML = renderBenchSection(_pitchState.lineup, _pitchState.players, teamId);
+      return;
+    }
+  }
   const current = _pitchState.lineup.map(s => ({
     ...s,
     priority_sub: s.player_id === playerId ? (checked ? 1 : 0) : (s.priority_sub || 0)
@@ -3742,15 +3830,15 @@ async function dropOnBench(targetType, event) {
     const cnt = _pitchState.lineup.filter(s=>s.priority_sub&&s.player_id!==pid&&s.slot>11).length;
     if (cnt >= 3) { toast('Максимум 3 приоритетных замены', 'error'); return; }
   }
-  const existing = _pitchState.lineup.find(s=>s.player_id===pid&&s.slot>11&&s.slot<=22);
+  const existing = _pitchState.lineup.find(s=>s.player_id===pid&&s.slot>11);
   let current;
   if (existing) {
     // Already on bench — just toggle priority
     current = _pitchState.lineup.map(s=>s.player_id===pid?{...s,priority_sub:isPriority?1:0}:s);
   } else {
-    const usedBench = new Set(_pitchState.lineup.filter(s=>s.slot>11&&s.slot<=22).map(s=>s.slot));
+    const usedBench = new Set(_pitchState.lineup.filter(s=>s.slot>11).map(s=>s.slot));
     let slot = null;
-    for (let i=12;i<=22;i++){if(!usedBench.has(i)){slot=i;break;}}
+    for (let i=12;i<=999;i++){if(!usedBench.has(i)){slot=i;break;}}
     if (!slot) { toast('Скамейка запасных заполнена', 'error'); return; }
     current = _pitchState.lineup.filter(s=>s.player_id!==pid);
     current.push({slot, player_id:pid, position_override:null, priority_sub:isPriority?1:0});
@@ -3794,9 +3882,9 @@ async function pitchZoneClick(zoneId) {
 
 async function pitchPlayerDotClick(playerId) {
   const tid = _pitchState.teamId;
-  const usedReserveSlots = new Set(_pitchState.lineup.filter(s=>s.slot>11&&s.slot<=22).map(s=>s.slot));
+  const usedReserveSlots = new Set(_pitchState.lineup.filter(s=>s.slot>11).map(s=>s.slot));
   let reserveSlot = null;
-  for (let i=12;i<=22;i++) { if(!usedReserveSlots.has(i)){reserveSlot=i;break;} }
+  for (let i=12;i<=999;i++) { if(!usedReserveSlots.has(i)){reserveSlot=i;break;} }
   try {
     const current = _pitchState.lineup.filter(s=>s.player_id!==playerId);
     if (reserveSlot) current.push({ slot: reserveSlot, player_id: playerId, position_override: null });
@@ -3841,14 +3929,14 @@ async function refreshPitchEditor() {
     _pitchState.lineup = lr.lineup || [];
     _pitchState.selectedPlayerId = null;
     const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
-    const reserves = _pitchState.lineup.filter(s=>s.slot>11&&s.slot<=22);
+    const reserves = _pitchState.lineup.filter(s=>s.slot>11);
     const $ = id => document.getElementById(id);
     if ($('pb-pitch')) $('pb-pitch').innerHTML = renderPitchZones(_pitchState.lineup);
     if ($('pb-player-list')) $('pb-player-list').innerHTML = renderPitchSidebar(_pitchState.players, _pitchState.lineup, null);
     if ($('pb-bench-section')) $('pb-bench-section').innerHTML = renderBenchSection(_pitchState.lineup, _pitchState.players, tid);
     if ($('pb-starter-count')) $('pb-starter-count').textContent = `${starters.length}/11 основных`;
     if ($('pb-formation-label')) $('pb-formation-label').textContent = computeFormation(_pitchState.lineup);
-    if ($('pb-reserve-count')) $('pb-reserve-count').textContent = `${reserves.length}/11`;
+    if ($('pb-reserve-count')) $('pb-reserve-count').textContent = `${reserves.length} запасных`;
   } catch(e) { toast(e.message,'error'); }
 }
 
@@ -3967,13 +4055,19 @@ async function loadTeamPlayersForOffer() {
 }
 
 // ── Match challenges tab ──────────────────────────────────────────────────────
+const CHALLENGES_VISIBLE = 5;
+let _challengesExpanded = { in: false, out: false };
+
 function renderChallengesTab(data, myTeamId) {
   const { incoming = [], outgoing = [] } = data;
   const statusLabel = { pending:'🕐 Ожидает', accepted:'✅ Принято', declined:'❌ Отклонено' };
   const statusCls   = { pending:'badge-gold', accepted:'badge-green', declined:'badge-red' };
 
+  const inVisible = _challengesExpanded.in ? incoming : incoming.slice(0, CHALLENGES_VISIBLE);
+  const outVisible = _challengesExpanded.out ? outgoing : outgoing.slice(0, CHALLENGES_VISIBLE);
+
   const incomingHtml = incoming.length
-    ? incoming.map(c => `
+    ? inVisible.map(c => `
       <div class="challenge-card" id="ch-card-${c.id}">
         <div class="challenge-from">
           ${c.from_team_logo ? `<img src="${escHtml(c.from_team_logo)}" class="challenge-logo" onerror="this.style.display='none'">` : ''}
@@ -3987,10 +4081,13 @@ function renderChallengesTab(data, myTeamId) {
           <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="respondChallenge(${c.id},'decline')">❌ Отклонить</button>
         </div>
       </div>`).join('')
+      + (incoming.length > CHALLENGES_VISIBLE && !_challengesExpanded.in
+        ? `<div class="notif-show-more" onclick="_challengesExpanded.in=true;reloadCoachChallengesTab()">Показать ещё ${incoming.length - CHALLENGES_VISIBLE} →</div>`
+        : '')
     : '<div class="empty-state" style="padding:20px"><p>Входящих вызовов нет</p></div>';
 
   const outgoingHtml = outgoing.length
-    ? outgoing.map(c => `
+    ? outVisible.map(c => `
       <div class="challenge-card">
         <div class="challenge-from">
           ${c.to_team_logo ? `<img src="${escHtml(c.to_team_logo)}" class="challenge-logo" onerror="this.style.display='none'">` : ''}
@@ -4005,22 +4102,63 @@ function renderChallengesTab(data, myTeamId) {
             ? `<button class="btn btn-sm btn-green" style="margin-top:6px" onclick="navigate('/matches/${c.match_id}')">Перейти к матчу →</button>`
             : ''}
       </div>`).join('')
+      + (outgoing.length > CHALLENGES_VISIBLE && !_challengesExpanded.out
+        ? `<div class="notif-show-more" onclick="_challengesExpanded.out=true;reloadCoachChallengesTab()">Показать ещё ${outgoing.length - CHALLENGES_VISIBLE} →</div>`
+        : '')
     : '<div class="empty-state" style="padding:20px"><p>Исходящих вызовов нет</p></div>';
 
   return `
     <div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px 0">
       <div class="card" style="flex:1;min-width:260px">
-        <div class="card-header">Входящие вызовы ${incoming.length ? `<span class="badge badge-gold">${incoming.length}</span>` : ''}</div>
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Входящие вызовы ${incoming.length ? `<span class="badge badge-gold">${incoming.length}</span>` : ''}</span>
+          ${incoming.length ? `<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:11px" onclick="clearIncomingChallenges()">✕ Очистить</button>` : ''}
+        </div>
         <div style="padding:12px">${incomingHtml}</div>
       </div>
       <div class="card" style="flex:1;min-width:260px">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-          Исходящие вызовы
-          <button class="btn btn-sm btn-green" onclick="showSendChallengeModal()">⚔️ Вызвать</button>
+          <span>Исходящие вызовы</span>
+          <div style="display:flex;gap:6px">
+            ${outgoing.length ? `<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);font-size:11px" onclick="clearOutgoingChallenges()">✕ Очистить</button>` : ''}
+            <button class="btn btn-sm btn-green" onclick="showSendChallengeModal()">⚔️ Вызвать</button>
+          </div>
         </div>
         <div style="padding:12px">${outgoingHtml}</div>
       </div>
     </div>`;
+}
+
+async function reloadCoachChallengesTab() {
+  const panel = document.getElementById('tab-challenges');
+  if (!panel) return;
+  const ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
+  panel.innerHTML = renderChallengesTab(ch, State.coachProfile?.team_id);
+}
+
+async function clearIncomingChallenges() {
+  try {
+    const ch = await GET('/match-challenges').catch(() => ({ incoming: [] }));
+    for (const c of (ch.incoming || [])) {
+      await PUT(`/match-challenges/${c.id}/decline`, {}).catch(() => {});
+    }
+    _challengesExpanded.in = false;
+    await reloadCoachChallengesTab();
+    toast('Входящие вызовы очищены');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function clearOutgoingChallenges() {
+  try {
+    const ch = await GET('/match-challenges').catch(() => ({ outgoing: [] }));
+    for (const c of (ch.outgoing || [])) {
+      if (c.status !== 'pending') await DEL('/match-challenges/' + c.id).catch(() => {});
+      else await DEL('/match-challenges/' + c.id).catch(() => {});
+    }
+    _challengesExpanded.out = false;
+    await reloadCoachChallengesTab();
+    toast('Исходящие вызовы очищены');
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function respondChallenge(id, action) {
@@ -4171,6 +4309,11 @@ async function showCoachClubForm(coach, team) {
       </div>
     </div>
     <div style="border-top:1px solid rgba(255,255,255,.1);margin:14px 0 10px;padding-top:10px">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">🎉 Баннер гола</div>
+      <div class="form-group"><label>Своя картинка для баннера гола</label><input type="text" id="ccf-banner" value="${escHtml(team.goal_banner_url||'')}" placeholder="https://… (рекомендуется 520×200px или 1040×400px @2x)"/></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:-8px;margin-bottom:8px">Если задать — при голе будет показана эта картинка вместо стандартного фона. Рекомендуемое разрешение: <strong>520×200 px</strong>.</div>
+    </div>
+    <div style="border-top:1px solid rgba(255,255,255,.1);margin:14px 0 10px;padding-top:10px">
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📋 Вкладка «О клубе»</div>
       <div class="form-group"><label>Панорамное фото команды</label><input type="text" id="ccf-photo" value="${escHtml(team.team_photo_url||'')}" placeholder="https://… (широкоформатная фотография)"/></div>
       <div class="form-group"><label>Описание клуба</label><textarea id="ccf-about" rows="5" style="width:100%;background:var(--bg-darker);border:1px solid var(--border);color:#fff;border-radius:6px;padding:8px;resize:vertical;font-family:inherit" placeholder="История клуба, достижения, философия…">${escHtml(team.about_text||'')}</textarea></div>
@@ -4181,12 +4324,13 @@ async function showCoachClubForm(coach, team) {
     const stadium_url = document.getElementById('ccf-stadium').value.trim()||null;
     const team_photo_url = document.getElementById('ccf-photo').value.trim()||null;
     const about_text = document.getElementById('ccf-about').value.trim()||null;
+    const goal_banner_url = document.getElementById('ccf-banner').value.trim()||null;
     const color_primary = document.getElementById('ccf-color1').value || document.getElementById('ccf-color1-hex').value.trim() || null;
     const color_secondary = document.getElementById('ccf-color2').value || document.getElementById('ccf-color2-hex').value.trim() || null;
     const color_pattern = document.getElementById('ccf-pattern').value || 'none';
     if (!team_name) { toast('Название клуба обязательно','error'); return false; }
     await PUT('/coaches/'+coach.id, { team_name, team_logo_url });
-    await PUT('/teams/'+team.id, { ...team, name: team_name, logo_url: team_logo_url||team.logo_url, stadium_url, about_text, team_photo_url, color_primary, color_secondary, color_pattern });
+    await PUT('/teams/'+team.id, { ...team, name: team_name, logo_url: team_logo_url||team.logo_url, stadium_url, about_text, team_photo_url, color_primary, color_secondary, color_pattern, goal_banner_url });
     State.coachProfile = null;
     toast('Клуб обновлён');
   });

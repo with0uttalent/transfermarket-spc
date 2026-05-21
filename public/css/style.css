@@ -1802,3 +1802,28 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
   .tp-right-col { grid-column: 1 / -1; border-left: none; border-top: 1px solid var(--border); flex-direction: row; }
   .tp-comp-card { border-right: 1px solid var(--border); border-bottom: none; }
 }
+
+/* ── Notification extras ──────────────────────────────────── */
+.notif-show-more { text-align:center; padding:8px 12px; font-size:12px; color:var(--green); cursor:pointer; border-top:1px solid var(--border); }
+.notif-show-more:hover { background:var(--bg-hover); }
+.notif-clear-row { padding:6px 12px; border-top:1px solid var(--border); display:flex; justify-content:center; }
+.notif-clear-btn { font-size:11px; opacity:.7; }
+.notif-clear-btn:hover { opacity:1; }
+
+/* ── Challenge match banner ───────────────────────────────── */
+.challenge-match-banner { display:flex; align-items:center; gap:8px; background:rgba(52,152,219,.12); border:1px solid rgba(52,152,219,.3); border-radius:8px; padding:10px 14px; margin-bottom:12px; flex-wrap:wrap; }
+.challenge-match-icon { font-size:18px; flex-shrink:0; }
+.challenge-match-text { font-style:italic; color:var(--text); font-size:13px; }
+.challenge-match-from { font-size:11px; color:var(--text-muted); margin-left:auto; }
+
+/* ── Custom goal banner image ─────────────────────────────── */
+.goal-banner-custom-img::before { content:''; position:absolute; inset:0; background:rgba(0,0,0,.45); border-radius:inherit; z-index:0; }
+.goal-banner-custom-img > * { position:relative; z-index:1; }
+
+/* ── Kits tab ─────────────────────────────────────────────── */
+.kits-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+@media (max-width:600px) { .kits-grid { grid-template-columns:1fr; } }
+.kit-card { background:var(--bg); border:1px solid var(--border); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; align-items:center; }
+.kit-card-label { width:100%; padding:10px 12px; font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border); text-align:center; }
+.kit-card-img { width:100%; max-width:240px; object-fit:contain; padding:16px; }
+.kit-card-empty { padding:40px 20px; color:var(--text-muted); font-size:13px; font-style:italic; text-align:center; }
