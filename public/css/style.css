@@ -1843,24 +1843,31 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .hlc-live-badge { font-size:10px; font-weight:700; color:#e74c3c; letter-spacing:.5px; }
 .hlc-league { font-size:10px; color:var(--text-muted); text-align:center; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-/* ── Challenge push notification (messenger-style) ─────────── */
-.challenge-push {
+/* ── Challenge push notifications stack ─────────────────────── */
+#challenge-push-stack {
   position: fixed;
   bottom: 24px;
   right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10000;
+  pointer-events: none;
+}
+.challenge-push {
   width: 300px;
   background: var(--bg-card, #1e293b);
   border: 1px solid rgba(52,152,219,.45);
   border-left: 4px solid #3498db;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0,0,0,.55);
-  z-index: 10000;
   overflow: hidden;
-  transform: translateY(120%);
+  pointer-events: all;
+  transform: translateX(120%);
   opacity: 0;
   transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .3s ease;
 }
-.challenge-push.cp-visible { transform: translateY(0); opacity: 1; }
+.challenge-push.cp-visible { transform: translateX(0); opacity: 1; }
 .cp-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; border-bottom: 1px solid var(--border); }
 .cp-icon { font-size: 16px; }
 .cp-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: #3498db; flex: 1; }
@@ -1875,4 +1882,7 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .cp-actions .btn { flex: 1; }
 .cp-btn-decline { background: rgba(231,76,60,.15); border: 1px solid rgba(231,76,60,.4); color: #e74c3c; border-radius: 6px; cursor: pointer; padding: 5px 8px; font-size: 12px; font-weight: 700; transition: background .15s; }
 .cp-btn-decline:hover { background: rgba(231,76,60,.28); }
-@media (max-width: 480px) { .challenge-push { width: calc(100vw - 32px); right: 16px; bottom: 16px; } }
+@media (max-width: 480px) {
+  #challenge-push-stack { right: 16px; bottom: 16px; }
+  .challenge-push { width: calc(100vw - 32px); }
+}

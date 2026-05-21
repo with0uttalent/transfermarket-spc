@@ -487,9 +487,31 @@ async function loadNotifications() {
   } catch { /* silent */ }
 }
 
+const PUSH_MAX = 3;
+
+function _getPushStack() {
+  let stack = document.getElementById('challenge-push-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'challenge-push-stack';
+    document.body.appendChild(stack);
+  }
+  return stack;
+}
+
 function showChallengePush(c) {
   const id = `push-ch-${c.id}`;
-  if (document.getElementById(id)) return; // already shown
+  if (document.getElementById(id)) return;
+
+  const stack = _getPushStack();
+
+  // If already at max, remove the oldest (bottom) card
+  const cards = stack.querySelectorAll('.challenge-push');
+  if (cards.length >= PUSH_MAX) {
+    const oldest = cards[0];
+    oldest.classList.remove('cp-visible');
+    setTimeout(() => oldest.remove(), 350);
+  }
 
   const el = document.createElement('div');
   el.id = id;
@@ -498,7 +520,7 @@ function showChallengePush(c) {
     <div class="cp-header">
       <span class="cp-icon">⚔️</span>
       <span class="cp-title">Вызов на матч!</span>
-      <button class="cp-close" onclick="this.closest('.challenge-push').remove()">✕</button>
+      <button class="cp-close" onclick="this.closest('.challenge-push').classList.remove('cp-visible');setTimeout(()=>this.closest('.challenge-push').remove(),350)">✕</button>
     </div>
     <div class="cp-body">
       ${c.from_team_logo ? `<img src="${escHtml(c.from_team_logo)}" class="cp-logo" onerror="this.style.display='none'">` : ''}
@@ -512,11 +534,10 @@ function showChallengePush(c) {
       <button class="btn btn-sm cp-btn-decline" onclick="respondChallengePush(${c.id},'decline',this)">❌ Отклонить</button>
     </div>
   `;
-  document.body.appendChild(el);
-  // Animate in
+  stack.appendChild(el);
   requestAnimationFrame(() => el.classList.add('cp-visible'));
   // Auto-dismiss after 12 seconds
-  setTimeout(() => { el.classList.remove('cp-visible'); setTimeout(() => el.remove(), 400); }, 12000);
+  setTimeout(() => { el.classList.remove('cp-visible'); setTimeout(() => el.remove(), 350); }, 12000);
 }
 
 async function respondChallengePush(id, action, btn) {
