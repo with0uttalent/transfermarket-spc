@@ -184,19 +184,21 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
     ORDER BY e.minute
   `).all(matchId);
 
-  sendMatchResult({
+  const resultPayload = {
     matchId, homeTeam, awayTeam, homeScore, awayScore,
     homeLogo:      toUrl(match?.home_logo),
     awayLogo:      toUrl(match?.away_logo),
     stadiumUrl:    toUrl(match?.home_stadium),
     homeTeamId:    match?.home_team_id,
     awayTeamId:    match?.away_team_id,
-    status:        match?.status || 'finished',
     leagueName:    match?.league_name || null,
     leagueLogoUrl: toUrl(match?.league_logo),
-    events,
     goalEvents,
-  }).catch(() => {});
+  };
+
+  sendMatchResult({ ...resultPayload, status: match?.status || 'finished', events }).catch(() => {});
+  sendMatchResultToLive(resultPayload).catch(() => {});
+  db.prepare(`UPDATE matches SET tg_result_sent=1 WHERE id=?`).run(matchId);
 
   // Individual news for each match injury
   const injEvents = events.filter(e => e.event_type === 'injury');
@@ -672,35 +674,9 @@ async function broadcastLiveEvents() {
   }
 }
 
-function _sendLiveResult(db, m, ht, at) {
-  const lg = m.league_id ? db.prepare(`SELECT name, logo_url FROM leagues WHERE id=?`).get(m.league_id) : null;
-  const goalEvents = db.prepare(`
-    SELECT e.event_type, e.minute, e.team_id, p.name as player_name, p2.name as assist_name
-    FROM match_events e
-    LEFT JOIN players p  ON e.player_id  = p.id
-    LEFT JOIN players p2 ON e.player2_id = p2.id
-    WHERE e.match_id = ? AND e.event_type IN ('goal','own_goal')
-    ORDER BY e.minute
-  `).all(m.id);
-  const base = `http://localhost:${process.env.PORT || 3000}`;
-  const toUrl = u => u ? (u.startsWith('http') ? u : base + u) : null;
-  sendMatchResultToLive({
-    matchId: m.id, homeTeam: ht.name, awayTeam: at.name,
-    homeScore: m.home_score, awayScore: m.away_score,
-    homeLogo: toUrl(ht?.logo_url), awayLogo: toUrl(at?.logo_url),
-    stadiumUrl: toUrl(ht?.stadium_url),
-    homeTeamId: m.home_team_id, awayTeamId: m.away_team_id,
-    leagueName: lg?.name || null, leagueLogoUrl: toUrl(lg?.logo_url),
-    goalEvents,
-  }).catch(() => {});
-  db.prepare(`UPDATE matches SET tg_result_sent=1 WHERE id=?`).run(m.id);
-}
-
 function finalizeExpiredMatches() {
   try {
     const db = getDb();
-
-    // 1. Finalize matches still in_progress after 90s
     const expired = db.prepare(`
       SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
              m.league_id, m.matchday, m.is_friendly, m.tournament_id
@@ -712,39 +688,18 @@ function finalizeExpiredMatches() {
 
     for (const m of expired) {
       const r = db.prepare(`UPDATE matches SET status='finished' WHERE id=? AND status='in_progress'`).run(m.id);
+      if (r.changes === 0) continue;
+
       const ht = db.prepare(`SELECT name, logo_url, stadium_url FROM teams WHERE id=?`).get(m.home_team_id);
       const at = db.prepare(`SELECT name, logo_url FROM teams WHERE id=?`).get(m.away_team_id);
+      const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
 
-      if (r.changes > 0) {
-        // First to finalize: generate news and send group result
-        const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
-        if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
-        if (m.tournament_id) {
-          try { advanceTournamentWinner(m, m.home_score, m.away_score); } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
-        }
+      // generateMatchNews sends to group AND live channel (via sendMatchResultToLive inside it)
+      if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
+
+      if (m.tournament_id) {
+        try { advanceTournamentWinner(m, m.home_score, m.away_score); } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
       }
-
-      // Send live channel result regardless of who finalized — deduplicated by tg_result_sent flag
-      if (!m.is_friendly) _sendLiveResult(db, m, ht, at);
-    }
-
-    // 2. Catch matches already finished by the GET route but live result not yet sent
-    const unsent = db.prepare(`
-      SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
-             m.league_id, m.is_friendly
-      FROM matches m
-      WHERE m.status = 'finished'
-        AND m.tg_result_sent = 0
-        AND (m.is_friendly IS NULL OR m.is_friendly = 0)
-        AND m.started_at IS NOT NULL
-        AND (julianday('now') - julianday(m.started_at)) * 86400 >= 90
-        AND (julianday('now') - julianday(m.started_at)) * 86400 < 300
-    `).all();
-
-    for (const m of unsent) {
-      const ht = db.prepare(`SELECT name, logo_url, stadium_url FROM teams WHERE id=?`).get(m.home_team_id);
-      const at = db.prepare(`SELECT name, logo_url FROM teams WHERE id=?`).get(m.away_team_id);
-      _sendLiveResult(db, m, ht, at);
     }
   } catch(e) {
     console.warn('[Scheduler] finalizeExpiredMatches error:', e.message);
