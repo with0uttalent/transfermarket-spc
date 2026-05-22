@@ -208,8 +208,8 @@ router.get('/:id', (req, res) => {
     ...league,
     standings: standingsWithForm,
     schedule: scheduleByMatchday,
-    topScorers,
-    topAssists,
+    top_scorers: topScorers,
+    top_assists: topAssists,
   });
 });
 
