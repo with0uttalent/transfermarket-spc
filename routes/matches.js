@@ -262,22 +262,20 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
     result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
   }
 
-  // Save all events and final score now; status becomes in_progress (revealed gradually by GET)
-  const insertEvent = db.prepare(
-    `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
-  );
-  for (const e of result.events) insertEvent.run(match.id, e.minute, e.event_type, e.team_id, e.player_id, e.player2_id, e.description);
-
   const startedAt = new Date().toISOString();
 
   if (match.is_friendly) {
-    // Friendly: skip MV/stats/skills/injuries; finalization is purely score+status
+    // Friendly: skip MV/stats/skills/injuries — insert events directly
+    const insertEvent = db.prepare(
+      `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
+    );
+    for (const e of result.events) insertEvent.run(match.id, e.minute, e.event_type, e.team_id, e.player_id, e.player2_id, e.description);
     db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='in_progress', started_at=? WHERE id=?`)
       .run(result.homeScore, result.awayScore, startedAt, match.id);
     return res.json({ ok: true, started_at: startedAt });
   }
 
-  // Non-friendly: apply player/team stat updates immediately (they don't surface in match view)
+  // Non-friendly: applyMatchResults inserts events + applies all stats
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 
   // Tournament draw → overtime — keep existing flow but delay reveal via in_progress

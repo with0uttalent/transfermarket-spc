@@ -49,7 +49,8 @@ function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
   const db = getDb();
   const { homeScore, awayScore, events, playerStats, mvDeltas, matchStats, injuredPlayers, skillDeltas } = result;
 
-  db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='finished' WHERE id=?`)
+  // Do not change match status here — caller is responsible for status transitions
+  db.prepare(`UPDATE matches SET home_score=?, away_score=? WHERE id=?`)
     .run(homeScore, awayScore, matchId);
 
   const insertEvent = db.prepare(
@@ -275,6 +276,7 @@ function simulateScheduledMatches() {
     const away = getLineupInfo(db, match.away_team_id);
     const result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
+    db.prepare(`UPDATE matches SET status='finished' WHERE id=?`).run(match.id);
     const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
     generateMatchNews(match.id, match.home_name, match.away_name, result.homeScore, result.awayScore, evRows);
     generateTeamMatchNews(match.id, match.home_team_id, match.away_team_id, match.home_name, match.away_name, result.homeScore, result.awayScore);
@@ -307,6 +309,7 @@ function generateRandomMatch() {
 
   const result = simulateMatch(homeTeam.id, awayTeam.id, home.players, away.players, home.zoneMap, away.zoneMap);
   applyMatchResults(matchId, homeTeam.id, awayTeam.id, result);
+  db.prepare(`UPDATE matches SET status='finished' WHERE id=?`).run(matchId);
   const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(matchId);
   generateMatchNews(matchId, homeTeam.name, awayTeam.name, result.homeScore, result.awayScore, evRows);
   generateTeamMatchNews(matchId, homeTeam.id, awayTeam.id, homeTeam.name, awayTeam.name, result.homeScore, result.awayScore);
