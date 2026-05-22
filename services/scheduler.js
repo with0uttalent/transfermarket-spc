@@ -704,20 +704,54 @@ function finalizeExpiredMatches() {
   }
 }
 
+function checkAndRunLeagueMatchdays() {
+  try {
+    const db = getDb();
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const pad2 = n => String(n).padStart(2, '0');
+    const currentTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+
+    // Find active leagues that have a matchday due today (scheduled_date <= today,
+    // no match created yet) and whose match_start_time has arrived
+    const leagues = db.prepare(`
+      SELECT DISTINCT l.id
+      FROM leagues l
+      JOIN league_schedule ls ON ls.league_id = l.id
+      WHERE l.status = 'active'
+        AND ls.scheduled_date <= ?
+        AND ls.match_id IS NULL
+        AND COALESCE(l.match_start_time, '16:00') <= ?
+    `).all(today, currentTime);
+
+    for (const row of leagues) {
+      try {
+        simulateLeagueMatchday(row.id);
+        console.log(`[Scheduler] Auto-simulated matchday for league ${row.id}`);
+      } catch(e) {
+        console.warn(`[Scheduler] Auto-sim league ${row.id} error:`, e.message);
+      }
+    }
+  } catch(e) {
+    console.warn('[Scheduler] checkAndRunLeagueMatchdays error:', e.message);
+  }
+}
+
 function startScheduler() {
   // Every 15 minutes – generate at least 2 player/team news items
   cron.schedule('*/15 * * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  // Every minute – match previews + finalize expired live matches + broadcast live events
+  // Every minute – league matchday auto-sim + previews + finalize + broadcast live
   cron.schedule('* * * * *', () => {
+    checkAndRunLeagueMatchdays();
     checkUpcomingMatches();
     broadcastLiveEvents();
     finalizeExpiredMatches();
   });
 
-  console.log('[Scheduler] Crons: news/15min, match-preview+finalize/1min.');
+  console.log('[Scheduler] Crons: news/15min, league-sim+preview+finalize/1min.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };
