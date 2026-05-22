@@ -195,4 +195,64 @@ router.post('/generate-team', requireAdmin, (req, res) => {
   res.status(201).json({ team, players });
 });
 
+// ─── POST /admin/reschedule-league — рассчитать расписание лиги с 16:00 ───────
+router.post('/reschedule-league', requireAdmin, (req, res) => {
+  const db = getDb();
+  const { league_id } = req.body;
+
+  // Find active leagues
+  const leagues = league_id
+    ? db.prepare('SELECT * FROM leagues WHERE id=?').all(league_id)
+    : db.prepare("SELECT * FROM leagues WHERE status='active'").all();
+
+  if (!leagues.length) return res.status(404).json({ error: 'Нет активных лиг' });
+
+  const results = [];
+  for (const league of leagues) {
+    // Find all in_progress or scheduled league matches that haven't finished yet
+    const matches = db.prepare(`
+      SELECT m.id, m.matchday, m.home_team_id, m.away_team_id,
+             ht.name as home_name, at.name as away_name
+      FROM matches m
+      JOIN teams ht ON m.home_team_id = ht.id
+      JOIN teams at ON m.away_team_id = at.id
+      WHERE m.league_id = ? AND m.status IN ('in_progress','scheduled')
+      ORDER BY m.matchday ASC, m.id ASC
+    `).all(league.id);
+
+    if (!matches.length) { results.push({ league_id: league.id, updated: 0 }); continue; }
+
+    // Group by matchday
+    const byMatchday = {};
+    for (const m of matches) {
+      if (!byMatchday[m.matchday]) byMatchday[m.matchday] = [];
+      byMatchday[m.matchday].push(m);
+    }
+
+    let totalUpdated = 0;
+    const today = new Date().toISOString().slice(0, 10);
+    const pad2 = n => String(n).padStart(2, '0');
+
+    for (const [, dayMatches] of Object.entries(byMatchday)) {
+      dayMatches.forEach((m, idx) => {
+        const kickoff = new Date();
+        kickoff.setHours(16, 0, 0, 0);
+        kickoff.setMinutes(kickoff.getMinutes() + idx * 15);
+        const matchTimeStr = `${pad2(kickoff.getHours())}:${pad2(kickoff.getMinutes())}`;
+
+        db.prepare(`
+          UPDATE matches SET started_at=?, match_time=?, match_date=?
+          WHERE id=?
+        `).run(kickoff.toISOString(), matchTimeStr, today, m.id);
+        totalUpdated++;
+      });
+    }
+
+    results.push({ league_id: league.id, league_name: league.name, updated: totalUpdated });
+    console.log(`[Admin] Rescheduled ${totalUpdated} matches for league ${league.id} starting 16:00`);
+  }
+
+  res.json({ ok: true, results });
+});
+
 module.exports = router;

@@ -443,9 +443,9 @@ function simulateLeagueMatchday(leagueId) {
       result = simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers);
     }
 
-    // Create match record with staggered kick-off (18:00 + index × 15 min)
+    // Create match record with staggered kick-off (16:00 + index × 15 min)
     const kickoff = new Date();
-    kickoff.setHours(18, 0, 0, 0);
+    kickoff.setHours(16, 0, 0, 0);
     kickoff.setMinutes(kickoff.getMinutes() + matchIndex * 15);
     const pad2 = n => String(n).padStart(2, '0');
     const matchTimeStr = `${pad2(kickoff.getHours())}:${pad2(kickoff.getMinutes())}`;
