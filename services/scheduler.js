@@ -2,7 +2,7 @@
 const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
-const { sendMatchResult, sendMatchPreview } = require('./telegramBot');
+const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive } = require('./telegramBot');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -588,6 +588,62 @@ function checkUpcomingMatches() {
   }
 }
 
+function broadcastLiveEvents() {
+  try {
+    const db = getDb();
+    const now = Date.now();
+
+    const liveMatches = db.prepare(`
+      SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
+             m.started_at, m.league_id, m.matchday, m.tg_kickoff_sent,
+             ht.name as home_name, at.name as away_name,
+             lg.name as league_name
+      FROM matches m
+      JOIN teams ht ON m.home_team_id = ht.id
+      JOIN teams at ON m.away_team_id = at.id
+      LEFT JOIN leagues lg ON m.league_id = lg.id
+      WHERE m.status = 'in_progress'
+        AND m.started_at IS NOT NULL
+        AND m.league_id IS NOT NULL
+    `).all();
+
+    for (const m of liveMatches) {
+      const elapsedMs = now - new Date(m.started_at).getTime();
+      if (elapsedMs < 0) continue; // match hasn't started yet
+
+      const elapsedSec = elapsedMs / 1000;
+
+      // Send kickoff message once
+      if (!m.tg_kickoff_sent) {
+        sendMatchKickoff({
+          homeTeam: m.home_name, awayTeam: m.away_name,
+          leagueName: m.league_name, matchday: m.matchday,
+        }).catch(() => {});
+        db.prepare(`UPDATE matches SET tg_kickoff_sent=1 WHERE id=?`).run(m.id);
+      }
+
+      // Send events that have elapsed but haven't been notified yet
+      const pendingEvents = db.prepare(`
+        SELECT * FROM match_events
+        WHERE match_id=? AND tg_notified=0 AND minute <= ?
+        ORDER BY minute ASC
+      `).all(m.id, Math.floor(elapsedSec));
+
+      for (const ev of pendingEvents) {
+        sendLiveEvent({
+          event: ev,
+          homeTeam: m.home_name, awayTeam: m.away_name,
+          homeScore: m.home_score, awayScore: m.away_score,
+          leagueName: m.league_name,
+        }).catch(() => {});
+        db.prepare(`UPDATE match_events SET tg_notified=1 WHERE id=?`).run(ev.id);
+      }
+    }
+  } catch(e) {
+    console.warn('[Scheduler] broadcastLiveEvents error:', e.message);
+  }
+}
+
 function finalizeExpiredMatches() {
   try {
     const db = getDb();
@@ -604,11 +660,36 @@ function finalizeExpiredMatches() {
       const r = db.prepare(`UPDATE matches SET status='finished' WHERE id=? AND status='in_progress'`).run(m.id);
       if (r.changes === 0) continue; // already handled by someone else
 
+      const ht = db.prepare(`SELECT name, logo_url, stadium_url FROM teams WHERE id=?`).get(m.home_team_id);
+      const at = db.prepare(`SELECT name, logo_url FROM teams WHERE id=?`).get(m.away_team_id);
+      const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
+
       if (!m.is_friendly) {
-        const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(m.home_team_id);
-        const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(m.away_team_id);
-        const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
         generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
+      }
+
+      // Send final result to live channel for league matches
+      if (m.league_id) {
+        const lg = db.prepare(`SELECT name, logo_url FROM leagues WHERE id=?`).get(m.league_id);
+        const goalEvents = db.prepare(`
+          SELECT e.event_type, e.minute, e.team_id, p.name as player_name, p2.name as assist_name
+          FROM match_events e
+          LEFT JOIN players p  ON e.player_id  = p.id
+          LEFT JOIN players p2 ON e.player2_id = p2.id
+          WHERE e.match_id = ? AND e.event_type IN ('goal','own_goal')
+          ORDER BY e.minute
+        `).all(m.id);
+        const base = `http://localhost:${process.env.PORT || 3000}`;
+        const toUrl = u => u ? (u.startsWith('http') ? u : base + u) : null;
+        sendMatchResultToLive({
+          matchId: m.id, homeTeam: ht.name, awayTeam: at.name,
+          homeScore: m.home_score, awayScore: m.away_score,
+          homeLogo: toUrl(ht?.logo_url), awayLogo: toUrl(at?.logo_url),
+          stadiumUrl: toUrl(ht?.stadium_url),
+          homeTeamId: m.home_team_id, awayTeamId: m.away_team_id,
+          leagueName: lg?.name || null, leagueLogoUrl: toUrl(lg?.logo_url),
+          goalEvents,
+        }).catch(() => {});
       }
 
       if (m.tournament_id) {
@@ -626,9 +707,10 @@ function startScheduler() {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  // Every minute – match previews + finalize expired live matches
+  // Every minute – match previews + finalize expired live matches + broadcast live events
   cron.schedule('* * * * *', () => {
     checkUpcomingMatches();
+    broadcastLiveEvents();
     finalizeExpiredMatches();
   });
 

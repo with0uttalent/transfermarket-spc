@@ -5,9 +5,10 @@ const { SocksProxyAgent } = require('socks-proxy-agent');
 const fetch  = require('node-fetch');
 const FormData = require('form-data');
 
-const TOKEN   = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const PROXY   = 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
+const TOKEN           = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID         = process.env.TELEGRAM_CHAT_ID;
+const LIVE_CHANNEL_ID = process.env.TELEGRAM_LIVE_CHANNEL_ID;
+const PROXY           = 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
 
 let agent = null;
 let _enabled = true; // runtime toggle; persisted via app_settings in DB
@@ -281,6 +282,79 @@ function escTg(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ── Live channel helpers ──────────────────────────────────────────────────────
+async function tgSendMessageToLive(text) {
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: LIVE_CHANNEL_ID, text, parse_mode: 'HTML' }),
+    agent,
+  });
+  return res.json();
+}
+
+async function tgSendPhotoToLive(photoBuffer, caption) {
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  const form = new FormData();
+  form.append('chat_id', LIVE_CHANNEL_ID);
+  form.append('photo', photoBuffer, { filename: 'match.png', contentType: 'image/png' });
+  form.append('caption', caption);
+  form.append('parse_mode', 'HTML');
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, {
+    method: 'POST', body: form, agent,
+  });
+  return res.json();
+}
+
+async function sendMatchKickoff({ homeTeam, awayTeam, leagueName, matchday }) {
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  try {
+    const leagueLine = leagueName ? `\n🏆 <i>${escTg(leagueName)}</i>${matchday ? ` · Тур ${matchday}` : ''}` : '';
+    const text = `🟢 <b>МАТЧ НАЧАЛСЯ!</b>${leagueLine}\n\n⚽ <b>${escTg(homeTeam)}</b> vs <b>${escTg(awayTeam)}</b>`;
+    await tgSendMessageToLive(text);
+  } catch(err) {
+    console.warn('[TelegramBot] sendMatchKickoff error:', err.message);
+  }
+}
+
+const LIVE_EV_ICON = {
+  goal: '⚽', own_goal: '🥅', yellow_card: '🟨', red_card: '🟥',
+  penalty_miss: '❌', injury: '🚑', substitution: '🔄',
+};
+
+async function sendLiveEvent({ event, homeTeam, awayTeam, homeScore, awayScore, leagueName }) {
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  if (!LIVE_EV_ICON[event.event_type]) return;
+  try {
+    const icon = LIVE_EV_ICON[event.event_type];
+    const minuteStr = event.minute ? `${event.minute}'` : '';
+    const desc = (event.description || '').replace(/[⚽🥅🟨🟥❌🚑🔄🧤🎯🔵🟡⏱]/gu, '').trim();
+    const leaguePfx = leagueName ? `<i>${escTg(leagueName)}</i> · ` : '';
+    const text = `${icon} ${minuteStr} ${leaguePfx}<b>${escTg(homeTeam)} ${homeScore}–${awayScore} ${escTg(awayTeam)}</b>\n${escTg(desc)}`;
+    await tgSendMessageToLive(text);
+  } catch(err) {
+    console.warn('[TelegramBot] sendLiveEvent error:', err.message);
+  }
+}
+
+async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, leagueName, leagueLogoUrl, goalEvents }) {
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  try {
+    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, 'finished', stadiumUrl, leagueName, leagueLogoUrl);
+    const homeGoals = (goalEvents || []).filter(e => e.team_id === homeTeamId);
+    const awayGoals = (goalEvents || []).filter(e => e.team_id === awayTeamId);
+    const homeStr = homeGoals.map(g => `${escTg(g.player_name || '?')} ${g.minute}'`).join(', ');
+    const awayStr = awayGoals.map(g => `${g.minute}' ${escTg(g.player_name || '?')}`).join(', ');
+    const goalsLine = (homeStr || awayStr) ? `\n${homeStr}  ⚽  ${awayStr}` : '';
+    const leaguePrefix = leagueName ? `🏅 <i>${escTg(leagueName)}</i>\n` : '';
+    const caption = `${leaguePrefix}🏁 <b>ФИНАЛ\n${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>${goalsLine}`.slice(0, 1024);
+    await tgSendPhotoToLive(imgBuf, caption);
+  } catch(err) {
+    console.warn('[TelegramBot] sendMatchResultToLive error:', err.message);
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, status, goalEvents, leagueName, leagueLogoUrl }) {
   if (!agent || !_enabled) return;
@@ -328,4 +402,4 @@ async function sendMatchPreview({ homeTeam, awayTeam, leagueName, matchDate, mat
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, setEnabled, isEnabled, generateMatchBanner };
+module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, setEnabled, isEnabled, generateMatchBanner };

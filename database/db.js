@@ -418,6 +418,8 @@ function initSchema() {
     `ALTER TABLE teams ADD COLUMN kit_home_url TEXT`,
     `ALTER TABLE teams ADD COLUMN kit_away_url TEXT`,
     `ALTER TABLE teams ADD COLUMN kit_third_url TEXT`,
+    `ALTER TABLE matches ADD COLUMN tg_kickoff_sent INTEGER DEFAULT 0`,
+    `ALTER TABLE match_events ADD COLUMN tg_notified INTEGER DEFAULT 0`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }
