@@ -3467,7 +3467,7 @@ async function renderLeagueDetail(app, id) {
         <button class="detail-tab" data-tab="assists">Ассистенты</button>
       </div>
       <div id="tab-standings" class="tab-panel active">${renderLeagueStandings(lg.standings)}</div>
-      <div id="tab-schedule" class="tab-panel">${renderLeagueSchedule(lg.schedule)}</div>
+      <div id="tab-schedule" class="tab-panel">${renderLeagueSchedule(lg.schedule, lg.match_start_time)}</div>
       <div id="tab-scorers" class="tab-panel">${renderLeagueTopScorers(lg.top_scorers)}</div>
       <div id="tab-assists" class="tab-panel">${renderLeagueTopAssists(lg.top_assists)}</div>
     `;
@@ -3513,7 +3513,7 @@ function renderLeagueStandings(standings) {
   </div>`;
 }
 
-function renderLeagueSchedule(schedule) {
+function renderLeagueSchedule(schedule, defaultStartTime) {
   // schedule may be an object {matchday: [rows]} or an array
   const allRows = Array.isArray(schedule)
     ? schedule
@@ -3540,7 +3540,8 @@ function renderLeagueSchedule(schedule) {
         <div class="matchday-header">${headerLabel}</div>
         ${grp.games.map(g => {
           const played = g.match_id && g.home_score !== null;
-          const timeStr = played ? '' : '<div class="mi-time">🕕 18:00 МСК</div>';
+          const displayTime = g.match_time || defaultStartTime || '16:00';
+          const timeStr = played ? '' : `<div class="mi-time">🕕 ${displayTime} МСК</div>`;
           return `<div class="matchday-item" ${g.match_id?`onclick="navigate('/matches/${g.match_id}')"`:''}>
             <div class="mi-team home">${escHtml(g.home_team_name||'–')}</div>
             <div class="mi-score-wrap">

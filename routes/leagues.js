@@ -162,7 +162,7 @@ router.get('/:id', (req, res) => {
   const scheduleRows = db.prepare(`
     SELECT ls.*,
            ht.name AS home_team_name, at.name AS away_team_name,
-           m.home_score, m.away_score, m.status AS match_status
+           m.home_score, m.away_score, m.status AS match_status, m.match_time
     FROM league_schedule ls
     JOIN teams ht ON ls.home_team_id = ht.id
     JOIN teams at ON ls.away_team_id = at.id
