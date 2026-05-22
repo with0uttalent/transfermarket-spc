@@ -61,10 +61,10 @@ router.put('/:teamId', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'lineup must be an array of {slot, player_id, position_override?}' });
   }
 
-  // Validate slots (1-22)
+  // Validate slots (starters 1-11, bench 12+)
   for (const entry of lineup) {
-    if (!entry.slot || entry.slot < 1 || entry.slot > 22) {
-      return res.status(400).json({ error: `Invalid slot ${entry.slot}. Slots must be between 1 and 22` });
+    if (!entry.slot || entry.slot < 1) {
+      return res.status(400).json({ error: `Invalid slot ${entry.slot}` });
     }
     if (!entry.player_id) {
       return res.status(400).json({ error: 'Each lineup entry must have a player_id' });
@@ -169,7 +169,6 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
     }
     let slot = 1;
     for (const player of players) {
-      if (slot > 22) break;
       const zone = slot <= 11 ? posToZone(player.position) : null;
       insert.run(teamId, player.id, slot, zone);
       slot++;

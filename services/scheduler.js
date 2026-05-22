@@ -392,11 +392,11 @@ function simulateLeagueMatchday(leagueId) {
 
     const homeStarters = homeLineup.filter(p => p.slot >= 1 && p.slot <= 11)
       .map(p => ({ ...p, position: p.position_override || p.position }));
-    const homeReserves = homeLineup.filter(p => p.slot >= 12 && p.slot <= 22)
+    const homeReserves = homeLineup.filter(p => p.slot >= 12)
       .map(p => ({ ...p, position: p.position_override || p.position }));
     const awayStarters = awayLineup.filter(p => p.slot >= 1 && p.slot <= 11)
       .map(p => ({ ...p, position: p.position_override || p.position }));
-    const awayReserves = awayLineup.filter(p => p.slot >= 12 && p.slot <= 22)
+    const awayReserves = awayLineup.filter(p => p.slot >= 12)
       .map(p => ({ ...p, position: p.position_override || p.position }));
 
     // If no lineup set, fall back to all active non-injured players
