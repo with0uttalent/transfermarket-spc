@@ -704,6 +704,85 @@ function finalizeExpiredMatches() {
   }
 }
 
+// Simulate a single league_schedule slot — called by cron when its time arrives
+function simulateSingleLeagueMatch(db, league, srow) {
+  const lineupRows = db.prepare(`
+    SELECT tl.slot, tl.player_id, tl.position_override,
+           p.id, p.name, p.position, p.market_value, p.status
+    FROM team_lineups tl
+    JOIN players p ON tl.player_id = p.id
+    WHERE tl.team_id = ?
+    ORDER BY tl.slot ASC
+  `);
+
+  const homeLineup = lineupRows.all(srow.home_team_id);
+  const awayLineup = lineupRows.all(srow.away_team_id);
+
+  const homeStarters = homeLineup.filter(p => p.slot >= 1 && p.slot <= 11)
+    .map(p => ({ ...p, position: p.position_override || p.position }));
+  const homeReserves = homeLineup.filter(p => p.slot >= 12)
+    .map(p => ({ ...p, position: p.position_override || p.position }));
+  const awayStarters = awayLineup.filter(p => p.slot >= 1 && p.slot <= 11)
+    .map(p => ({ ...p, position: p.position_override || p.position }));
+  const awayReserves = awayLineup.filter(p => p.slot >= 12)
+    .map(p => ({ ...p, position: p.position_override || p.position }));
+
+  let homePlayers, awayPlayers, useLineup = false;
+  if (homeStarters.length >= 7 && awayStarters.length >= 7) {
+    useLineup = true;
+  } else {
+    homePlayers = db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.home_team_id);
+    awayPlayers = db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.away_team_id);
+  }
+
+  const allPlayerIds = useLineup
+    ? [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves].map(p => p.player_id)
+    : [...(homePlayers||[]), ...(awayPlayers||[])].map(p => p.id);
+  const skillsMap = {};
+  if (allPlayerIds.length) {
+    const placeholders = allPlayerIds.map(() => '?').join(',');
+    const skillRows = db.prepare(`SELECT * FROM player_skills WHERE player_id IN (${placeholders})`).all(...allPlayerIds);
+    for (const sk of skillRows) skillsMap[sk.player_id] = sk;
+  }
+
+  const result = useLineup
+    ? simulateMatchWithLineup(srow.home_team_id, srow.away_team_id, homeStarters, homeReserves, awayStarters, awayReserves, skillsMap)
+    : simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers);
+
+  const now = new Date();
+  const pad2 = n => String(n).padStart(2, '0');
+  const matchTimeStr = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const today = now.toISOString().slice(0, 10);
+
+  const matchR = db.prepare(`
+    INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score)
+    VALUES (?,?,?,?,'in_progress',?,?,?,?,?)
+  `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, srow.matchday,
+         now.toISOString(), result.homeScore, result.awayScore);
+  const matchId = matchR.lastInsertRowid;
+
+  applyMatchResults(matchId, srow.home_team_id, srow.away_team_id, result);
+  db.prepare('UPDATE league_schedule SET match_id=? WHERE id=?').run(matchId, srow.id);
+
+  const { homeScore, awayScore } = result;
+  const homeWon = homeScore > awayScore, draw = homeScore === awayScore;
+  db.prepare(`UPDATE league_standings SET played=played+1, won=won+?, drawn=drawn+?, lost=lost+?, goals_for=goals_for+?, goals_against=goals_against+?, points=points+? WHERE league_id=? AND team_id=?`)
+    .run(homeWon?1:0, draw?1:0, (!homeWon&&!draw)?1:0, homeScore, awayScore, homeWon?3:draw?1:0, league.id, srow.home_team_id);
+  db.prepare(`UPDATE league_standings SET played=played+1, won=won+?, drawn=drawn+?, lost=lost+?, goals_for=goals_for+?, goals_against=goals_against+?, points=points+? WHERE league_id=? AND team_id=?`)
+    .run((!homeWon&&!draw)?1:0, draw?1:0, homeWon?1:0, awayScore, homeScore, (!homeWon&&!draw)?3:draw?1:0, league.id, srow.away_team_id);
+
+  db.prepare('UPDATE leagues SET current_matchday=? WHERE id=? AND current_matchday < ?').run(srow.matchday, league.id, srow.matchday);
+
+  const remaining = db.prepare(`SELECT COUNT(*) as cnt FROM league_schedule WHERE league_id=? AND match_id IS NULL`).get(league.id);
+  if (remaining.cnt === 0) {
+    const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 7);
+    db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`).run(windowEnd.toISOString().slice(0,10), league.id);
+    console.log(`[Scheduler] League ${league.id}: all matchdays done, entering transfer window`);
+  }
+
+  console.log(`[Scheduler] League ${league.id} MD${srow.matchday}: ${srow.home_name} ${homeScore}-${awayScore} ${srow.away_name} (started_at=${now.toISOString()})`);
+}
+
 function checkAndRunLeagueMatchdays() {
   try {
     const db = getDb();
@@ -712,24 +791,29 @@ function checkAndRunLeagueMatchdays() {
     const pad2 = n => String(n).padStart(2, '0');
     const currentTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 
-    // Find active leagues that have a matchday due today (scheduled_date <= today,
-    // no match created yet) and whose match_start_time has arrived
-    const leagues = db.prepare(`
-      SELECT DISTINCT l.id
-      FROM leagues l
-      JOIN league_schedule ls ON ls.league_id = l.id
+    // Find individual schedule slots whose scheduled_time has arrived
+    const dueSlots = db.prepare(`
+      SELECT ls.id, ls.matchday, ls.home_team_id, ls.away_team_id,
+             ht.name AS home_name, at.name AS away_name,
+             l.id AS league_id, l.name AS league_name,
+             l.match_start_time, l.match_interval_minutes
+      FROM league_schedule ls
+      JOIN leagues l ON ls.league_id = l.id
+      JOIN teams ht ON ls.home_team_id = ht.id
+      JOIN teams at ON ls.away_team_id = at.id
       WHERE l.status = 'active'
         AND ls.scheduled_date <= ?
         AND ls.match_id IS NULL
-        AND COALESCE(l.match_start_time, '16:00') <= ?
+        AND (ls.scheduled_time IS NOT NULL AND ls.scheduled_time <= ?)
+      ORDER BY ls.league_id, ls.matchday, ls.id
     `).all(today, currentTime);
 
-    for (const row of leagues) {
+    for (const srow of dueSlots) {
       try {
-        simulateLeagueMatchday(row.id);
-        console.log(`[Scheduler] Auto-simulated matchday for league ${row.id}`);
+        const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(srow.league_id);
+        simulateSingleLeagueMatch(db, league, srow);
       } catch(e) {
-        console.warn(`[Scheduler] Auto-sim league ${row.id} error:`, e.message);
+        console.warn(`[Scheduler] simulateSingleLeagueMatch ls.id=${srow.id} error:`, e.message);
       }
     }
   } catch(e) {

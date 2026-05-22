@@ -422,6 +422,8 @@ function initSchema() {
     `ALTER TABLE match_events ADD COLUMN tg_notified INTEGER DEFAULT 0`,
     `ALTER TABLE leagues ADD COLUMN match_start_time TEXT DEFAULT '16:00'`,
     `ALTER TABLE leagues ADD COLUMN match_interval_minutes INTEGER DEFAULT 15`,
+    `ALTER TABLE league_schedule ADD COLUMN scheduled_time TEXT`,
+    `ALTER TABLE leagues ADD COLUMN match_interval_minutes INTEGER DEFAULT 15`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

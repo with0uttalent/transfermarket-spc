@@ -264,18 +264,23 @@ router.post('/:id/start', requireAdmin, (req, res) => {
   // Clear existing schedule
   db.prepare('DELETE FROM league_schedule WHERE league_id=?').run(league.id);
 
+  const [sh, sm] = startTime.split(':').map(Number);
+  const pad2 = n => String(n).padStart(2, '0');
+
   const insertSchedule = db.prepare(`
-    INSERT INTO league_schedule (league_id, matchday, home_team_id, away_team_id, scheduled_date)
-    VALUES (?,?,?,?,?)
+    INSERT INTO league_schedule (league_id, matchday, home_team_id, away_team_id, scheduled_date, scheduled_time)
+    VALUES (?,?,?,?,?,?)
   `);
 
   for (let i = 0; i < roundsData.length; i++) {
     // evenly spread: matchday 0 = today, matchday N-1 = today+30
     const daysOffset = roundsData.length <= 1 ? 0 : Math.round(i * 30 / (roundsData.length - 1));
     const scheduledDate = dateAddDays(today, daysOffset);
-    for (const { home, away } of roundsData[i]) {
-      insertSchedule.run(league.id, i + 1, home, away, scheduledDate);
-    }
+    roundsData[i].forEach(({ home, away }, j) => {
+      const tot = sh * 60 + sm + j * intervalMin;
+      const slotTime = `${pad2(Math.floor(tot / 60) % 24)}:${pad2(tot % 60)}`;
+      insertSchedule.run(league.id, i + 1, home, away, scheduledDate, slotTime);
+    });
   }
 
   // Calculate budgets
@@ -588,12 +593,31 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
     ORDER BY m.matchday ASC, m.id ASC
   `).all(league.id);
 
+  // Update scheduled_time on not-yet-played league_schedule slots
+  const slots = db.prepare(`
+    SELECT id, matchday FROM league_schedule
+    WHERE league_id = ? AND match_id IS NULL
+    ORDER BY matchday ASC, id ASC
+  `).all(league.id);
+  const bySlot = {};
+  for (const s of slots) {
+    if (!bySlot[s.matchday]) bySlot[s.matchday] = [];
+    bySlot[s.matchday].push(s);
+  }
+  for (const daySlots of Object.values(bySlot)) {
+    daySlots.forEach((s, idx) => {
+      const tot = sh * 60 + sm + idx * intervalMin;
+      db.prepare(`UPDATE league_schedule SET scheduled_time=? WHERE id=?`)
+        .run(`${pad2(Math.floor(tot / 60) % 24)}:${pad2(tot % 60)}`, s.id);
+    });
+  }
+
+  // Also fix match_time on already-created unfinished matches
   const byMatchday = {};
   for (const m of matches) {
     if (!byMatchday[m.matchday]) byMatchday[m.matchday] = [];
     byMatchday[m.matchday].push(m);
   }
-
   let updated = 0;
   for (const dayMatches of Object.values(byMatchday)) {
     dayMatches.forEach((m, idx) => {
@@ -601,7 +625,6 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
       const h = Math.floor(totalMin / 60) % 24;
       const min = totalMin % 60;
       const timeStr = `${pad2(h)}:${pad2(min)}`;
-
       if (m.status === 'in_progress') {
         const kickoff = new Date();
         kickoff.setHours(h, min, 0, 0);
@@ -614,7 +637,7 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
     });
   }
 
-  res.json({ ok: true, updated });
+  res.json({ ok: true, slots: slots.length, matches: updated });
 });
 
 // ─── GET /:id/budget/:teamId ──────────────────────────────────────────────────
