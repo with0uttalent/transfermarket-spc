@@ -1328,6 +1328,8 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
 .mi-team.home { text-align: right; }
 .mi-score { font-size: 14px; font-weight: 700; color: var(--green); min-width: 50px; text-align: center; background: var(--bg-darker); border-radius: 4px; padding: 2px 8px; }
 .mi-score.pending { color: var(--text-muted); font-weight: 400; font-size: 12px; }
+.mi-score.live { color: #e74c3c; animation: pulse-live 1.5s ease-in-out infinite; }
+@keyframes pulse-live { 0%,100%{opacity:1} 50%{opacity:.6} }
 
 /* ── Top scorers table ──────────────────────────────────────── */
 .scorers-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }

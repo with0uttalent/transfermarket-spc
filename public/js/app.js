@@ -3467,7 +3467,7 @@ async function renderLeagueDetail(app, id) {
         <button class="detail-tab" data-tab="assists">Ассистенты</button>
       </div>
       <div id="tab-standings" class="tab-panel active">${renderLeagueStandings(lg.standings)}</div>
-      <div id="tab-schedule" class="tab-panel">${renderLeagueSchedule(lg.schedule, lg.match_start_time)}</div>
+      <div id="tab-schedule" class="tab-panel">${renderLeagueSchedule(lg.schedule, lg.match_start_time, lg.match_interval_minutes)}</div>
       <div id="tab-scorers" class="tab-panel">${renderLeagueTopScorers(lg.top_scorers)}</div>
       <div id="tab-assists" class="tab-panel">${renderLeagueTopAssists(lg.top_assists)}</div>
     `;
@@ -3513,13 +3513,17 @@ function renderLeagueStandings(standings) {
   </div>`;
 }
 
-function renderLeagueSchedule(schedule, defaultStartTime) {
+function renderLeagueSchedule(schedule, defaultStartTime, defaultIntervalMin) {
   // schedule may be an object {matchday: [rows]} or an array
   const allRows = Array.isArray(schedule)
     ? schedule
     : Object.values(schedule || {}).flat();
   if (!allRows.length) return `<div class="empty-state"><div class="empty-icon">📅</div><p>Расписание пока не составлено</p></div>`;
   const today = new Date().toISOString().substring(0, 10);
+  const pad2 = n => String(n).padStart(2, '0');
+  const [bh, bm] = (defaultStartTime || '16:00').split(':').map(Number);
+  const intervalMin = parseInt(defaultIntervalMin) || 15;
+
   // Group by calendar date (fall back to matchday if no date)
   const byGroup = {};
   const groupOrder = [];
@@ -3538,14 +3542,22 @@ function renderLeagueSchedule(schedule, defaultStartTime) {
       return `
       <div class="matchday-group${isToday ? ' matchday-today' : ''}">
         <div class="matchday-header">${headerLabel}</div>
-        ${grp.games.map(g => {
+        ${grp.games.map((g, gIdx) => {
           const played = g.match_id && g.home_score !== null;
-          const displayTime = g.match_time || defaultStartTime || '16:00';
+          const isLive = g.match_status === 'in_progress';
+          // Compute slot time: match_time from DB if available, else startTime + idx * interval
+          let displayTime = g.match_time;
+          if (!displayTime) {
+            const tot = bh * 60 + bm + gIdx * intervalMin;
+            displayTime = `${pad2(Math.floor(tot / 60) % 24)}:${pad2(tot % 60)}`;
+          }
           const timeStr = played ? '' : `<div class="mi-time">🕕 ${displayTime} МСК</div>`;
-          return `<div class="matchday-item" ${g.match_id?`onclick="navigate('/matches/${g.match_id}')"`:''}>
+          const clickable = g.match_id ? `onclick="navigate('/matches/${g.match_id}')" style="cursor:pointer"` : '';
+          const liveTag = isLive ? `<span class="live-dot" style="width:8px;height:8px;margin-right:2px"></span>` : '';
+          return `<div class="matchday-item" ${clickable}>
             <div class="mi-team home">${escHtml(g.home_team_name||'–')}</div>
             <div class="mi-score-wrap">
-              <div class="mi-score ${played?'':'pending'}">${played?`${g.home_score}–${g.away_score}`:'vs'}</div>
+              <div class="mi-score ${played?'':isLive?'live':'pending'}">${liveTag}${played?`${g.home_score}–${g.away_score}`:isLive?`${g.home_score||0}–${g.away_score||0}`:'vs'}</div>
               ${timeStr}
             </div>
             <div class="mi-team">${escHtml(g.away_team_name||'–')}</div>
