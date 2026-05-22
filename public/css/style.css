@@ -735,6 +735,27 @@ tbody td { padding: 10px 12px; vertical-align: middle; }
   border-radius: var(--radius);
   padding: 28px 24px 20px;
   margin-bottom: 20px;
+  overflow: hidden;
+}
+.sb-league-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.45);
+  margin: -28px -24px 20px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: rgba(255,255,255,0.92);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+.sb-league-logo {
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 50%;
 }
 .scoreboard .score-teams {
   display: grid;

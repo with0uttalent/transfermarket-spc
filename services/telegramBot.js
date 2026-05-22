@@ -233,28 +233,33 @@ async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, hom
     const stripH = 36;
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
     ctx.fillRect(0, 0, W, stripH);
-    // Thin accent line
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.fillRect(0, stripH - 1, W, 1);
 
-    const leagueImg = await tryLoadImage(leagueLogoUrl);
-    let textX = W / 2;
-    if (leagueImg) {
-      const logoSize = 22;
-      const logoX = W / 2 - 80;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(logoX + logoSize / 2, stripH / 2, logoSize / 2, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(leagueImg, logoX, (stripH - logoSize) / 2, logoSize, logoSize);
-      ctx.restore();
-      textX = logoX + logoSize + 8;
-    }
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
     ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = leagueImg ? 'left' : 'center';
-    ctx.fillText(leagueName, textX, stripH / 2 + 5);
-    ctx.textAlign = 'center';
+
+    const leagueImg = await tryLoadImage(leagueLogoUrl);
+    const logoSize = 22;
+    const gap = 8;
+    const textWidth = ctx.measureText(leagueName).width;
+
+    if (leagueImg) {
+      const totalWidth = logoSize + gap + textWidth;
+      const startX = (W - totalWidth) / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(startX + logoSize / 2, stripH / 2, logoSize / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(leagueImg, startX, (stripH - logoSize) / 2, logoSize, logoSize);
+      ctx.restore();
+      ctx.textAlign = 'left';
+      ctx.fillText(leagueName, startX + logoSize + gap, stripH / 2 + 5);
+      ctx.textAlign = 'center';
+    } else {
+      ctx.textAlign = 'center';
+      ctx.fillText(leagueName, W / 2, stripH / 2 + 5);
+    }
   }
 
   return canvas.toBuffer('image/png');
@@ -348,7 +353,7 @@ async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, a
     const awayStr = awayGoals.map(g => `${g.minute}' ${escTg(g.player_name || '?')}`).join(', ');
     const goalsLine = (homeStr || awayStr) ? `\n${homeStr}  ⚽  ${awayStr}` : '';
     const leaguePrefix = leagueName ? `🏅 <i>${escTg(leagueName)}</i>\n` : '';
-    const caption = `${leaguePrefix}🏁 <b>ФИНАЛ\n${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>${goalsLine}`.slice(0, 1024);
+    const caption = `${leaguePrefix}<b>МАТЧ ЗАВЕРШЁН\n${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>${goalsLine}`.slice(0, 1024);
     await tgSendPhotoToLive(imgBuf, caption);
   } catch(err) {
     console.warn('[TelegramBot] sendMatchResultToLive error:', err.message);

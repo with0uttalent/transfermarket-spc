@@ -2437,6 +2437,7 @@ async function renderMatchDetail(app, id) {
 
     app.innerHTML=`
       <div class="scoreboard" id="scoreboard" style="${stadiumStyle}">
+        ${match.league_name ? `<div class="sb-league-strip"><img src="${escHtml(match.league_logo_url||'')}" class="sb-league-logo" onerror="this.style.display='none'">${escHtml(match.league_name)}</div>` : ''}
         <div class="score-teams">
           <div class="score-team">
             ${teamLogoXL(match.home_logo,match.home_team_name)}
