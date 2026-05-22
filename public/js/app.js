@@ -3544,21 +3544,22 @@ function renderLeagueSchedule(schedule, defaultStartTime, defaultIntervalMin) {
       <div class="matchday-group${isToday ? ' matchday-today' : ''}">
         <div class="matchday-header">${headerLabel}</div>
         ${grp.games.map((g, gIdx) => {
-          const played = g.match_id && g.home_score !== null;
           const isLive = g.match_status === 'in_progress';
+          const played = g.match_id && g.match_status === 'finished' && g.home_score !== null;
           // Compute slot time: match_time from DB if available, else startTime + idx * interval
           let displayTime = g.match_time;
           if (!displayTime) {
             const tot = bh * 60 + bm + gIdx * intervalMin;
             displayTime = `${pad2(Math.floor(tot / 60) % 24)}:${pad2(tot % 60)}`;
           }
-          const timeStr = played ? '' : `<div class="mi-time">🕕 ${displayTime} МСК</div>`;
+          const timeStr = (played || isLive) ? '' : `<div class="mi-time">🕕 ${displayTime} МСК</div>`;
           const clickable = g.match_id ? `onclick="navigate('/matches/${g.match_id}')" style="cursor:pointer"` : '';
           const liveTag = isLive ? `<span class="live-dot" style="width:8px;height:8px;margin-right:2px"></span>` : '';
+          const scoreLabel = played ? `${g.home_score}–${g.away_score}` : isLive ? 'LIVE' : 'vs';
           return `<div class="matchday-item" ${clickable}>
             <div class="mi-team home">${escHtml(g.home_team_name||'–')}</div>
             <div class="mi-score-wrap">
-              <div class="mi-score ${played?'':isLive?'live':'pending'}">${liveTag}${played?`${g.home_score}–${g.away_score}`:isLive?`${g.home_score||0}–${g.away_score||0}`:'vs'}</div>
+              <div class="mi-score ${played?'':isLive?'live':'pending'}">${liveTag}${scoreLabel}</div>
               ${timeStr}
             </div>
             <div class="mi-team">${escHtml(g.away_team_name||'–')}</div>
