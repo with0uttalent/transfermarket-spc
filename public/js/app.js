@@ -3457,6 +3457,7 @@ async function renderLeagueDetail(app, id) {
           ${lg.status==='setup'?`<button class="btn btn-sm btn-green" onclick="startLeague(${lg.id})">Начать сезон</button>`:''}
           ${lg.status==='active'?`<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="simulateLeagueMatchday(${lg.id})">▶ Сыграть тур</button>`:''}
           ${lg.status==='transfer_window'?`<button class="btn btn-sm btn-green" onclick="leagueNextSeason(${lg.id})">→ Следующий сезон</button>`:''}
+          ${lg.status==='active'||lg.status==='setup' ? `<button class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="leagueReschedule(${lg.id})">🕐 Расписание</button>` : ''}
         </div>` : ''}
       </div>
       <div class="detail-tabs">
