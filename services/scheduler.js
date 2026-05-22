@@ -610,7 +610,7 @@ function broadcastLiveEvents() {
       LEFT JOIN leagues lg ON m.league_id = lg.id
       WHERE m.status = 'in_progress'
         AND m.started_at IS NOT NULL
-        AND m.league_id IS NOT NULL
+        AND (m.is_friendly IS NULL OR m.is_friendly = 0)
     `).all();
 
     for (const m of liveMatches) {
@@ -674,9 +674,9 @@ function finalizeExpiredMatches() {
         generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
       }
 
-      // Send final result to live channel for league matches
-      if (m.league_id) {
-        const lg = db.prepare(`SELECT name, logo_url FROM leagues WHERE id=?`).get(m.league_id);
+      // Send final result to live channel for all non-friendly matches
+      if (!m.is_friendly) {
+        const lg = m.league_id ? db.prepare(`SELECT name, logo_url FROM leagues WHERE id=?`).get(m.league_id) : null;
         const goalEvents = db.prepare(`
           SELECT e.event_type, e.minute, e.team_id, p.name as player_name, p2.name as assist_name
           FROM match_events e
