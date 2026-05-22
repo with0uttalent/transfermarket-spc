@@ -594,13 +594,16 @@ function checkUpcomingMatches() {
   }
 }
 
-function broadcastLiveEvents() {
+let _broadcastBusy = false;
+async function broadcastLiveEvents() {
+  if (_broadcastBusy) return;
+  _broadcastBusy = true;
   try {
     const db = getDb();
     const now = Date.now();
 
     const liveMatches = db.prepare(`
-      SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
+      SELECT m.id, m.home_team_id, m.away_team_id,
              m.started_at, m.league_id, m.matchday, m.tg_kickoff_sent,
              ht.name as home_name, at.name as away_name,
              lg.name as league_name
@@ -615,20 +618,26 @@ function broadcastLiveEvents() {
 
     for (const m of liveMatches) {
       const elapsedMs = now - new Date(m.started_at).getTime();
-      if (elapsedMs < 0) continue; // match hasn't started yet
-
+      if (elapsedMs < 0) continue;
       const elapsedSec = elapsedMs / 1000;
 
       // Send kickoff message once
       if (!m.tg_kickoff_sent) {
-        sendMatchKickoff({
+        await sendMatchKickoff({
           homeTeam: m.home_name, awayTeam: m.away_name,
           leagueName: m.league_name, matchday: m.matchday,
         }).catch(() => {});
         db.prepare(`UPDATE matches SET tg_kickoff_sent=1 WHERE id=?`).run(m.id);
       }
 
-      // Send events that have elapsed but haven't been notified yet
+      // Fetch all goal events for this match to compute live score at each moment
+      const allGoals = db.prepare(`
+        SELECT minute, event_type, team_id FROM match_events
+        WHERE match_id=? AND event_type IN ('goal','own_goal')
+        ORDER BY minute ASC
+      `).all(m.id);
+
+      // Send events that have elapsed but haven't been notified yet — sequentially to preserve order
       const pendingEvents = db.prepare(`
         SELECT * FROM match_events
         WHERE match_id=? AND tg_notified=0 AND minute <= ?
@@ -636,10 +645,21 @@ function broadcastLiveEvents() {
       `).all(m.id, Math.floor(elapsedSec));
 
       for (const ev of pendingEvents) {
-        sendLiveEvent({
+        // Compute live score at the moment of this event
+        let liveHome = 0, liveAway = 0;
+        for (const g of allGoals) {
+          if (g.minute > ev.minute) break;
+          if (g.event_type === 'goal') {
+            if (g.team_id === m.home_team_id) liveHome++; else liveAway++;
+          } else { // own_goal: scored against own team
+            if (g.team_id === m.home_team_id) liveAway++; else liveHome++;
+          }
+        }
+
+        await sendLiveEvent({
           event: ev,
           homeTeam: m.home_name, awayTeam: m.away_name,
-          homeScore: m.home_score, awayScore: m.away_score,
+          homeScore: liveHome, awayScore: liveAway,
           leagueName: m.league_name,
         }).catch(() => {});
         db.prepare(`UPDATE match_events SET tg_notified=1 WHERE id=?`).run(ev.id);
@@ -647,6 +667,8 @@ function broadcastLiveEvents() {
     }
   } catch(e) {
     console.warn('[Scheduler] broadcastLiveEvents error:', e.message);
+  } finally {
+    _broadcastBusy = false;
   }
 }
 
@@ -824,21 +846,32 @@ function checkAndRunLeagueMatchdays() {
   }
 }
 
+let _finalizeBusy = false;
+function finalizeExpiredMatchesSafe() {
+  if (_finalizeBusy) return;
+  _finalizeBusy = true;
+  try { finalizeExpiredMatches(); } finally { _finalizeBusy = false; }
+}
+
 function startScheduler() {
-  // Every 15 minutes – generate at least 2 player/team news items
+  // Every 15 minutes – generate player/team news
   cron.schedule('*/15 * * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  // Every minute – league matchday auto-sim + previews + finalize + broadcast live
+  // Every minute – league matchday auto-sim + previews
   cron.schedule('* * * * *', () => {
     checkAndRunLeagueMatchdays();
     checkUpcomingMatches();
-    broadcastLiveEvents();
-    finalizeExpiredMatches();
   });
 
-  console.log('[Scheduler] Crons: news/15min, league-sim+preview+finalize/1min.');
+  // Every 5 seconds – live broadcast and match finalization
+  setInterval(() => {
+    broadcastLiveEvents().catch(e => console.warn('[Scheduler] broadcastLiveEvents error:', e.message));
+    finalizeExpiredMatchesSafe();
+  }, 5000);
+
+  console.log('[Scheduler] Started: news/15min, league-sim/1min, live-broadcast/5s.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };
