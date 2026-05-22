@@ -2,7 +2,7 @@
 const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
-const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive } = require('./telegramBot');
+const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner } = require('./telegramBot');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -674,6 +674,64 @@ async function broadcastLiveEvents() {
   }
 }
 
+function checkAndSendMatchdayStandings(db, leagueId, matchday) {
+  try {
+    // Check if all matches of this matchday are finished
+    const pending = db.prepare(`
+      SELECT COUNT(*) as cnt FROM matches
+      WHERE league_id=? AND matchday=? AND status NOT IN ('finished')
+    `).get(leagueId, matchday);
+    if (pending.cnt > 0) return;
+
+    // Check we haven't already sent standings for this matchday
+    const league = db.prepare(`SELECT * FROM leagues WHERE id=?`).get(leagueId);
+    if (!league || (league.last_tg_standings_matchday || 0) >= matchday) return;
+
+    // Mark as sent
+    db.prepare(`UPDATE leagues SET last_tg_standings_matchday=? WHERE id=?`).run(matchday, leagueId);
+
+    // Fetch standings with form
+    const standings = db.prepare(`
+      SELECT ls.*, t.name AS team_name, t.logo_url,
+             ls.goals_for - ls.goals_against AS goal_diff
+      FROM league_standings ls
+      JOIN teams t ON ls.team_id = t.id
+      WHERE ls.league_id = ?
+      ORDER BY ls.points DESC, (ls.goals_for - ls.goals_against) DESC, ls.goals_for DESC
+    `).all(leagueId);
+
+    const standingsWithForm = standings.map(row => {
+      const matches = db.prepare(`
+        SELECT m.home_team_id, m.away_team_id, m.home_score, m.away_score
+        FROM league_schedule ls2
+        JOIN matches m ON ls2.match_id = m.id
+        WHERE ls2.league_id=? AND (ls2.home_team_id=? OR ls2.away_team_id=?)
+          AND m.status='finished'
+        ORDER BY ls2.matchday DESC LIMIT 5
+      `).all(leagueId, row.team_id, row.team_id);
+      const form = matches.reverse().map(m => {
+        const isHome = m.home_team_id === row.team_id;
+        const scored = isHome ? m.home_score : m.away_score;
+        const conceded = isHome ? m.away_score : m.home_score;
+        return scored > conceded ? 'W' : scored === conceded ? 'D' : 'L';
+      });
+      return { ...row, form };
+    });
+
+    const base = `http://localhost:${process.env.PORT || 3000}`;
+    const toUrl = u => u ? (u.startsWith('http') ? u : base + u) : null;
+
+    sendStandingsBanner({
+      leagueName: league.name,
+      leagueLogoUrl: toUrl(league.logo_url),
+      matchday,
+      standings: standingsWithForm,
+    }).catch(() => {});
+  } catch(e) {
+    console.warn('[Scheduler] checkAndSendMatchdayStandings error:', e.message);
+  }
+}
+
 function finalizeExpiredMatches() {
   try {
     const db = getDb();
@@ -694,11 +752,15 @@ function finalizeExpiredMatches() {
       const at = db.prepare(`SELECT name, logo_url FROM teams WHERE id=?`).get(m.away_team_id);
       const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
 
-      // generateMatchNews sends to group AND live channel (via sendMatchResultToLive inside it)
       if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
 
       if (m.tournament_id) {
         try { advanceTournamentWinner(m, m.home_score, m.away_score); } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
+      }
+
+      // After finalizing a league match, check if the entire matchday is done
+      if (m.league_id && m.matchday) {
+        checkAndSendMatchdayStandings(db, m.league_id, m.matchday);
       }
     }
   } catch(e) {

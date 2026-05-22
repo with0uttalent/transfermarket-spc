@@ -407,4 +407,212 @@ async function sendMatchPreview({ homeTeam, awayTeam, leagueName, matchDate, mat
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, setEnabled, isEnabled, generateMatchBanner };
+// ── Standings banner ──────────────────────────────────────────────────────────
+async function generateStandingsBanner(leagueName, leagueLogoUrl, matchday, standings) {
+  const SW = 800;
+  const ROW_H = 42;
+  const HEADER_H = 62;
+  const COL_H = 32;
+  const FOOTER_H = 30;
+  const SH = HEADER_H + COL_H + ROW_H * standings.length + FOOTER_H;
+  const base = `http://localhost:${process.env.PORT || 3000}`;
+  const toUrl = u => u ? (u.startsWith('http') ? u : base + u) : null;
+
+  const canvas = createCanvas(SW, SH);
+  const ctx = canvas.getContext('2d');
+
+  // Background
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, SW, SH);
+
+  // Header bar
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, SW, HEADER_H);
+
+  // League logo
+  const leagueImg = await tryLoadImage(leagueLogoUrl);
+  let textX = 20;
+  if (leagueImg) {
+    const ls = 38;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(20 + ls / 2, HEADER_H / 2, ls / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(leagueImg, 20, (HEADER_H - ls) / 2, ls, ls);
+    ctx.restore();
+    textX = 20 + ls + 12;
+  }
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillText(leagueName, textX, HEADER_H / 2 - 9);
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillText(`Тур ${matchday} · Итоговая таблица`, textX, HEADER_H / 2 + 11);
+
+  // Column header row
+  const colY = HEADER_H;
+  ctx.fillStyle = '#e9eef4';
+  ctx.fillRect(0, colY, SW, COL_H);
+  ctx.fillStyle = '#cbd5e1';
+  ctx.fillRect(0, colY + COL_H - 1, SW, 1);
+
+  const COLS = [
+    { label: '#',     cx: 20,  w: 28,  align: 'center' },
+    { label: 'КЛУБ',  cx: 58,  w: 210, align: 'left'   },
+    { label: 'И',     cx: 302, w: 36,  align: 'center' },
+    { label: 'В',     cx: 338, w: 36,  align: 'center' },
+    { label: 'Н',     cx: 374, w: 36,  align: 'center' },
+    { label: 'П',     cx: 410, w: 36,  align: 'center' },
+    { label: 'ЗГ',    cx: 446, w: 36,  align: 'center' },
+    { label: 'ПГ',    cx: 482, w: 36,  align: 'center' },
+    { label: 'РГ',    cx: 518, w: 36,  align: 'center' },
+    { label: 'ОЧ',    cx: 564, w: 46,  align: 'center' },
+    { label: 'ФОРМА', cx: 622, w: 162, align: 'center' },
+  ];
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = 'bold 11px sans-serif';
+  for (const c of COLS) {
+    ctx.textAlign = c.align;
+    ctx.fillText(c.label, c.align === 'left' ? c.cx : c.cx + c.w / 2, colY + COL_H / 2 + 4);
+  }
+
+  // Team rows
+  const totalTeams = standings.length;
+  const CL_SPOTS   = Math.min(2, totalTeams);
+  const EU_SPOTS   = Math.min(4, totalTeams);
+  const REL_SPOTS  = Math.min(3, totalTeams);
+
+  for (let i = 0; i < standings.length; i++) {
+    const s = standings[i];
+    const ry = HEADER_H + COL_H + i * ROW_H;
+    const pos = i + 1;
+
+    // Row bg
+    ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+    ctx.fillRect(0, ry, SW, ROW_H);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, ry + ROW_H - 1, SW, 1);
+
+    // Zone strip (left 4px)
+    if (pos <= CL_SPOTS) ctx.fillStyle = '#3b82f6';
+    else if (pos <= EU_SPOTS) ctx.fillStyle = '#f97316';
+    else if (pos > totalTeams - REL_SPOTS) ctx.fillStyle = '#ef4444';
+    else ctx.fillStyle = 'transparent';
+    if (pos <= CL_SPOTS || pos <= EU_SPOTS || pos > totalTeams - REL_SPOTS) {
+      ctx.fillRect(0, ry, 4, ROW_H);
+    }
+
+    // Position
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(pos), 34, ry + ROW_H / 2);
+
+    // Team logo
+    const teamImg = await tryLoadImage(toUrl(s.logo_url));
+    const ls = 26, lx = 58, ly = ry + (ROW_H - ls) / 2;
+    if (teamImg) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(lx + ls / 2, ry + ROW_H / 2, ls / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(teamImg, lx, ly, ls, ls);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.arc(lx + ls / 2, ry + ROW_H / 2, ls / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Team name (truncate if needed)
+    ctx.fillStyle = '#1e293b';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'left';
+    let name = s.team_name || '';
+    while (name.length > 1 && ctx.measureText(name).width > 168) name = name.slice(0, -1);
+    if (name !== s.team_name) name += '…';
+    ctx.fillText(name, lx + ls + 8, ry + ROW_H / 2 + 1);
+
+    // Numeric stats
+    const gd = s.goals_for - s.goals_against;
+    const stats = [
+      { val: s.played,       cx: 302 + 18 },
+      { val: s.won,          cx: 338 + 18 },
+      { val: s.drawn,        cx: 374 + 18 },
+      { val: s.lost,         cx: 410 + 18 },
+      { val: s.goals_for,    cx: 446 + 18 },
+      { val: s.goals_against, cx: 482 + 18 },
+      { val: gd >= 0 ? `+${gd}` : String(gd), cx: 518 + 18 },
+    ];
+    ctx.fillStyle = '#475569';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    for (const st of stats) ctx.fillText(String(st.val), st.cx, ry + ROW_H / 2 + 1);
+
+    // Points — bold blue
+    ctx.fillStyle = '#2563eb';
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillText(String(s.points), 564 + 23, ry + ROW_H / 2 + 1);
+
+    // Form badges
+    const form = s.form || [];
+    const bw = 22, bh = 22, bg = 3;
+    const totalBadgeW = form.length * bw + (form.length - 1) * bg;
+    let bx = 622 + (162 - totalBadgeW) / 2;
+    for (const f of form) {
+      const by = ry + (ROW_H - bh) / 2;
+      ctx.fillStyle = f === 'W' ? '#16a34a' : f === 'D' ? '#94a3b8' : '#dc2626';
+      roundRect(ctx, bx, by, bw, bh, 4);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(f, bx + bw / 2, by + bh / 2 + 1);
+      bx += bw + bg;
+    }
+  }
+
+  // Footer legend
+  const fy = HEADER_H + COL_H + standings.length * ROW_H;
+  ctx.fillStyle = '#f1f5f9';
+  ctx.fillRect(0, fy, SW, FOOTER_H);
+  ctx.fillStyle = '#e2e8f0';
+  ctx.fillRect(0, fy, SW, 1);
+
+  const legend = [
+    { color: '#3b82f6', label: 'Лига чемпионов' },
+    { color: '#f97316', label: 'Еврокубки' },
+    { color: '#ef4444', label: 'Вылет' },
+  ];
+  let lx2 = 16;
+  ctx.font = '11px sans-serif';
+  ctx.textBaseline = 'middle';
+  for (const l of legend) {
+    ctx.fillStyle = l.color;
+    ctx.fillRect(lx2, fy + 8, 12, 14);
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'left';
+    ctx.fillText(l.label, lx2 + 16, fy + FOOTER_H / 2);
+    lx2 += 16 + ctx.measureText(l.label).width + 20;
+  }
+
+  return canvas.toBuffer('image/png');
+}
+
+async function sendStandingsBanner({ leagueName, leagueLogoUrl, matchday, standings }) {
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  try {
+    const imgBuf = await generateStandingsBanner(leagueName, leagueLogoUrl, matchday, standings);
+    const caption = `📊 <b>${escTg(leagueName)}</b> · Тур ${matchday} завершён`;
+    await tgSendPhotoToLive(imgBuf, caption);
+  } catch(err) {
+    console.warn('[TelegramBot] sendStandingsBanner error:', err.message);
+  }
+}
+
+module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, setEnabled, isEnabled, generateMatchBanner };
