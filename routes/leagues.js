@@ -87,7 +87,7 @@ router.get('/', (req, res) => {
 
 // ─── POST / — create league ──────────────────────────────────────────────────
 router.post('/', requireAdmin, (req, res) => {
-  const { name, season, team_ids } = req.body;
+  const { name, season, team_ids, match_start_time, match_interval_minutes } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   if (!Array.isArray(team_ids) || team_ids.length < 2) {
     return res.status(400).json({ error: 'team_ids must be an array of at least 2 team IDs' });
@@ -101,8 +101,8 @@ router.post('/', requireAdmin, (req, res) => {
   }
 
   const result = db.prepare(
-    `INSERT INTO leagues (name, season, status) VALUES (?,?,?)`
-  ).run(name, season || 1, 'setup');
+    `INSERT INTO leagues (name, season, status, match_start_time, match_interval_minutes) VALUES (?,?,?,?,?)`
+  ).run(name, season || 1, 'setup', match_start_time || '16:00', match_interval_minutes || 15);
   const leagueId = result.lastInsertRowid;
 
   // Initialize standings rows
@@ -219,9 +219,9 @@ router.put('/:id', requireAdmin, (req, res) => {
   const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(req.params.id);
   if (!league) return res.status(404).json({ error: 'League not found' });
 
-  const { name, season, trophy_url, logo_url } = req.body;
-  db.prepare(`UPDATE leagues SET name=COALESCE(?,name), season=COALESCE(?,season), trophy_url=?, logo_url=? WHERE id=?`)
-    .run(name || null, season || null, trophy_url ?? league.trophy_url, logo_url ?? league.logo_url, league.id);
+  const { name, season, trophy_url, logo_url, match_start_time, match_interval_minutes } = req.body;
+  db.prepare(`UPDATE leagues SET name=COALESCE(?,name), season=COALESCE(?,season), trophy_url=?, logo_url=?, match_start_time=COALESCE(?,match_start_time), match_interval_minutes=COALESCE(?,match_interval_minutes) WHERE id=?`)
+    .run(name || null, season || null, trophy_url ?? league.trophy_url, logo_url ?? league.logo_url, match_start_time || null, match_interval_minutes || null, league.id);
   res.json(db.prepare('SELECT * FROM leagues WHERE id=?').get(league.id));
 });
 
@@ -256,9 +256,10 @@ router.post('/:id/start', requireAdmin, (req, res) => {
   const roundsData = generateDoubleRoundRobin(teamIds);
   const totalMatchdays = roundsData.length;
 
-  // Distribute dates over 30 days from today
+  // Distribute dates over 30 days from today (first matchday = today, last = today+30)
   const today = new Date().toISOString().slice(0, 10);
-  const daysPerMatchday = Math.max(1, Math.floor(30 / totalMatchdays));
+  const startTime = league.match_start_time || '16:00';
+  const intervalMin = league.match_interval_minutes || 15;
 
   // Clear existing schedule
   db.prepare('DELETE FROM league_schedule WHERE league_id=?').run(league.id);
@@ -269,7 +270,9 @@ router.post('/:id/start', requireAdmin, (req, res) => {
   `);
 
   for (let i = 0; i < roundsData.length; i++) {
-    const scheduledDate = dateAddDays(today, i * daysPerMatchday);
+    // evenly spread: matchday 0 = today, matchday N-1 = today+30
+    const daysOffset = roundsData.length <= 1 ? 0 : Math.round(i * 30 / (roundsData.length - 1));
+    const scheduledDate = dateAddDays(today, daysOffset);
     for (const { home, away } of roundsData[i]) {
       insertSchedule.run(league.id, i + 1, home, away, scheduledDate);
     }
@@ -356,6 +359,10 @@ router.post('/:id/simulate-matchday', requireAdmin, (req, res) => {
 
   const today = new Date().toISOString().slice(0, 10);
   const results = [];
+  const pad2 = n => String(n).padStart(2, '0');
+  const startTime = league.match_start_time || '16:00';
+  const [sh, sm] = startTime.split(':').map(Number);
+  let matchIndex = 0;
 
   for (const srow of scheduleRows) {
     // Get players for each team (active, not injured)
@@ -371,10 +378,14 @@ router.post('/:id/simulate-matchday', requireAdmin, (req, res) => {
         AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
     `).all(srow.away_team_id);
 
+    const totalMin = sh * 60 + sm + matchIndex * (league.match_interval_minutes || 15);
+    const matchTimeStr = `${pad2(Math.floor(totalMin/60)%24)}:${pad2(totalMin%60)}`;
+    matchIndex++;
+
     const matchR = db.prepare(`
       INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
-      VALUES (?,?,?,'16:00','scheduled',?,?)
-    `).run(srow.home_team_id, srow.away_team_id, today, league.id, matchday);
+      VALUES (?,?,?,?,'scheduled',?,?)
+    `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, matchday);
     const matchId = matchR.lastInsertRowid;
 
     // Simulate
@@ -557,6 +568,53 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     champion: champion ? champion.team_name : null,
     new_season: newSeason,
   });
+});
+
+// ─── POST /:id/reschedule — update match_time for all upcoming matches ────────
+router.post('/:id/reschedule', requireAdmin, (req, res) => {
+  const db = getDb();
+  const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(req.params.id);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+
+  const startTime = league.match_start_time || '16:00';
+  const intervalMin = league.match_interval_minutes || 15;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const pad2 = n => String(n).padStart(2, '0');
+
+  const matches = db.prepare(`
+    SELECT m.id, m.matchday, m.status, m.match_date
+    FROM matches m
+    WHERE m.league_id = ? AND m.status IN ('scheduled','in_progress')
+    ORDER BY m.matchday ASC, m.id ASC
+  `).all(league.id);
+
+  const byMatchday = {};
+  for (const m of matches) {
+    if (!byMatchday[m.matchday]) byMatchday[m.matchday] = [];
+    byMatchday[m.matchday].push(m);
+  }
+
+  let updated = 0;
+  for (const dayMatches of Object.values(byMatchday)) {
+    dayMatches.forEach((m, idx) => {
+      const totalMin = sh * 60 + sm + idx * intervalMin;
+      const h = Math.floor(totalMin / 60) % 24;
+      const min = totalMin % 60;
+      const timeStr = `${pad2(h)}:${pad2(min)}`;
+
+      if (m.status === 'in_progress') {
+        const kickoff = new Date();
+        kickoff.setHours(h, min, 0, 0);
+        db.prepare(`UPDATE matches SET match_time=?, started_at=?, tg_kickoff_sent=0 WHERE id=?`)
+          .run(timeStr, kickoff.toISOString(), m.id);
+      } else {
+        db.prepare(`UPDATE matches SET match_time=? WHERE id=?`).run(timeStr, m.id);
+      }
+      updated++;
+    });
+  }
+
+  res.json({ ok: true, updated });
 });
 
 // ─── GET /:id/budget/:teamId ──────────────────────────────────────────────────

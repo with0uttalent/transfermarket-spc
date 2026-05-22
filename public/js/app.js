@@ -3317,13 +3317,25 @@ async function showLeagueEditForm(lg) {
       <input type="text" id="le-trophy" value="${escHtml(lg.trophy_url||'')}" placeholder="https://…"/>
       ${lg.trophy_url?`<img src="${escHtml(lg.trophy_url)}" style="height:60px;margin-top:6px;object-fit:contain" onerror="this.style.display='none'">`:''}
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Время начала туров</label>
+        <input type="time" id="le-start-time" value="${lg.match_start_time || '16:00'}"/>
+      </div>
+      <div class="form-group">
+        <label>Интервал между матчами (мин)</label>
+        <input type="number" id="le-interval" value="${lg.match_interval_minutes || 15}" min="5" max="120"/>
+      </div>
+    </div>
   `, async () => {
     const name = document.getElementById('le-name').value.trim();
     const season = parseInt(document.getElementById('le-season').value) || lg.season;
     const logo_url = document.getElementById('le-logo').value.trim() || null;
     const trophy_url = document.getElementById('le-trophy').value.trim() || null;
+    const match_start_time = document.getElementById('le-start-time').value || '16:00';
+    const match_interval_minutes = parseInt(document.getElementById('le-interval').value) || 15;
     if (!name) { toast('Название обязательно', 'error'); return false; }
-    await PUT('/leagues/'+lg.id, { name, season, logo_url, trophy_url });
+    await PUT('/leagues/'+lg.id, { name, season, logo_url, trophy_url, match_start_time, match_interval_minutes });
     toast('Лига обновлена');
     navigate('/leagues/'+lg.id);
   });
@@ -3369,14 +3381,26 @@ async function showCreateLeagueForm() {
         ${teams.map(t => `<label class="team-check-item"><input type="checkbox" class="lg-team-cb" value="${t.id}"> ${teamLogoEl(t.logo_url,t.name)} ${escHtml(t.name)}</label>`).join('')}
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Время начала туров</label>
+        <input type="time" id="lg-start-time" value="16:00"/>
+      </div>
+      <div class="form-group">
+        <label>Интервал между матчами (мин)</label>
+        <input type="number" id="lg-interval" value="15" min="5" max="120"/>
+      </div>
+    </div>
   `, async () => {
     const name = document.getElementById('lg-name').value.trim();
     const season = parseInt(document.getElementById('lg-season').value) || 1;
     const team_ids = [...document.querySelectorAll('.lg-team-cb:checked')].map(cb => parseInt(cb.value));
+    const match_start_time = document.getElementById('lg-start-time').value || '16:00';
+    const match_interval_minutes = parseInt(document.getElementById('lg-interval').value) || 15;
     if (!name) { toast('Name required','error'); return false; }
     if (team_ids.length < 2) { toast('Select at least 2 teams','error'); return false; }
     if (team_ids.length > 20) { toast('Max 20 teams','error'); return false; }
-    await POST('/leagues', { name, season, team_ids });
+    await POST('/leagues', { name, season, team_ids, match_start_time, match_interval_minutes });
     toast('League created! Now click "Start Season" to generate the schedule.');
   });
 }
@@ -3398,6 +3422,15 @@ async function leagueNextSeason(id) {
   if (!confirm('Начать новый сезон?')) return;
   try { const r = await POST('/leagues/'+id+'/next-season', {}); toast(r.message || 'Новый сезон начат!'); router(); }
   catch(e) { toast(e.message,'error'); }
+}
+
+async function leagueReschedule(id) {
+  if (!confirm('Пересчитать расписание матчей по текущим настройкам времени?')) return;
+  try {
+    const r = await POST('/leagues/'+id+'/reschedule', {});
+    toast(`Расписание обновлено: ${r.updated} матчей`);
+    navigate('/leagues/'+id);
+  } catch(e) { toast(e.message,'error'); }
 }
 
 async function deleteLeague(id, name) {
