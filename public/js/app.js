@@ -3118,11 +3118,42 @@ async function renderAdmin(app) {
     <!-- Telegram settings -->
     <div class="card mt-3" id="tg-settings-card">
       <div class="card-header">Telegram Уведомления</div>
-      <div class="card-body" style="display:flex;align-items:center;gap:16px">
-        <label class="toggle-switch"><input type="checkbox" id="tg-enabled-toggle" onchange="saveTgEnabled(this.checked)"><span class="toggle-slider"></span></label>
-        <div>
-          <div style="font-weight:600">Отправка в Telegram</div>
-          <div style="font-size:13px;color:var(--text-muted)" id="tg-status-text">Загрузка…</div>
+      <div class="card-body">
+        <div style="display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:14px">
+          <label class="toggle-switch"><input type="checkbox" id="tg-enabled-toggle" onchange="saveTgEnabled(this.checked)"><span class="toggle-slider"></span></label>
+          <div>
+            <div style="font-weight:700">Мастер-переключатель</div>
+            <div style="font-size:13px;color:var(--text-muted)" id="tg-status-text">Загрузка…</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div>
+            <div style="font-weight:700;margin-bottom:10px;color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px">📢 Telegram Канал (лайв)</div>
+            ${[
+              ['tg_channel_events',    '⚽ Живые события матча', 'Голы, карточки, замены в реальном времени'],
+              ['tg_channel_results',   '🏁 Результаты матчей',   'Баннер с итоговым счётом'],
+              ['tg_channel_standings', '📊 Таблица после тура',  'Таблица лиги по завершении тура'],
+            ].map(([key, label, hint]) => `
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <label class="toggle-switch"><input type="checkbox" id="tg-${key}" onchange="saveTgNotif('${key}',this.checked)"><span class="toggle-slider"></span></label>
+                <div><div style="font-weight:600;font-size:14px">${label}</div><div style="font-size:12px;color:var(--text-muted)">${hint}</div></div>
+              </div>`).join('')}
+          </div>
+          <div>
+            <div style="font-weight:700;margin-bottom:10px;color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px">💬 Telegram Группа</div>
+            ${[
+              ['tg_group_results', '🏆 Результаты матчей', 'Баннер с итоговым счётом'],
+            ].map(([key, label, hint]) => `
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <label class="toggle-switch"><input type="checkbox" id="tg-${key}" onchange="saveTgNotif('${key}',this.checked)"><span class="toggle-slider"></span></label>
+                <div><div style="font-weight:600;font-size:14px">${label}</div><div style="font-size:12px;color:var(--text-muted)">${hint}</div></div>
+              </div>`).join('')}
+            <div style="margin-top:14px;padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;font-size:13px">
+              <div style="font-weight:600;margin-bottom:4px">Команды бота</div>
+              <div style="color:var(--text-muted)">/table — таблица лиги</div>
+              <div style="color:var(--text-muted)">/schedule — расписание туров</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3139,14 +3170,18 @@ async function renderAdmin(app) {
       </div>
     </div>
   `;
-  // Load Telegram toggle state
+  // Load Telegram settings
   GET('/admin/settings').then(s => {
     const toggle = document.getElementById('tg-enabled-toggle');
     const txt = document.getElementById('tg-status-text');
     if (!toggle) return;
     const on = s.telegram_enabled === '1';
     toggle.checked = on;
-    txt.textContent = on ? 'Включено — результаты матчей и новости тренеров отправляются в группу' : 'Выключено — уведомления не отправляются';
+    txt.textContent = on ? 'Включено' : 'Выключено — все уведомления отключены';
+    for (const key of ['tg_channel_events','tg_channel_results','tg_channel_standings','tg_group_results']) {
+      const el = document.getElementById(`tg-${key}`);
+      if (el) el.checked = s[key] !== '0';
+    }
   }).catch(()=>{});
 }
 
@@ -3229,8 +3264,15 @@ async function saveTgEnabled(checked) {
   try {
     await PUT('/admin/settings', { telegram_enabled: checked });
     const txt = document.getElementById('tg-status-text');
-    if (txt) txt.textContent = checked ? 'Включено — результаты матчей и новости тренеров отправляются в группу' : 'Выключено — уведомления не отправляются';
-    toast(checked ? 'Telegram уведомления включены' : 'Telegram уведомления выключены');
+    if (txt) txt.textContent = checked ? 'Включено' : 'Выключено — все уведомления отключены';
+    toast(checked ? 'Telegram включён' : 'Telegram выключен');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function saveTgNotif(key, checked) {
+  try {
+    await PUT('/admin/settings', { [key]: checked });
+    toast(checked ? 'Уведомление включено' : 'Уведомление выключено');
   } catch(e) { toast(e.message, 'error'); }
 }
 

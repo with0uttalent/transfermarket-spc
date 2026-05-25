@@ -69,12 +69,20 @@ app.listen(PORT, () => {
   }
   // Start Telegram bot
   try {
-    const { initBot, setEnabled } = require('./services/telegramBot');
+    const { initBot, setEnabled, setNotifSettings } = require('./services/telegramBot');
     initBot();
-    // Restore saved enabled state
+    // Restore saved settings
     const { getDb } = require('./database/db');
-    const saved = getDb().prepare("SELECT value FROM app_settings WHERE key='telegram_enabled'").get();
-    if (saved) setEnabled(saved.value === '1');
+    const db = getDb();
+    const rows = db.prepare('SELECT key, value FROM app_settings').all();
+    const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    if (map.telegram_enabled !== undefined) setEnabled(map.telegram_enabled === '1');
+    setNotifSettings({
+      channel_events:    map.tg_channel_events    !== '0',
+      channel_results:   map.tg_channel_results   !== '0',
+      channel_standings: map.tg_channel_standings !== '0',
+      group_results:     map.tg_group_results     !== '0',
+    });
   } catch (e) {
     console.warn('TelegramBot failed to start:', e.message);
   }

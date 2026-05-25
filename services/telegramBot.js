@@ -11,10 +11,20 @@ const LIVE_CHANNEL_ID = process.env.TELEGRAM_LIVE_CHANNEL_ID;
 const PROXY           = 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
 
 let agent = null;
-let _enabled = true; // runtime toggle; persisted via app_settings in DB
+let _enabled = true; // master switch
 
-function setEnabled(val) { _enabled = !!val; }
-function isEnabled()     { return _enabled; }
+// Per-type notification flags
+const _notif = {
+  channel_events:    true, // live events (goals, cards…) → channel
+  channel_results:   true, // match result banner → channel
+  channel_standings: true, // standings table after matchday → channel
+  group_results:     true, // match result banner → group
+};
+
+function setEnabled(val)          { _enabled = !!val; }
+function isEnabled()              { return _enabled; }
+function setNotifSettings(s)      { Object.assign(_notif, s); }
+function getNotifSettings()       { return { ..._notif }; }
 
 let _updateOffset = 0;
 
@@ -39,9 +49,11 @@ async function tgGetUpdates() {
     for (const upd of data.result) {
       _updateOffset = upd.update_id + 1;
       const text = (upd.message?.text || '').trim().toLowerCase();
+      const replyTo = upd.message.chat.id;
       if (text === '/table' || text === 'table') {
-        const replyTo = upd.message.chat.id;
         handleTableCommand(replyTo).catch(e => console.warn('[Bot] table cmd error:', e.message));
+      } else if (text === '/schedule' || text === 'schedule') {
+        handleScheduleCommand(replyTo).catch(e => console.warn('[Bot] schedule cmd error:', e.message));
       }
     }
   } catch { /* network errors are fine */ }
@@ -94,6 +106,62 @@ async function handleTableCommand(chatId) {
     }
   } catch(e) {
     console.warn('[Bot] handleTableCommand error:', e.message);
+  }
+}
+
+async function handleScheduleCommand(chatId) {
+  try {
+    const { getDb } = require('../database/db');
+    const db = getDb();
+
+    const leagues = db.prepare(
+      `SELECT id, name, current_matchday, total_matchdays FROM leagues WHERE status='active' ORDER BY id`
+    ).all();
+
+    if (!leagues.length) {
+      await tgSendMessageTo(chatId, '⚽ Нет активных лиг.');
+      return;
+    }
+
+    for (const league of leagues) {
+      // Show next 3 unplayed matchdays
+      const upcomingMatchdays = db.prepare(`
+        SELECT DISTINCT ls.matchday
+        FROM league_schedule ls
+        WHERE ls.league_id = ? AND ls.match_id IS NULL
+        ORDER BY ls.matchday ASC
+        LIMIT 3
+      `).all(league.id).map(r => r.matchday);
+
+      if (!upcomingMatchdays.length) {
+        await tgSendMessageTo(chatId, `<b>${escTg(league.name)}</b>\nВсе туры сыграны ✅`);
+        continue;
+      }
+
+      let msg = `📅 <b>${escTg(league.name)}</b> · Расписание\n`;
+      for (const md of upcomingMatchdays) {
+        const slots = db.prepare(`
+          SELECT ls.matchday, ls.scheduled_date, ls.scheduled_time,
+                 ht.name AS home_name, at.name AS away_name
+          FROM league_schedule ls
+          JOIN teams ht ON ls.home_team_id = ht.id
+          JOIN teams at ON ls.away_team_id = at.id
+          WHERE ls.league_id = ? AND ls.matchday = ?
+          ORDER BY ls.id ASC
+        `).all(league.id, md);
+
+        if (!slots.length) continue;
+        const date = slots[0].scheduled_date || '–';
+        msg += `\n<b>Тур ${md}</b> · ${date}\n`;
+        for (const s of slots) {
+          const time = s.scheduled_time || '–';
+          msg += `  ${time} МСК  ${escTg(s.home_name)} — ${escTg(s.away_name)}\n`;
+        }
+      }
+      await tgSendMessageTo(chatId, msg.trim());
+    }
+  } catch(e) {
+    console.warn('[Bot] handleScheduleCommand error:', e.message);
   }
 }
 
@@ -329,7 +397,7 @@ const LIVE_EV_ICON = {
 };
 
 async function sendLiveEvent({ event, homeTeam, awayTeam, homeScore, awayScore, leagueName }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_events) return;
   if (!LIVE_EV_ICON[event.event_type]) return;
   try {
     const icon = LIVE_EV_ICON[event.event_type];
@@ -344,7 +412,7 @@ async function sendLiveEvent({ event, homeTeam, awayTeam, homeScore, awayScore, 
 }
 
 async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, leagueName, leagueLogoUrl, goalEvents }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_results) return;
   try {
     const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, 'finished', stadiumUrl, leagueName, leagueLogoUrl);
     const homeGoals = (goalEvents || []).filter(e => e.team_id === homeTeamId);
@@ -362,7 +430,7 @@ async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, a
 
 // ── Public API ────────────────────────────────────────────────────────────────
 async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, status, goalEvents, leagueName, leagueLogoUrl }) {
-  if (!agent || !_enabled) return;
+  if (!agent || !_enabled || !_notif.group_results) return;
   try {
     const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl);
 
@@ -605,7 +673,7 @@ async function generateStandingsBanner(leagueName, leagueLogoUrl, matchday, stan
 }
 
 async function sendStandingsBanner({ leagueName, leagueLogoUrl, matchday, standings }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_standings) return;
   try {
     const imgBuf = await generateStandingsBanner(leagueName, leagueLogoUrl, matchday, standings);
     const caption = `📊 <b>${escTg(leagueName)}</b> · Тур ${matchday} завершён`;
@@ -615,4 +683,4 @@ async function sendStandingsBanner({ leagueName, leagueLogoUrl, matchday, standi
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, setEnabled, isEnabled, generateMatchBanner };
+module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, setEnabled, isEnabled, setNotifSettings, getNotifSettings, generateMatchBanner };

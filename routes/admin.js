@@ -7,24 +7,46 @@ const telegramBot = require('../services/telegramBot');
 
 const router = express.Router();
 
+const NOTIF_KEYS = ['tg_channel_events','tg_channel_results','tg_channel_standings','tg_group_results'];
+
+function syncNotifSettings(db) {
+  const rows = db.prepare('SELECT key, value FROM app_settings').all();
+  const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  telegramBot.setNotifSettings({
+    channel_events:    map.tg_channel_events    !== '0',
+    channel_results:   map.tg_channel_results   !== '0',
+    channel_standings: map.tg_channel_standings !== '0',
+    group_results:     map.tg_group_results     !== '0',
+  });
+}
+
 // ─── App settings ─────────────────────────────────────────────────────────────
 router.get('/settings', requireAdmin, (req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT key, value FROM app_settings').all();
   const settings = Object.fromEntries(rows.map(r => [r.key, r.value]));
-  // Sync runtime state
   settings.telegram_enabled = telegramBot.isEnabled() ? '1' : '0';
+  // Default notif flags to '1' if not yet set
+  for (const k of NOTIF_KEYS) if (settings[k] === undefined) settings[k] = '1';
   res.json(settings);
 });
 
 router.put('/settings', requireAdmin, (req, res) => {
   const db = getDb();
+  const save = db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)');
+
   const { telegram_enabled } = req.body;
   if (telegram_enabled !== undefined) {
     const val = telegram_enabled ? '1' : '0';
-    db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)').run('telegram_enabled', val);
+    save.run('telegram_enabled', val);
     telegramBot.setEnabled(telegram_enabled);
   }
+
+  for (const k of NOTIF_KEYS) {
+    if (req.body[k] !== undefined) save.run(k, req.body[k] ? '1' : '0');
+  }
+
+  syncNotifSettings(db);
   res.json({ ok: true });
 });
 
