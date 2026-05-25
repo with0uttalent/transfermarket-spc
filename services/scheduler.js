@@ -676,21 +676,22 @@ async function broadcastLiveEvents() {
 
 function checkAndSendMatchdayStandings(db, leagueId, matchday) {
   try {
-    // Check if all matches of this matchday are finished
+    // All slots in this matchday must have a match_id AND that match must be finished
     const pending = db.prepare(`
-      SELECT COUNT(*) as cnt FROM matches
-      WHERE league_id=? AND matchday=? AND status NOT IN ('finished')
+      SELECT COUNT(*) as cnt
+      FROM league_schedule ls
+      LEFT JOIN matches m ON ls.match_id = m.id
+      WHERE ls.league_id = ? AND ls.matchday = ?
+        AND (ls.match_id IS NULL OR m.status != 'finished')
     `).get(leagueId, matchday);
     if (pending.cnt > 0) return;
 
-    // Check we haven't already sent standings for this matchday
     const league = db.prepare(`SELECT * FROM leagues WHERE id=?`).get(leagueId);
     if (!league || (league.last_tg_standings_matchday || 0) >= matchday) return;
 
-    // Mark as sent
+    // Mark sent before async work to prevent duplicate sends
     db.prepare(`UPDATE leagues SET last_tg_standings_matchday=? WHERE id=?`).run(matchday, leagueId);
 
-    // Fetch standings with form
     const standings = db.prepare(`
       SELECT ls.*, t.name AS team_name, t.logo_url,
              ls.goals_for - ls.goals_against AS goal_diff
@@ -727,8 +728,36 @@ function checkAndSendMatchdayStandings(db, leagueId, matchday) {
       matchday,
       standings: standingsWithForm,
     }).catch(() => {});
+
+    console.log(`[Scheduler] Standings banner sent for league ${leagueId} matchday ${matchday}`);
   } catch(e) {
     console.warn('[Scheduler] checkAndSendMatchdayStandings error:', e.message);
+  }
+}
+
+// Runs every 5s — catches matchdays completed by any code path (cron OR GET route)
+function checkPendingMatchdayStandings() {
+  try {
+    const db = getDb();
+    const leagues = db.prepare(`
+      SELECT id FROM leagues WHERE status IN ('active', 'transfer_window')
+    `).all();
+
+    for (const { id: leagueId } of leagues) {
+      const league = db.prepare(`SELECT last_tg_standings_matchday, current_matchday FROM leagues WHERE id=?`).get(leagueId);
+      if (!league) continue;
+
+      const lastSent = league.last_tg_standings_matchday || 0;
+      const current  = league.current_matchday || 0;
+      if (current <= lastSent) continue;
+
+      // Check each matchday from lastSent+1 up to current
+      for (let md = lastSent + 1; md <= current; md++) {
+        checkAndSendMatchdayStandings(db, leagueId, md);
+      }
+    }
+  } catch(e) {
+    console.warn('[Scheduler] checkPendingMatchdayStandings error:', e.message);
   }
 }
 
@@ -756,11 +785,6 @@ function finalizeExpiredMatches() {
 
       if (m.tournament_id) {
         try { advanceTournamentWinner(m, m.home_score, m.away_score); } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
-      }
-
-      // After finalizing a league match, check if the entire matchday is done
-      if (m.league_id && m.matchday) {
-        checkAndSendMatchdayStandings(db, m.league_id, m.matchday);
       }
     }
   } catch(e) {
@@ -904,10 +928,11 @@ function startScheduler() {
     checkUpcomingMatches();
   });
 
-  // Every 5 seconds – live broadcast and match finalization
+  // Every 5 seconds – live broadcast, match finalization, matchday standings check
   setInterval(() => {
     broadcastLiveEvents().catch(e => console.warn('[Scheduler] broadcastLiveEvents error:', e.message));
     finalizeExpiredMatchesSafe();
+    checkPendingMatchdayStandings();
   }, 5000);
 
   console.log('[Scheduler] Started: news/15min, league-sim/1min, live-broadcast/5s.');
