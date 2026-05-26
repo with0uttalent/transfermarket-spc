@@ -134,7 +134,7 @@ function deliverPacksToAllCoaches(db) {
   const coaches  = db.prepare('SELECT c.id FROM coaches c WHERE c.team_id IS NOT NULL').all();
   const countries = db.prepare('SELECT id FROM countries').all();
 
-  const insertPlayer = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'in_pack',?,?,?)`);
+  const insertPlayer = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id, ovr_fixed) VALUES (?,?,?,'in_pack',?,?,?,?)`);
   const insertSkills = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
   const insertPack   = db.prepare(`INSERT INTO player_packs (coach_id, status) VALUES (?,?)`);
   const insertPackPl = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
@@ -150,7 +150,7 @@ function deliverPacksToAllCoaches(db) {
     for (const slot of PACK_SLOTS) {
       const d     = generatePackPlayerData(slot);
       const natId = countries.length ? pick(countries).id : null;
-      const pr    = insertPlayer.run(d.name, d.position, d.mv, d.dob, d.height, natId);
+      const pr    = insertPlayer.run(d.name, d.position, d.mv, d.dob, d.height, natId, d.ovr);
       insertSkills.run(pr.lastInsertRowid, d.skills.pace, d.skills.shooting, d.skills.passing, d.skills.defending, d.skills.physical);
       insertPackPl.run(packId, pr.lastInsertRowid, d.ovr, d.rarity);
     }
@@ -251,7 +251,7 @@ router.post('/generate-for-coach', requireAdmin, (req, res) => {
   if (existing) return res.status(400).json({ error: 'Coach already has a pending pack' });
 
   const countries = db.prepare('SELECT id FROM countries').all();
-  const insertPlayer  = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'in_pack',?,?,?)`);
+  const insertPlayer  = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id, ovr_fixed) VALUES (?,?,?,'in_pack',?,?,?,?)`);
   const insertSkills  = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
   const insertPackPl  = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
 
@@ -261,7 +261,7 @@ router.post('/generate-for-coach', requireAdmin, (req, res) => {
   for (const slot of PACK_SLOTS) {
     const d    = generatePackPlayerData(slot);
     const natId = countries.length ? pick(countries).id : null;
-    const pr   = insertPlayer.run(d.name, d.position, d.mv, d.dob, d.height, natId);
+    const pr   = insertPlayer.run(d.name, d.position, d.mv, d.dob, d.height, natId, d.ovr);
     insertSkills.run(pr.lastInsertRowid, d.skills.pace, d.skills.shooting, d.skills.passing, d.skills.defending, d.skills.physical);
     insertPackPl.run(packId, pr.lastInsertRowid, d.ovr, d.rarity);
   }

@@ -426,6 +426,7 @@ function initSchema() {
     `ALTER TABLE leagues ADD COLUMN match_interval_minutes INTEGER DEFAULT 15`,
     `ALTER TABLE league_schedule ADD COLUMN scheduled_time TEXT`,
     `ALTER TABLE leagues ADD COLUMN match_interval_minutes INTEGER DEFAULT 15`,
+    `ALTER TABLE players ADD COLUMN ovr_fixed INTEGER`,
     `CREATE TABLE IF NOT EXISTS player_packs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       coach_id INTEGER NOT NULL,

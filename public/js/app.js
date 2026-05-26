@@ -216,6 +216,14 @@ const OVR_WEIGHTS = {
 };
 
 function calcOverall(player, assignedSlot) {
+  // Pack players carry a fixed OVR that must not be recalculated
+  if (player.ovr_fixed != null) {
+    if (!assignedSlot) return player.ovr_fixed;
+    const naturalZone  = posToZone(player.position);
+    const assignedZone = slotToZone(assignedSlot);
+    if (!assignedZone || assignedZone === naturalZone) return player.ovr_fixed;
+    return Math.round(player.ovr_fixed * positionPenalty(naturalZone, assignedZone));
+  }
   const { pace, shooting, passing, defending, physical } = player;
   if (!pace && !shooting && !passing && !defending && !physical) return null;
   const naturalZone = posToZone(player.position);
