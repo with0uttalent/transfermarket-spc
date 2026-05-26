@@ -79,4 +79,42 @@ router.post('/:id/sell', requireAuth, (req, res) => {
   res.json({ ok: true, price });
 });
 
+// ─── DELETE /free-agents/:id (admin) ──────────────────────────────────────────
+router.delete('/:id', requireAdmin, (req, res) => {
+  const db       = getDb();
+  const playerId = parseInt(req.params.id);
+
+  const player = db.prepare('SELECT * FROM players WHERE id=?').get(playerId);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+  if (player.status !== 'free_agent' && player.status !== 'in_pack') {
+    return res.status(400).json({ error: 'Player is not a free agent' });
+  }
+
+  db.transaction(() => {
+    db.prepare(`UPDATE fa_auctions SET status='expired' WHERE player_id=? AND status='active'`).run(playerId);
+    db.prepare('DELETE FROM players WHERE id=?').run(playerId);
+  })();
+
+  res.json({ ok: true });
+});
+
+// ─── DELETE /free-agents (admin) — clear all ──────────────────────────────────
+router.delete('/', requireAdmin, (req, res) => {
+  const db = getDb();
+
+  db.transaction(() => {
+    // Expire all active auctions for free agents
+    db.prepare(`
+      UPDATE fa_auctions SET status='expired'
+      WHERE status='active'
+        AND player_id IN (SELECT id FROM players WHERE status='free_agent')
+    `).run();
+    // Delete all free agents (and in_pack players that haven't been assigned)
+    db.prepare(`DELETE FROM players WHERE status='free_agent' AND team_id IS NULL`).run();
+    db.prepare(`DELETE FROM players WHERE status='in_pack'`).run();
+  })();
+
+  res.json({ ok: true });
+});
+
 module.exports = router;

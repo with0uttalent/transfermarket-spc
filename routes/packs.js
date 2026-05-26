@@ -134,7 +134,7 @@ function deliverPacksToAllCoaches(db) {
   const coaches  = db.prepare('SELECT c.id FROM coaches c WHERE c.team_id IS NOT NULL').all();
   const countries = db.prepare('SELECT id FROM countries').all();
 
-  const insertPlayer = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'free_agent',?,?,?)`);
+  const insertPlayer = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'in_pack',?,?,?)`);
   const insertSkills = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
   const insertPack   = db.prepare(`INSERT INTO player_packs (coach_id, status) VALUES (?,?)`);
   const insertPackPl = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
@@ -219,12 +219,12 @@ router.post('/:id/pick', requireAuth, (req, res) => {
     while (usedSlots.has(slot)) slot++;
     db.prepare('INSERT OR IGNORE INTO team_lineups (team_id, player_id, slot) VALUES (?,?,?)').run(coach.team_id, player_id, slot);
 
-    // Others remain free agents (status already 'free_agent', team_id already NULL)
-    // Start auctions for the remaining pack players
+    // Move unchosen players from 'in_pack' to 'free_agent' and start auctions
     const others = packPlayers.filter(pp => pp.player_id != player_id);
     const now = new Date();
-    const endTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours from now
+    const endTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
     for (const pp of others) {
+      db.prepare(`UPDATE players SET status='free_agent' WHERE id=?`).run(pp.player_id);
       const p = db.prepare('SELECT market_value FROM players WHERE id=?').get(pp.player_id);
       if (!p) continue;
       const startBid = Math.max(100000, Math.round(p.market_value * 0.5 / 100000) * 100000);
@@ -251,7 +251,7 @@ router.post('/generate-for-coach', requireAdmin, (req, res) => {
   if (existing) return res.status(400).json({ error: 'Coach already has a pending pack' });
 
   const countries = db.prepare('SELECT id FROM countries').all();
-  const insertPlayer  = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'free_agent',?,?,?)`);
+  const insertPlayer  = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'in_pack',?,?,?)`);
   const insertSkills  = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
   const insertPackPl  = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
 

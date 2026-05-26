@@ -4679,7 +4679,10 @@ async function renderFreeAgents(app) {
     app.innerHTML = `
       <div class="page-header">
         <h2>🏪 Свободные агенты</h2>
-        <div style="color:var(--text-muted);font-size:13px">Ежедневный аукцион 15:00–17:00 • Шаг ставки: 100 000 €</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="color:var(--text-muted);font-size:13px">Ежедневный аукцион 15:00–17:00 • Шаг ставки: 100 000 €</div>
+          ${isAdmin() ? `<button class="btn btn-sm" style="background:#c0392b;color:#fff;border:none" onclick="clearAllFreeAgents()">🗑 Очистить всех</button>` : ''}
+        </div>
       </div>
       <div id="fa-content">
         ${renderFreeAgentsTable(freeAgents || [], auctionByPlayerId, canBid, myTeamId)}
@@ -4726,6 +4729,10 @@ function renderFreeAgentsTable(players, auctionMap, canBid, myTeamId) {
         }
       }
 
+      const deleteBtn = isAdmin()
+        ? `<button class="btn btn-sm" style="background:#c0392b;color:#fff;border:none;margin-left:4px" onclick="deleteFreeAgent(${p.id})" title="Удалить игрока">✕</button>`
+        : '';
+
       return `<tr class="clickable-row" onclick="navigate('/players/${p.id}')">
         <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div>
           <div class="font-bold">${escHtml(p.name)}</div>
@@ -4735,7 +4742,7 @@ function renderFreeAgentsTable(players, auctionMap, canBid, myTeamId) {
         <td><span style="font-weight:800;color:${ovrColor}">${ovr??'?'}</span></td>
         <td class="mv">${fmtValue(p.market_value)}</td>
         <td onclick="event.stopPropagation()">${auctionCell}</td>
-        <td onclick="event.stopPropagation()">${actionCell}</td>
+        <td onclick="event.stopPropagation()" style="white-space:nowrap">${actionCell}${deleteBtn}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div></div>`;
@@ -4757,6 +4764,24 @@ async function startAuction(playerId) {
   try {
     await POST('/auctions/start', { player_id: playerId });
     toast('Аукцион запущен!');
+    navigate('/free-agents');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function deleteFreeAgent(playerId) {
+  if (!confirm('Удалить этого свободного агента? Действие необратимо.')) return;
+  try {
+    await DEL('/free-agents/' + playerId);
+    toast('Игрок удалён');
+    navigate('/free-agents');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function clearAllFreeAgents() {
+  if (!confirm('Удалить ВСЕХ свободных агентов? Действие необратимо.')) return;
+  try {
+    await DEL('/free-agents');
+    toast('Все свободные агенты удалены');
     navigate('/free-agents');
   } catch(e) { toast(e.message, 'error'); }
 }
