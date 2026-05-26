@@ -129,21 +129,18 @@ router.get('/my', requireAuth, (req, res) => {
   res.json({ ...pack, players });
 });
 
-// ─── POST /packs/generate (admin) ─────────────────────────────────────────────
-router.post('/generate', requireAdmin, (req, res) => {
-  const db = getDb();
-
-  const coaches = db.prepare('SELECT c.id, c.team_id FROM coaches c WHERE c.team_id IS NOT NULL').all();
+// ─── Shared pack generation logic (used by route + scheduler) ────────────────
+function deliverPacksToAllCoaches(db) {
+  const coaches  = db.prepare('SELECT c.id FROM coaches c WHERE c.team_id IS NOT NULL').all();
   const countries = db.prepare('SELECT id FROM countries').all();
 
-  const insertPlayer  = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'free_agent',?,?,?)`);
-  const insertSkills  = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
-  const insertPack    = db.prepare(`INSERT INTO player_packs (coach_id, status) VALUES (?,?)`);
-  const insertPackPl  = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
+  const insertPlayer = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id) VALUES (?,?,?,'free_agent',?,?,?)`);
+  const insertSkills = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
+  const insertPack   = db.prepare(`INSERT INTO player_packs (coach_id, status) VALUES (?,?)`);
+  const insertPackPl = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
 
   let count = 0;
   for (const coach of coaches) {
-    // Skip if coach already has a pending pack
     const existing = db.prepare(`SELECT id FROM player_packs WHERE coach_id=? AND status='pending'`).get(coach.id);
     if (existing) continue;
 
@@ -151,16 +148,25 @@ router.post('/generate', requireAdmin, (req, res) => {
     const packId  = packRes.lastInsertRowid;
 
     for (const slot of PACK_SLOTS) {
-      const d  = generatePackPlayerData(slot);
+      const d     = generatePackPlayerData(slot);
       const natId = countries.length ? pick(countries).id : null;
-      const pr = insertPlayer.run(d.name, d.position, d.mv, d.dob, d.height, natId);
-      const playerId = pr.lastInsertRowid;
-      insertSkills.run(playerId, d.skills.pace, d.skills.shooting, d.skills.passing, d.skills.defending, d.skills.physical);
-      insertPackPl.run(packId, playerId, d.ovr, d.rarity);
+      const pr    = insertPlayer.run(d.name, d.position, d.mv, d.dob, d.height, natId);
+      insertSkills.run(pr.lastInsertRowid, d.skills.pace, d.skills.shooting, d.skills.passing, d.skills.defending, d.skills.physical);
+      insertPackPl.run(packId, pr.lastInsertRowid, d.ovr, d.rarity);
     }
     count++;
   }
 
+  // Record delivery timestamp
+  db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_pack_delivery', ?)`).run(new Date().toISOString());
+
+  return count;
+}
+
+// ─── POST /packs/generate (admin) ─────────────────────────────────────────────
+router.post('/generate', requireAdmin, (req, res) => {
+  const db    = getDb();
+  const count = deliverPacksToAllCoaches(db);
   res.json({ ok: true, count });
 });
 
@@ -264,3 +270,4 @@ router.post('/generate-for-coach', requireAdmin, (req, res) => {
 });
 
 module.exports = router;
+module.exports.deliverPacksToAllCoaches = deliverPacksToAllCoaches;

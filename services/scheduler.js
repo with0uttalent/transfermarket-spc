@@ -939,17 +939,32 @@ function startScheduler() {
     } catch(e) { console.warn('[Scheduler] Auction finalization error:', e.message); }
   }, 5000);
 
-  // Weekly pack delivery – every Monday at 10:00
-  cron.schedule('0 10 * * 1', () => {
+  // Pack delivery check – runs every minute, delivers once per 7 days at configured time
+  cron.schedule('* * * * *', () => {
     try {
       const db = getDb();
-      const setting = db.prepare(`SELECT value FROM app_settings WHERE key='pack_delivery_time'`).get();
-      // Only run if pack_delivery_time matches current hour (or if not set, run at 10:00)
-      const coaches = db.prepare('SELECT c.id FROM coaches c WHERE c.team_id IS NOT NULL').all();
-      const countries = db.prepare('SELECT id FROM countries').all();
-      const { generatePacksForCoaches } = require('../routes/packs');
-      // Inline generation since we can't easily call express route handler
-      console.log('[Scheduler] Weekly pack delivery triggered for', coaches.length, 'coaches');
+      const rows = db.prepare('SELECT key, value FROM app_settings WHERE key IN (?,?)').all('pack_delivery_time', 'last_pack_delivery');
+      const cfg  = Object.fromEntries(rows.map(r => [r.key, r.value]));
+
+      const deliveryTime = cfg.pack_delivery_time || '10:00'; // default Monday 10:00
+      const [hh, mm]     = deliveryTime.split(':').map(Number);
+      const now           = new Date();
+
+      // Only fire at the configured minute
+      if (now.getHours() !== hh || now.getMinutes() !== mm) return;
+
+      // Only on Mondays (can be made configurable later)
+      if (now.getDay() !== 1) return;
+
+      // Guard: skip if already delivered within the last 6 days
+      if (cfg.last_pack_delivery) {
+        const daysSince = (Date.now() - new Date(cfg.last_pack_delivery).getTime()) / 86400000;
+        if (daysSince < 6) return;
+      }
+
+      const { deliverPacksToAllCoaches } = require('../routes/packs');
+      const count = deliverPacksToAllCoaches(db);
+      console.log(`[Scheduler] Weekly pack delivery: ${count} packs sent at ${deliveryTime}`);
     } catch(e) { console.warn('[Scheduler] Pack delivery error:', e.message); }
   });
 
