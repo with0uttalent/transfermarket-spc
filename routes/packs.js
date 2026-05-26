@@ -130,21 +130,14 @@ router.get('/my', requireAuth, (req, res) => {
 });
 
 // ─── Shared pack generation logic (used by route + scheduler) ────────────────
-function deliverPacksToAllCoaches(db) {
-  const coaches  = db.prepare('SELECT c.id FROM coaches c WHERE c.team_id IS NOT NULL').all();
-  const countries = db.prepare('SELECT id FROM countries').all();
-
+function generatePackForCoach(db, coachId, countries) {
   const insertPlayer = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id, ovr_fixed) VALUES (?,?,?,'in_pack',?,?,?,?)`);
   const insertSkills = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
   const insertPack   = db.prepare(`INSERT INTO player_packs (coach_id, status) VALUES (?,?)`);
   const insertPackPl = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
 
-  let count = 0;
-  for (const coach of coaches) {
-    const existing = db.prepare(`SELECT id FROM player_packs WHERE coach_id=? AND status='pending'`).get(coach.id);
-    if (existing) continue;
-
-    const packRes = insertPack.run(coach.id, 'pending');
+  db.transaction(() => {
+    const packRes = insertPack.run(coachId, 'pending');
     const packId  = packRes.lastInsertRowid;
 
     for (const slot of PACK_SLOTS) {
@@ -154,12 +147,33 @@ function deliverPacksToAllCoaches(db) {
       insertSkills.run(pr.lastInsertRowid, d.skills.pace, d.skills.shooting, d.skills.passing, d.skills.defending, d.skills.physical);
       insertPackPl.run(packId, pr.lastInsertRowid, d.ovr, d.rarity);
     }
-    count++;
+  })();
+}
+
+function deliverPacksToAllCoaches(db) {
+  const coaches  = db.prepare('SELECT c.id, c.team_id FROM coaches c WHERE c.team_id IS NOT NULL').all();
+  const countries = db.prepare('SELECT id FROM countries').all();
+  const checkExisting = db.prepare(`SELECT id FROM player_packs WHERE coach_id=? AND status='pending'`);
+
+  console.log(`[Packs] Delivering to ${coaches.length} coaches with teams`);
+
+  let count = 0;
+  for (const coach of coaches) {
+    if (checkExisting.get(coach.id)) {
+      console.log(`[Packs] Coach ${coach.id} already has a pending pack — skip`);
+      continue;
+    }
+    try {
+      generatePackForCoach(db, coach.id, countries);
+      count++;
+      console.log(`[Packs] Pack generated for coach ${coach.id} (team ${coach.team_id})`);
+    } catch(e) {
+      console.error(`[Packs] Failed to generate pack for coach ${coach.id}:`, e.message);
+    }
   }
 
-  // Record delivery timestamp
   db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_pack_delivery', ?)`).run(new Date().toISOString());
-
+  console.log(`[Packs] Done: ${count} packs delivered`);
   return count;
 }
 
@@ -251,22 +265,9 @@ router.post('/generate-for-coach', requireAdmin, (req, res) => {
   if (existing) return res.status(400).json({ error: 'Coach already has a pending pack' });
 
   const countries = db.prepare('SELECT id FROM countries').all();
-  const insertPlayer  = db.prepare(`INSERT INTO players (name, position, market_value, status, date_of_birth, height, nationality_id, ovr_fixed) VALUES (?,?,?,'in_pack',?,?,?,?)`);
-  const insertSkills  = db.prepare(`INSERT OR IGNORE INTO player_skills (player_id, pace, shooting, passing, defending, physical) VALUES (?,?,?,?,?,?)`);
-  const insertPackPl  = db.prepare(`INSERT INTO pack_players (pack_id, player_id, ovr, rarity) VALUES (?,?,?,?)`);
+  generatePackForCoach(db, coach_id, countries);
 
-  const packRes = db.prepare(`INSERT INTO player_packs (coach_id, status) VALUES (?,?)`).run(coach_id, 'pending');
-  const packId  = packRes.lastInsertRowid;
-
-  for (const slot of PACK_SLOTS) {
-    const d    = generatePackPlayerData(slot);
-    const natId = countries.length ? pick(countries).id : null;
-    const pr   = insertPlayer.run(d.name, d.position, d.mv, d.dob, d.height, natId, d.ovr);
-    insertSkills.run(pr.lastInsertRowid, d.skills.pace, d.skills.shooting, d.skills.passing, d.skills.defending, d.skills.physical);
-    insertPackPl.run(packId, pr.lastInsertRowid, d.ovr, d.rarity);
-  }
-
-  res.json({ ok: true, pack_id: packId });
+  res.json({ ok: true });
 });
 
 module.exports = router;
