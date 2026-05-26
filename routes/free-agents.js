@@ -12,6 +12,7 @@ router.get('/', (req, res) => {
   const db = getDb();
   const players = db.prepare(`
     SELECT p.id, p.name, p.position, p.market_value, p.image_url, p.date_of_birth, p.height,
+           p.free_agent_since,
            c.flag_emoji, c.name AS nationality_name,
            sk.pace, sk.shooting, sk.passing, sk.defending, sk.physical,
            pp.rarity, p.ovr_fixed,
@@ -58,19 +59,11 @@ router.post('/:id/sell', requireAuth, (req, res) => {
   db.transaction(() => {
     // Remove from team lineup
     db.prepare('DELETE FROM team_lineups WHERE team_id=? AND player_id=?').run(coach.team_id, playerId);
-    // Set player as free agent
-    db.prepare(`UPDATE players SET team_id=NULL, status='free_agent' WHERE id=?`).run(playerId);
+    // Set player as free agent (auction starts at next 13:00 window)
+    const now = new Date().toISOString();
+    db.prepare(`UPDATE players SET team_id=NULL, status='free_agent', free_agent_since=? WHERE id=?`).run(now, playerId);
     // Add sale income to transfer budget
     db.prepare('UPDATE teams SET transfer_budget = transfer_budget + ? WHERE id=?').run(price, coach.team_id);
-    // Start auction for the player
-    const now = new Date();
-    // Auction ends at 17:00 today (or 2h from now if past 15:00)
-    const endTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-    const startBid = Math.max(100000, price);
-    try {
-      db.prepare(`INSERT OR IGNORE INTO fa_auctions (player_id, start_bid, start_time, end_time, status) VALUES (?,?,?,?,'active')`)
-        .run(playerId, startBid, now.toISOString(), endTime.toISOString());
-    } catch { /* already has auction */ }
   })();
 
   res.json({ ok: true, price });

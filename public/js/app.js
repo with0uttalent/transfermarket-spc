@@ -4688,7 +4688,7 @@ async function renderFreeAgents(app) {
       <div class="page-header">
         <h2>🏪 Свободные агенты</h2>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <div style="color:var(--text-muted);font-size:13px">Ежедневный аукцион 15:00–17:00 • Шаг ставки: 100 000 €</div>
+          <div style="color:var(--text-muted);font-size:13px">Ежедневный аукцион 13:00–17:00 • Шаг ставки: 100 000 € • Без ставок — удаление через 3 дня</div>
           ${isAdmin() ? `<button class="btn btn-sm" style="background:#c0392b;color:#fff;border:none" onclick="clearAllFreeAgents()">🗑 Очистить всех</button>` : ''}
         </div>
       </div>
@@ -4732,7 +4732,11 @@ function renderFreeAgentsTable(players, auctionMap, canBid, myTeamId) {
           actionCell = `<button class="btn btn-sm btn-green" onclick="placeBid(${a.id},${minBid},${p.id})">Ставка ${fmtValue(minBid)}</button>`;
         }
       } else {
-        auctionCell = '<span style="color:var(--text-muted);font-size:12px">Нет аукциона</span>';
+        const since = p.free_agent_since ? new Date(p.free_agent_since) : null;
+        const deadlineDate = since ? new Date(since.getTime() + 3 * 86400000) : null;
+        const daysLeft = deadlineDate ? Math.max(0, Math.ceil((deadlineDate - Date.now()) / 86400000)) : null;
+        const nextAuction = '<div style="font-size:12px;color:var(--text-muted)">⏳ Аукцион в 13:00' + (daysLeft !== null ? `<br><span style="font-size:11px">удаление через ${daysLeft} д.</span>` : '') + '</div>';
+        auctionCell = nextAuction;
         if (isAdmin()) {
           actionCell = `<button class="btn btn-sm btn-outline" onclick="startAuction(${p.id})">▶ Старт</button>`;
         }

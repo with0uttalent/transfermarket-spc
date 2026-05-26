@@ -467,6 +467,7 @@ function initSchema() {
       FOREIGN KEY (auction_id) REFERENCES fa_auctions(id) ON DELETE CASCADE,
       FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
     )`,
+    `ALTER TABLE players ADD COLUMN free_agent_since DATETIME`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

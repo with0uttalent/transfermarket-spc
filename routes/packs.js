@@ -249,19 +249,11 @@ router.post('/:id/pick', requireAuth, (req, res) => {
     while (usedSlots.has(slot)) slot++;
     db.prepare('INSERT OR IGNORE INTO team_lineups (team_id, player_id, slot) VALUES (?,?,?)').run(coach.team_id, player_id, slot);
 
-    // Move unchosen players from 'in_pack' to 'free_agent' and start auctions
+    // Move unchosen players from 'in_pack' to 'free_agent' (auction starts at next 13:00 window)
     const others = packPlayers.filter(pp => pp.player_id != player_id);
-    const now = new Date();
-    const endTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const now = new Date().toISOString();
     for (const pp of others) {
-      db.prepare(`UPDATE players SET status='free_agent' WHERE id=?`).run(pp.player_id);
-      const p = db.prepare('SELECT market_value FROM players WHERE id=?').get(pp.player_id);
-      if (!p) continue;
-      const startBid = Math.max(100000, Math.round(p.market_value * 0.5 / 100000) * 100000);
-      try {
-        db.prepare(`INSERT OR IGNORE INTO fa_auctions (player_id, start_bid, start_time, end_time, status) VALUES (?,?,?,?,'active')`)
-          .run(pp.player_id, startBid, now.toISOString(), endTime.toISOString());
-      } catch { /* already has active auction */ }
+      db.prepare(`UPDATE players SET status='free_agent', free_agent_since=? WHERE id=?`).run(now, pp.player_id);
     }
   })();
 

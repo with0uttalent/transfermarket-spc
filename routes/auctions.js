@@ -154,5 +154,60 @@ function finalizeExpiredAuctions(db) {
   return count;
 }
 
+function startDailyAuctions(db) {
+  const now = new Date();
+  const endTime = new Date(now);
+  endTime.setHours(17, 0, 0, 0);
+  if (endTime <= now) endTime.setDate(endTime.getDate() + 1); // safety: past 17:00
+
+  const freeAgents = db.prepare(`
+    SELECT p.id, p.market_value
+    FROM players p
+    WHERE p.status = 'free_agent' AND p.team_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM fa_auctions a WHERE a.player_id = p.id AND a.status = 'active'
+      )
+  `).all();
+
+  let count = 0;
+  for (const p of freeAgents) {
+    const startBid = Math.max(100000, Math.round(p.market_value * 0.5 / 100000) * 100000);
+    try {
+      db.prepare(`INSERT OR IGNORE INTO fa_auctions (player_id, start_bid, start_time, end_time, status) VALUES (?,?,?,?,'active')`)
+        .run(p.id, startBid, now.toISOString(), endTime.toISOString());
+      count++;
+    } catch { /* already has auction */ }
+  }
+
+  console.log(`[Auctions] Daily window opened at ${now.toISOString()}: ${count} auctions started (ends 17:00)`);
+  return count;
+}
+
+function cleanupStaleFreeAgents(db) {
+  // Delete free agents with no active auction who have been in the pool for 3+ days
+  const stale = db.prepare(`
+    SELECT p.id FROM players p
+    WHERE p.status = 'free_agent'
+      AND p.team_id IS NULL
+      AND p.free_agent_since IS NOT NULL
+      AND (julianday('now') - julianday(p.free_agent_since)) >= 3
+      AND NOT EXISTS (
+        SELECT 1 FROM fa_auctions a WHERE a.player_id = p.id AND a.status = 'active'
+      )
+  `).all();
+
+  if (!stale.length) return 0;
+
+  for (const p of stale) {
+    db.prepare(`UPDATE fa_auctions SET status='expired' WHERE player_id=? AND status='active'`).run(p.id);
+    db.prepare('DELETE FROM players WHERE id=?').run(p.id);
+  }
+
+  console.log(`[Auctions] Cleaned up ${stale.length} stale free agent(s) (3+ days, no bids)`);
+  return stale.length;
+}
+
 module.exports = router;
 module.exports.finalizeExpiredAuctions = finalizeExpiredAuctions;
+module.exports.startDailyAuctions = startDailyAuctions;
+module.exports.cleanupStaleFreeAgents = cleanupStaleFreeAgents;

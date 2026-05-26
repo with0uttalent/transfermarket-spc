@@ -939,6 +939,25 @@ function startScheduler() {
     } catch(e) { console.warn('[Scheduler] Auction finalization error:', e.message); }
   }, 5000);
 
+  // Every minute – daily auction window (13:00) + stale free agent cleanup
+  cron.schedule('* * * * *', () => {
+    try {
+      const db = getDb();
+      const now = new Date();
+      const { startDailyAuctions, cleanupStaleFreeAgents } = require('../routes/auctions');
+
+      // Open auction window at 13:00 every day
+      if (now.getHours() === 13 && now.getMinutes() === 0) {
+        startDailyAuctions(db);
+      }
+
+      // Cleanup stale free agents once a day at 17:05 (after auctions finalized)
+      if (now.getHours() === 17 && now.getMinutes() === 5) {
+        cleanupStaleFreeAgents(db);
+      }
+    } catch(e) { console.warn('[Scheduler] Auction window/cleanup error:', e.message); }
+  });
+
   // Pack delivery check – runs every minute, delivers once per 7 days at configured time
   cron.schedule('* * * * *', () => {
     try {
