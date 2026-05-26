@@ -150,19 +150,35 @@ function generatePackForCoach(db, coachId, countries) {
   })();
 }
 
-function deliverPacksToAllCoaches(db) {
-  const coaches  = db.prepare('SELECT c.id, c.team_id FROM coaches c WHERE c.team_id IS NOT NULL').all();
-  const countries = db.prepare('SELECT id FROM countries').all();
+// force=true: очищает нераскрытые паки и выдаёт всем заново (ручная выдача)
+// force=false: пропускает тренеров с нераскрытым паком (авто-доставка раз в неделю)
+function deliverPacksToAllCoaches(db, force = false) {
+  const coaches    = db.prepare('SELECT c.id, c.team_id FROM coaches c WHERE c.team_id IS NOT NULL').all();
+  const countries  = db.prepare('SELECT id FROM countries').all();
   const checkExisting = db.prepare(`SELECT id FROM player_packs WHERE coach_id=? AND status='pending'`);
 
-  console.log(`[Packs] Delivering to ${coaches.length} coaches with teams`);
+  console.log(`[Packs] Delivering to ${coaches.length} coaches (force=${force})`);
 
   let count = 0;
   for (const coach of coaches) {
-    if (checkExisting.get(coach.id)) {
-      console.log(`[Packs] Coach ${coach.id} already has a pending pack — skip`);
-      continue;
+    const existing = checkExisting.get(coach.id);
+
+    if (existing) {
+      if (!force) {
+        console.log(`[Packs] Coach ${coach.id} already has a pending pack — skip`);
+        continue;
+      }
+      // force: удалить нераскрытый пак вместе с его игроками (они ещё in_pack — просто удалятся каскадно)
+      db.transaction(() => {
+        const packPlayers = db.prepare('SELECT player_id FROM pack_players WHERE pack_id=?').all(existing.id);
+        for (const pp of packPlayers) {
+          db.prepare(`DELETE FROM players WHERE id=? AND status='in_pack'`).run(pp.player_id);
+        }
+        db.prepare('DELETE FROM player_packs WHERE id=?').run(existing.id);
+      })();
+      console.log(`[Packs] Cleared old pending pack for coach ${coach.id}`);
     }
+
     try {
       generatePackForCoach(db, coach.id, countries);
       count++;
@@ -177,10 +193,10 @@ function deliverPacksToAllCoaches(db) {
   return count;
 }
 
-// ─── POST /packs/generate (admin) ─────────────────────────────────────────────
+// ─── POST /packs/generate (admin, всегда force) ───────────────────────────────
 router.post('/generate', requireAdmin, (req, res) => {
   const db    = getDb();
-  const count = deliverPacksToAllCoaches(db);
+  const count = deliverPacksToAllCoaches(db, true);
   res.json({ ok: true, count });
 });
 
