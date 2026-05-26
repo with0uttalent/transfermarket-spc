@@ -136,6 +136,7 @@ function finalizeExpiredAuctions(db) {
     if (auction.bidder_team_id && auction.current_bid) {
       // Auction won: transfer player to winning team
       db.transaction(() => {
+        const player = db.prepare('SELECT * FROM players WHERE id=?').get(auction.player_id);
         db.prepare(`UPDATE players SET team_id=?, status='active' WHERE id=?`).run(auction.bidder_team_id, auction.player_id);
         db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(auction.current_bid, auction.bidder_team_id);
         // Add to lineup (bench)
@@ -144,6 +145,19 @@ function finalizeExpiredAuctions(db) {
         while (usedSlots.has(slot)) slot++;
         db.prepare('INSERT OR IGNORE INTO team_lineups (team_id, player_id, slot) VALUES (?,?,?)').run(auction.bidder_team_id, auction.player_id, slot);
         db.prepare(`UPDATE fa_auctions SET status='won' WHERE id=?`).run(auction.id);
+
+        // Insert transfer record
+        const today = new Date().toISOString().slice(0, 10);
+        db.prepare(`INSERT INTO transfers (player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type, notes) VALUES (?,NULL,?,?,?,'free_agent','FA Auction win')`)
+          .run(auction.player_id, auction.bidder_team_id, auction.current_bid, today);
+
+        // Notify winning coach
+        const winningCoach = db.prepare('SELECT id FROM coaches WHERE team_id=?').get(auction.bidder_team_id);
+        if (winningCoach && player) {
+          const fmtV = v => v >= 1e6 ? '€'+(v/1e6).toFixed(2)+'M' : v >= 1e3 ? '€'+(v/1e3).toFixed(0)+'K' : '€'+v;
+          db.prepare(`INSERT INTO coach_notifications (coach_id, title, body, type) VALUES (?,?,?,?)`)
+            .run(winningCoach.id, 'Игрок выкуплен!', `Вы выиграли аукцион на ${player.name} за ${fmtV(auction.current_bid)}`, 'auction_win');
+        }
       })();
     } else {
       // No bids — just expire

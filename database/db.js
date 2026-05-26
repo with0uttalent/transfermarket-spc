@@ -468,6 +468,30 @@ function initSchema() {
       FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
     )`,
     `ALTER TABLE players ADD COLUMN free_agent_since DATETIME`,
+    `CREATE TABLE IF NOT EXISTS coach_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      coach_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT,
+      type TEXT DEFAULT 'info',
+      read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS loan_offers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_team_id INTEGER NOT NULL,
+      to_team_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      offer_type TEXT NOT NULL DEFAULT 'loan_in',
+      loan_fee REAL DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      message TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (to_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

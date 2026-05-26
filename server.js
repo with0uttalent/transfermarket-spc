@@ -54,6 +54,7 @@ app.use('/api/admin',             require('./routes/admin'));
 app.use('/api/packs',            require('./routes/packs'));
 app.use('/api/free-agents',      require('./routes/free-agents'));
 app.use('/api/auctions',         require('./routes/auctions'));
+app.use('/api/notifications',    require('./routes/notifications'));
 
 // SPA fallback
 app.get('*', (req, res) => {

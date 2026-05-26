@@ -497,6 +497,26 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
       `${champion.team_name} завоевали титул ${league.name} в сезоне ${league.season}, набрав ${champion.points} очков. Поздравляем команду и тренерский штаб!`,
       'transfer'
     );
+
+    // Save champion to app_settings for banner
+    const champTeam = db.prepare('SELECT logo_url FROM teams WHERE id=?').get(champion.team_id);
+    const champData = {
+      team_id: champion.team_id,
+      team_name: champion.team_name,
+      league_name: league.name,
+      season: league.season,
+      points: champion.points,
+      logo_url: champTeam ? champTeam.logo_url : null,
+    };
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('league_champion', ?)`)
+      .run(JSON.stringify(champData));
+
+    // Notify champion's coach
+    const champCoach = db.prepare('SELECT id FROM coaches WHERE team_id=?').get(champion.team_id);
+    if (champCoach) {
+      db.prepare(`INSERT INTO coach_notifications (coach_id, title, body, type) VALUES (?,?,?,?)`)
+        .run(champCoach.id, '🏆 Вы чемпион!', `${champion.team_name} завоевали титул ${league.name} в сезоне ${league.season} с ${champion.points} очками!`, 'champion');
+    }
   }
 
   // Increment season number
