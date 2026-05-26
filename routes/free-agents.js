@@ -14,24 +14,21 @@ router.get('/', (req, res) => {
     SELECT p.id, p.name, p.position, p.market_value, p.image_url, p.date_of_birth, p.height,
            c.flag_emoji, c.name AS nationality_name,
            sk.pace, sk.shooting, sk.passing, sk.defending, sk.physical,
-           pp.rarity,
-           (
-             SELECT CAST(ROUND(
-               CASE p.position
-                 WHEN 'Goalkeeper' THEN (sk.defending*0.3 + sk.passing*0.15 + sk.physical*0.2 + sk.pace*0.1 + sk.shooting*0.05 + 20)
-                 WHEN 'Centre-Back' THEN (sk.defending*0.35 + sk.physical*0.25 + sk.passing*0.15 + sk.pace*0.15 + sk.shooting*0.1)
-                 WHEN 'Left-Back' THEN (sk.defending*0.3 + sk.pace*0.25 + sk.physical*0.2 + sk.passing*0.15 + sk.shooting*0.1)
-                 WHEN 'Right-Back' THEN (sk.defending*0.3 + sk.pace*0.25 + sk.physical*0.2 + sk.passing*0.15 + sk.shooting*0.1)
-                 WHEN 'Defensive Midfield' THEN (sk.defending*0.3 + sk.passing*0.25 + sk.physical*0.2 + sk.pace*0.1 + sk.shooting*0.15)
-                 WHEN 'Central Midfield' THEN (sk.passing*0.3 + sk.shooting*0.2 + sk.pace*0.2 + sk.defending*0.15 + sk.physical*0.15)
-                 WHEN 'Attacking Midfield' THEN (sk.shooting*0.3 + sk.passing*0.25 + sk.pace*0.2 + sk.physical*0.1 + sk.defending*0.15)
-                 WHEN 'Left Winger' THEN (sk.pace*0.3 + sk.shooting*0.3 + sk.passing*0.2 + sk.physical*0.1 + sk.defending*0.1)
-                 WHEN 'Right Winger' THEN (sk.pace*0.3 + sk.shooting*0.3 + sk.passing*0.2 + sk.physical*0.1 + sk.defending*0.1)
-                 ELSE (sk.shooting*0.35 + sk.pace*0.25 + sk.passing*0.15 + sk.physical*0.15 + sk.defending*0.1)
-               END
-             ) AS INTEGER)
-             FROM player_skills sk2 WHERE sk2.player_id = p.id
-           ) AS overall
+           pp.rarity, p.ovr_fixed,
+           COALESCE(p.ovr_fixed, CAST(ROUND(
+             CASE p.position
+               WHEN 'Goalkeeper'        THEN (sk.defending*0.3 + sk.passing*0.15 + sk.physical*0.2 + sk.pace*0.1 + sk.shooting*0.05 + 20)
+               WHEN 'Centre-Back'       THEN (sk.defending*0.35 + sk.physical*0.25 + sk.passing*0.15 + sk.pace*0.15 + sk.shooting*0.1)
+               WHEN 'Left-Back'         THEN (sk.defending*0.3 + sk.pace*0.25 + sk.physical*0.2 + sk.passing*0.15 + sk.shooting*0.1)
+               WHEN 'Right-Back'        THEN (sk.defending*0.3 + sk.pace*0.25 + sk.physical*0.2 + sk.passing*0.15 + sk.shooting*0.1)
+               WHEN 'Defensive Midfield' THEN (sk.defending*0.3 + sk.passing*0.25 + sk.physical*0.2 + sk.pace*0.1 + sk.shooting*0.15)
+               WHEN 'Central Midfield'  THEN (sk.passing*0.3 + sk.shooting*0.2 + sk.pace*0.2 + sk.defending*0.15 + sk.physical*0.15)
+               WHEN 'Attacking Midfield' THEN (sk.shooting*0.3 + sk.passing*0.25 + sk.pace*0.2 + sk.physical*0.1 + sk.defending*0.15)
+               WHEN 'Left Winger'       THEN (sk.pace*0.3 + sk.shooting*0.3 + sk.passing*0.2 + sk.physical*0.1 + sk.defending*0.1)
+               WHEN 'Right Winger'      THEN (sk.pace*0.3 + sk.shooting*0.3 + sk.passing*0.2 + sk.physical*0.1 + sk.defending*0.1)
+               ELSE (sk.shooting*0.35 + sk.pace*0.25 + sk.passing*0.15 + sk.physical*0.15 + sk.defending*0.1)
+             END
+           ) AS INTEGER)) AS overall
     FROM players p
     LEFT JOIN countries c ON p.nationality_id = c.id
     LEFT JOIN player_skills sk ON sk.player_id = p.id
