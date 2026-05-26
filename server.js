@@ -51,6 +51,9 @@ app.use('/api/transfer-offers', require('./routes/transfer-offers'));
 app.use('/api/lineups',           require('./routes/lineups'));
 app.use('/api/match-challenges',  require('./routes/match-challenges'));
 app.use('/api/admin',             require('./routes/admin'));
+app.use('/api/packs',            require('./routes/packs'));
+app.use('/api/free-agents',      require('./routes/free-agents'));
+app.use('/api/auctions',         require('./routes/auctions'));
 
 // SPA fallback
 app.get('*', (req, res) => {

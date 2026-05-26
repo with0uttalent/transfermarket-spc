@@ -61,21 +61,17 @@ router.put('/:teamId', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'lineup must be an array of {slot, player_id, position_override?}' });
   }
 
-  // Validate slots (starters 1-11, bench 12+)
+  // Validate slots and filter out stale players (transferred away)
+  const validLineup = [];
   for (const entry of lineup) {
-    if (!entry.slot || entry.slot < 1) {
-      return res.status(400).json({ error: `Invalid slot ${entry.slot}` });
-    }
-    if (!entry.player_id) {
-      return res.status(400).json({ error: 'Each lineup entry must have a player_id' });
-    }
-    // Validate player belongs to team
+    if (!entry.slot || entry.slot < 1 || !entry.player_id) continue;
     const player = db.prepare('SELECT id, team_id FROM players WHERE id=?').get(entry.player_id);
-    if (!player) return res.status(400).json({ error: `Player ${entry.player_id} not found` });
-    if (player.team_id != teamId) {
-      return res.status(400).json({ error: `Player ${entry.player_id} does not belong to this team` });
-    }
+    if (!player || player.team_id != teamId) continue; // skip stale entries silently
+    validLineup.push(entry);
   }
+  // Replace lineup with validated entries
+  lineup.length = 0;
+  lineup.push(...validLineup);
 
   // Check for duplicate slots or player_ids
   const slots = lineup.map(e => e.slot);

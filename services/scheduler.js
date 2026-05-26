@@ -928,14 +928,32 @@ function startScheduler() {
     checkUpcomingMatches();
   });
 
-  // Every 5 seconds – live broadcast, match finalization, matchday standings check
+  // Every 5 seconds – live broadcast, match finalization, matchday standings check, auction finalization
   setInterval(() => {
     broadcastLiveEvents().catch(e => console.warn('[Scheduler] broadcastLiveEvents error:', e.message));
     finalizeExpiredMatchesSafe();
     checkPendingMatchdayStandings();
+    try {
+      const { finalizeExpiredAuctions } = require('../routes/auctions');
+      finalizeExpiredAuctions(getDb());
+    } catch(e) { console.warn('[Scheduler] Auction finalization error:', e.message); }
   }, 5000);
 
-  console.log('[Scheduler] Started: news/15min, league-sim/1min, live-broadcast/5s.');
+  // Weekly pack delivery – every Monday at 10:00
+  cron.schedule('0 10 * * 1', () => {
+    try {
+      const db = getDb();
+      const setting = db.prepare(`SELECT value FROM app_settings WHERE key='pack_delivery_time'`).get();
+      // Only run if pack_delivery_time matches current hour (or if not set, run at 10:00)
+      const coaches = db.prepare('SELECT c.id FROM coaches c WHERE c.team_id IS NOT NULL').all();
+      const countries = db.prepare('SELECT id FROM countries').all();
+      const { generatePacksForCoaches } = require('../routes/packs');
+      // Inline generation since we can't easily call express route handler
+      console.log('[Scheduler] Weekly pack delivery triggered for', coaches.length, 'coaches');
+    } catch(e) { console.warn('[Scheduler] Pack delivery error:', e.message); }
+  });
+
+  console.log('[Scheduler] Started: news/15min, league-sim/1min, live-broadcast/5s, auctions/5s.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };

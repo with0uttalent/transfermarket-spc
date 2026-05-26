@@ -426,6 +426,46 @@ function initSchema() {
     `ALTER TABLE leagues ADD COLUMN match_interval_minutes INTEGER DEFAULT 15`,
     `ALTER TABLE league_schedule ADD COLUMN scheduled_time TEXT`,
     `ALTER TABLE leagues ADD COLUMN match_interval_minutes INTEGER DEFAULT 15`,
+    `CREATE TABLE IF NOT EXISTS player_packs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      coach_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      opened_at DATETIME,
+      FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS pack_players (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pack_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      ovr INTEGER NOT NULL,
+      rarity TEXT NOT NULL DEFAULT 'common',
+      kept INTEGER DEFAULT 0,
+      FOREIGN KEY (pack_id) REFERENCES player_packs(id) ON DELETE CASCADE,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS fa_auctions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id INTEGER NOT NULL UNIQUE,
+      start_bid REAL NOT NULL,
+      current_bid REAL,
+      bidder_team_id INTEGER,
+      start_time DATETIME NOT NULL,
+      end_time DATETIME NOT NULL,
+      status TEXT DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+      FOREIGN KEY (bidder_team_id) REFERENCES teams(id) ON DELETE SET NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS fa_bids (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      auction_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      bid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (auction_id) REFERENCES fa_auctions(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

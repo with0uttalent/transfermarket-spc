@@ -112,6 +112,9 @@ function escHtml(s) {
 function eventIcon(type) {
   return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',penalty_awarded:'🚨',var_review:'📺',injury:'🚑',save:'🧤',near_miss:'🎯',buildup:'🔵',free_kick:'🟡',corner_kick:'🚩'}[type]||'📋';
 }
+function descText(d) {
+  return escHtml((d||'').replace(/^[⚽🟨🟥🔄🚑🧤🎯🔵🚩📺🚨❌🟡]\s*/u, ''));
+}
 function newsIcon(type) {
   return {match:'⚽',tournament:'🏆',transfer:'🔄',rumor:'💬',injury:'🏥',scandal:'⚠️',team:'🏟️'}[type]||'📰';
 }
@@ -775,6 +778,7 @@ function router() {
   if (rawPath==='/leagues') return renderLeagues(app);
   if (parts[0]==='leagues'&&parts[1]) return renderLeagueDetail(app, parts[1]);
   if (rawPath==='/coach') return renderCoachDashboard(app);
+  if (rawPath==='/free-agents') { renderFreeAgents(app); return; }
   if (rawPath==='/admin') return renderAdmin(app);
   if (rawPath==='/news')  return renderNewsPage(app);
   if (rawPath==='/search') return renderSearch(app, params.q);
@@ -1685,9 +1689,11 @@ async function renderPlayerDetail(app, id) {
           <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="showPlayerForm(${playerJson})">✏️ Редактировать</button>
           <button class="btn btn-green" onclick="showQuickTransfer(${playerJson})">→ Перевести</button>
         </div>`
-      : isCoach()&&player.team_id!==State.coachProfile?.team_id
-        ? `<div class="pp-actions"><button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button><button class="btn btn-outline" onclick="showSwapOfferForm(${playerJson},${State.coachProfile?.team_id})">🔄 Обмен</button></div>`
-        : '';
+      : isCoach()&&player.team_id===State.coachProfile?.team_id
+        ? `<div class="pp-actions"><button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="sellPlayer(${player.id},${player.market_value||0})">💸 Продать (60%)</button></div>`
+        : isCoach()&&player.team_id!==State.coachProfile?.team_id
+          ? `<div class="pp-actions"><button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button><button class="btn btn-outline" onclick="showSwapOfferForm(${playerJson},${State.coachProfile?.team_id})">🔄 Обмен</button></div>`
+          : '';
 
     app.innerHTML=`
       <div class="pp-wrap">
@@ -2521,7 +2527,7 @@ function renderEventLog(events) {
     html += `<div class="event-log-item event-${e.event_type}${isBuild?' ev-buildup':''}">
       <span class="ev-min">${e.minute}'</span>
       <span class="ev-icon">${eventIcon(e.event_type)}</span>
-      <span class="ev-desc">${escHtml(e.description||'')}</span>
+      <span class="ev-desc">${descText(e.description)}</span>
     </div>`;
   }
   return html;
@@ -2721,7 +2727,7 @@ function startLiveMatchPoll(matchId) {
           const isBuild = ev.event_type === 'buildup';
           const item = document.createElement('div');
           item.className = `event-log-item event-${ev.event_type}${isBuild?' ev-buildup':''}`;
-          item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${escHtml(ev.description||'')}</span>`;
+          item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${descText(ev.description)}</span>`;
           logEl2.insertBefore(item, logEl2.firstChild);
         }
       }
@@ -3155,6 +3161,24 @@ async function renderAdmin(app) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">📦 Паки игроков</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:13px;color:var(--text-muted)">Время доставки паков (HH:MM)</label>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <input type="time" id="pack-time" value="10:00" style="padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);width:120px">
+            <button class="btn btn-outline" onclick="savePackTime()">Сохранить</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-green" onclick="generatePacks()">📦 Выдать паки всем тренерам</button>
+          <button class="btn btn-outline" onclick="testPackOpen()">🧪 Тест открытия пака</button>
+        </div>
+        <div id="pack-test-result"></div>
       </div>
     </div>
 
@@ -3703,6 +3727,7 @@ async function renderCoachDashboard(app) {
         <button class="detail-tab" data-tab="challenges" id="coach-tab-challenges">⚔️ Вызовы ${pendingChallenges?`<span class="badge badge-gold" id="coach-challenges-badge">${pendingChallenges}</span>`:`<span class="badge badge-gold hidden" id="coach-challenges-badge"></span>`}</button>
         <button class="detail-tab" data-tab="post-news">Новость клуба</button>
         <button class="detail-tab" data-tab="squad">Весь состав</button>
+        <button class="detail-tab" data-tab="pack">🎁 Пак</button>
         <button class="detail-tab" data-tab="settings">⚙️ Настройки</button>
       </div>
       <div id="tab-lineup" class="tab-panel active"></div>
@@ -3710,6 +3735,7 @@ async function renderCoachDashboard(app) {
       <div id="tab-challenges" class="tab-panel"></div>
       <div id="tab-post-news" class="tab-panel"></div>
       <div id="tab-squad" class="tab-panel"></div>
+      <div id="tab-pack" class="tab-panel"><div class="loading">Загрузка...</div></div>
       <div id="tab-settings" class="tab-panel"></div>
     `;
     setupTabs(app);
@@ -3744,6 +3770,9 @@ async function renderCoachDashboard(app) {
 
     // Render squad tab
     document.getElementById('tab-squad').innerHTML = renderSquadTab(team, true);
+
+    // Load pack tab
+    loadPackTab(coach);
 
     // Render settings tab
     document.getElementById('tab-settings').innerHTML = `
@@ -4628,6 +4657,290 @@ async function coachChangePassword() {
     document.getElementById('coach-pw-new').value = '';
     document.getElementById('coach-pw-cf').value = '';
   } catch(e) { toast(e.message,'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FREE AGENTS
+// ═══════════════════════════════════════════════════════════
+async function renderFreeAgents(app) {
+  app.innerHTML = '<div class="loading">Загрузка...</div>';
+  try {
+    const [freeAgents, auctions] = await Promise.all([
+      GET('/free-agents'),
+      GET('/auctions'),
+    ]);
+
+    const auctionByPlayerId = {};
+    for (const a of (auctions || [])) auctionByPlayerId[a.player_id] = a;
+
+    const canBid = isCoach() && State.coachProfile?.team_id;
+    const myTeamId = State.coachProfile?.team_id;
+
+    app.innerHTML = `
+      <div class="page-header">
+        <h2>🏪 Свободные агенты</h2>
+        <div style="color:var(--text-muted);font-size:13px">Ежедневный аукцион 15:00–17:00 • Шаг ставки: 100 000 €</div>
+      </div>
+      <div id="fa-content">
+        ${renderFreeAgentsTable(freeAgents || [], auctionByPlayerId, canBid, myTeamId)}
+      </div>`;
+  } catch(e) { app.innerHTML = `<div class="empty-state"><p>Ошибка: ${e.message}</p></div>`; }
+}
+
+function renderFreeAgentsTable(players, auctionMap, canBid, myTeamId) {
+  if (!players.length) return `<div class="empty-state"><div class="empty-icon">🏃</div><p>Свободных агентов нет</p></div>`;
+
+  const rarityColor = { common:'#95a5a6', uncommon:'#3498db', rare:'#9b59b6', epic:'#e67e22', legendary:'#f1c40f', icon:'#e74c3c' };
+  const rarityName = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный', icon:'🌟 Иконка' };
+
+  return `<div class="card"><div class="table-wrap"><table>
+    <thead><tr>
+      <th>Игрок</th><th>Позиция</th><th>OVR</th><th>Стоимость</th><th>Аукцион</th><th>Действие</th>
+    </tr></thead>
+    <tbody>${players.map(p => {
+      const a = auctionMap[p.id];
+      const ovr = p.overall;
+      const ovrColor = !ovr ? '#888' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
+      const rarity = p.rarity || 'common';
+      const rc = rarityColor[rarity] || '#888';
+      const rn = rarityName[rarity] || rarity;
+
+      let auctionCell = '–';
+      let actionCell = '';
+      if (a && a.status === 'active') {
+        const myBid = a.bidder_team_id === myTeamId;
+        const endTime = new Date(a.end_time).toLocaleTimeString('ru', {hour:'2-digit',minute:'2-digit'});
+        auctionCell = `<div style="font-size:12px">
+          <div>💰 ${fmtValue(a.current_bid || a.start_bid)}</div>
+          <div style="color:var(--text-muted)">до ${endTime}</div>
+          ${myBid ? '<div style="color:var(--green);font-size:11px">✓ Ваша ставка</div>' : ''}
+        </div>`;
+        if (canBid) {
+          const minBid = (a.current_bid || a.start_bid) + 100000;
+          actionCell = `<button class="btn btn-sm btn-green" onclick="placeBid(${a.id},${minBid},${p.id})">Ставка ${fmtValue(minBid)}</button>`;
+        }
+      } else {
+        auctionCell = '<span style="color:var(--text-muted);font-size:12px">Нет аукциона</span>';
+        if (isAdmin()) {
+          actionCell = `<button class="btn btn-sm btn-outline" onclick="startAuction(${p.id})">▶ Старт</button>`;
+        }
+      }
+
+      return `<tr class="clickable-row" onclick="navigate('/players/${p.id}')">
+        <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div>
+          <div class="font-bold">${escHtml(p.name)}</div>
+          <div style="font-size:11px;color:${rc}">${rn}</div>
+        </div></div></td>
+        <td>${escHtml(p.position||'–')}</td>
+        <td><span style="font-weight:800;color:${ovrColor}">${ovr??'?'}</span></td>
+        <td class="mv">${fmtValue(p.market_value)}</td>
+        <td onclick="event.stopPropagation()">${auctionCell}</td>
+        <td onclick="event.stopPropagation()">${actionCell}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div></div>`;
+}
+
+async function placeBid(auctionId, minBid, playerId) {
+  const amount = prompt(`Введите сумму ставки (мин. ${fmtValue(minBid)}):`, fmtValue(minBid).replace(/\s/g,''));
+  if (!amount) return;
+  const val = parseFloat(amount.replace(/[^\d.]/g, '')) * (amount.includes('M') || amount.includes('м') ? 1000000 : amount.includes('K') || amount.includes('к') ? 1000 : 1);
+  if (isNaN(val) || val < minBid) { toast(`Минимальная ставка: ${fmtValue(minBid)}`, 'error'); return; }
+  try {
+    await POST('/auctions/'+auctionId+'/bid', { amount: val });
+    toast('Ставка принята! 💰');
+    navigate('/free-agents');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function startAuction(playerId) {
+  try {
+    await POST('/auctions/start', { player_id: playerId });
+    toast('Аукцион запущен!');
+    navigate('/free-agents');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function sellPlayer(playerId, marketValue) {
+  const price = Math.round(marketValue * 0.6 / 50000) * 50000;
+  if (!confirm(`Продать игрока за ${fmtValue(price)} (60% от стоимости)? Игрок станет свободным агентом.`)) return;
+  try {
+    await POST('/free-agents/'+playerId+'/sell', {});
+    toast(`Игрок продан за ${fmtValue(price)}!`);
+    navigate('/coaches/me');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PLAYER PACKS
+// ═══════════════════════════════════════════════════════════
+async function loadPackTab(coach) {
+  const el = document.getElementById('tab-pack');
+  if (!el) return;
+  try {
+    const pack = await GET('/packs/my').catch(() => null);
+    el.innerHTML = renderPackTab(pack, coach);
+  } catch(e) { if (el) el.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+function renderPackTab(pack, coach) {
+  if (!pack || !pack.id) {
+    return `<div class="empty-state" style="padding:40px">
+      <div style="font-size:48px;margin-bottom:16px">📦</div>
+      <h3>Нет доступных паков</h3>
+      <p style="color:var(--text-muted)">Паки выдаются раз в неделю. Ожидайте следующей доставки.</p>
+    </div>`;
+  }
+
+  if (pack.status === 'opened') {
+    const kept = (pack.players||[]).find(p=>p.kept);
+    return `<div style="padding:24px;text-align:center">
+      <div style="font-size:48px;margin-bottom:8px">✅</div>
+      <h3>Пак уже открыт</h3>
+      ${kept ? `<p>Вы выбрали: <strong>${escHtml(kept.name)}</strong></p>` : ''}
+    </div>`;
+  }
+
+  const players = pack.players || [];
+  const rarityColor = { common:'#95a5a6', uncommon:'#3498db', rare:'#9b59b6', epic:'#e67e22', legendary:'#f1c40f', icon:'#e74c3c' };
+  const rarityName = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный', icon:'🌟 Иконка' };
+  const rarityGlow = { common:'none', uncommon:'0 0 12px rgba(52,152,219,0.7)', rare:'0 0 18px rgba(155,89,182,0.8)', epic:'0 0 24px rgba(230,126,34,0.9)', legendary:'0 0 30px rgba(241,196,15,1)', icon:'0 0 40px rgba(231,76,60,1)' };
+
+  return `
+    <div class="pack-container">
+      <div class="pack-header">
+        <h3>🎁 Еженедельный пак</h3>
+        <p style="color:var(--text-muted);font-size:13px">Выберите одного игрока. Остальные станут свободными агентами.</p>
+      </div>
+      <div class="pack-cards" id="pack-cards">
+        ${players.map((p, i) => {
+          const rarity = p.rarity || 'common';
+          const rc = rarityColor[rarity] || '#888';
+          const rn = rarityName[rarity] || rarity;
+          const glow = rarityGlow[rarity] || 'none';
+          const ovrColor = p.ovr>=80 ? '#f1c40f' : p.ovr>=70 ? '#2ecc71' : p.ovr>=60 ? '#3498db' : '#95a5a6';
+          const isSpecial = p.ovr >= 80;
+          return `
+            <div class="pack-card pack-card-hidden" id="pack-card-${p.id}" data-player-id="${p.id}" data-ovr="${p.ovr}" data-rarity="${rarity}" style="animation-delay:${i*0.15}s">
+              <div class="pack-card-back" onclick="revealPackCard(${p.id})">
+                <div class="pack-card-back-inner">
+                  <div style="font-size:32px">⚽</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.5)">Нажмите</div>
+                </div>
+              </div>
+              <div class="pack-card-front" style="display:none;box-shadow:${glow}">
+                <div class="pack-card-rarity" style="color:${rc}">${rn}</div>
+                <div class="pack-card-ovr-badge" style="color:${ovrColor}">${p.ovr}</div>
+                <div class="pack-card-avatar">${p.image_url?`<img src="${escHtml(p.image_url)}" style="width:60px;height:60px;border-radius:50%;object-fit:cover">`:`<div style="width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-size:24px">👤</div>`}</div>
+                <div class="pack-card-name">${escHtml(p.name)}</div>
+                <div class="pack-card-pos">${escHtml(p.position||'–')}</div>
+                <div class="pack-card-value">${fmtValue(p.market_value)}</div>
+                ${isSpecial?`<div class="pack-card-special">⭐ СПЕЦИАЛЬНАЯ КАРТА ⭐</div>`:''}
+                <button class="btn btn-green pack-pick-btn" onclick="pickPackPlayer(${pack.id},${p.id})">Взять в команду</button>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+      <div style="text-align:center;margin-top:16px">
+        <button class="btn btn-outline" onclick="revealAllPackCards()">Открыть все карты</button>
+      </div>
+    </div>`;
+}
+
+let _revealedCards = new Set();
+async function revealPackCard(playerId) {
+  if (_revealedCards.has(playerId)) return;
+  _revealedCards.add(playerId);
+  const card = document.getElementById('pack-card-'+playerId);
+  if (!card) return;
+
+  card.classList.add('pack-card-flipping');
+  await new Promise(r => setTimeout(r, 300));
+
+  const back = card.querySelector('.pack-card-back');
+  const front = card.querySelector('.pack-card-front');
+  if (back) back.style.display = 'none';
+  if (front) front.style.display = 'flex';
+  card.classList.remove('pack-card-hidden', 'pack-card-flipping');
+  card.classList.add('pack-card-revealed');
+
+  const ovr = parseInt(card.dataset.ovr);
+  if (ovr >= 80) {
+    card.classList.add('pack-card-special-anim');
+    setTimeout(() => card.classList.remove('pack-card-special-anim'), 2000);
+  }
+}
+
+async function revealAllPackCards() {
+  const cards = document.querySelectorAll('.pack-card-hidden');
+  for (const c of cards) {
+    const pid = parseInt(c.id.replace('pack-card-',''));
+    revealPackCard(pid);
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+async function pickPackPlayer(packId, playerId) {
+  if (!confirm('Взять этого игрока в команду? Остальные станут свободными агентами.')) return;
+  try {
+    await POST('/packs/'+packId+'/pick', { player_id: playerId });
+    toast('Игрок добавлен в команду! 🎉');
+    const el = document.getElementById('tab-pack');
+    if (el) el.innerHTML = `<div style="padding:40px;text-align:center">
+      <div style="font-size:64px">✅</div>
+      <h3>Отличный выбор!</h3>
+      <p>Игрок добавлен в состав команды.</p>
+      <button class="btn btn-green" onclick="navigate('/coaches/me')">Перейти в команду</button>
+    </div>`;
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ADMIN PACK CONTROLS
+// ═══════════════════════════════════════════════════════════
+async function savePackTime() {
+  const t = document.getElementById('pack-time')?.value;
+  if (!t) return;
+  try {
+    await PUT('/admin/settings', { pack_delivery_time: t });
+    toast('Время доставки сохранено!');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function generatePacks() {
+  if (!confirm('Выдать паки всем тренерам, у которых нет активного пака?')) return;
+  try {
+    const r = await POST('/packs/generate', {});
+    toast(`Паки выданы: ${r.count} тренерам`);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function testPackOpen() {
+  const el = document.getElementById('pack-test-result');
+  if (el) el.innerHTML = '<div class="loading">Генерация...</div>';
+  try {
+    const pack = await POST('/packs/test', {});
+    const rarityColor = { common:'#95a5a6', uncommon:'#3498db', rare:'#9b59b6', epic:'#e67e22', legendary:'#f1c40f', icon:'#e74c3c' };
+    const rarityName = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный', icon:'🌟 Иконка' };
+    if (el) el.innerHTML = `
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">🧪 Тестовый пак (не сохранён в БД)</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;padding:16px">
+          ${pack.players.map(p => {
+            const rc = rarityColor[p.rarity]||'#888';
+            const rn = rarityName[p.rarity]||p.rarity;
+            const ovrColor = p.ovr>=80?'#f1c40f':p.ovr>=70?'#2ecc71':p.ovr>=60?'#3498db':'#95a5a6';
+            return `<div class="pack-card-mini" style="border-color:${rc}">
+              <div style="color:${rc};font-size:11px;font-weight:700">${rn}</div>
+              <div style="font-size:22px;font-weight:900;color:${ovrColor}">${p.ovr}</div>
+              <div style="font-size:12px;font-weight:700">${escHtml(p.name)}</div>
+              <div style="font-size:11px;color:var(--text-muted)">${escHtml(p.position||'')}</div>
+              <div style="font-size:11px">${fmtValue(p.market_value)}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  } catch(e) { toast(e.message, 'error'); if(el) el.innerHTML=''; }
 }
 
 // ═══════════════════════════════════════════════════════════

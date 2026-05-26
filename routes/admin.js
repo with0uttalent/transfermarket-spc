@@ -35,12 +35,14 @@ router.put('/settings', requireAdmin, (req, res) => {
   const db = getDb();
   const save = db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)');
 
-  const { telegram_enabled } = req.body;
+  const { telegram_enabled, pack_delivery_time } = req.body;
   if (telegram_enabled !== undefined) {
     const val = telegram_enabled ? '1' : '0';
     save.run('telegram_enabled', val);
     telegramBot.setEnabled(telegram_enabled);
   }
+
+  if (pack_delivery_time) save.run('pack_delivery_time', pack_delivery_time);
 
   for (const k of NOTIF_KEYS) {
     if (req.body[k] !== undefined) save.run(k, req.body[k] ? '1' : '0');
