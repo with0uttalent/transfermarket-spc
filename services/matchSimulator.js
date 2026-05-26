@@ -157,16 +157,29 @@ function getPositionGroup(pos) {
 }
 
 function pickPositionSub(field, bench) {
-  if (!bench.length) return null;
+  // Only consider players explicitly marked as priority substitutes
+  const priorityBench = bench.filter(p => p.priority_sub);
+  if (!priorityBench.length) return null;
+
   const nonGK = field.filter(p => !GK_POSITIONS.has(p.position || ''));
   const off = nonGK.length ? pick(nonGK) : null;
   if (!off) return null;
+
   const offGroup = getPositionGroup(off.position || '');
-  const sameGroup = bench.filter(p => getPositionGroup(p.position || '') === offGroup);
+  const sameGroup = priorityBench.filter(p => getPositionGroup(p.position || '') === offGroup);
   const on = sameGroup.length
-    ? (sameGroup.find(p => p.priority_sub) || pick(sameGroup))
-    : (bench.find(p => p.priority_sub && !GK_POSITIONS.has(p.position || '')) || pick(bench.filter(p => !GK_POSITIONS.has(p.position || ''))) || pick(bench));
+    ? pick(sameGroup)
+    : (priorityBench.find(p => !GK_POSITIONS.has(p.position || '')) || null);
   return on ? { on, off } : null;
+}
+
+function pickInjurySub(injuredPlayer, availableBench) {
+  // For injury: pick best positional match from priority bench, ignoring GK restriction
+  const priorityBench = availableBench.filter(p => p.priority_sub);
+  if (!priorityBench.length) return null;
+  const injGroup = getPositionGroup(injuredPlayer.position || '');
+  const sameGroup = priorityBench.filter(p => getPositionGroup(p.position || '') === injGroup);
+  return sameGroup.length ? pick(sameGroup) : pick(priorityBench);
 }
 
 // ─── Match simulation core ────────────────────────────────────────────────────
@@ -296,6 +309,12 @@ function simulateMatchCore(
     else addFreeKick(minute, !isHome);
   }
 
+  const subsDone = { home:0, away:0 };
+
+  // Reserves for substitutions
+  const homeReserves = allHomePlayers.filter(p => !activeHome.find(f => f.id === p.id));
+  const awayReserves = allAwayPlayers.filter(p => !activeAway.find(f => f.id === p.id));
+
   function tryInjury(minute, isHome) {
     const field  = isHome ? activeHome : activeAway;
     const teamId = isHome ? homeTeamId : awayTeamId;
@@ -306,13 +325,18 @@ function simulateMatchCore(
       `🚑 ${player.name} травмирован! ${commentaryInjury(player.name)}`);
     injuredPlayers.push(player.id);
     removePlayer(player, isHome);
+
+    // Immediate forced replacement from priority bench — does NOT count against 3-sub limit
+    const reserves = isHome ? homeReserves : awayReserves;
+    const active   = isHome ? activeHome   : activeAway;
+    const available = reserves.filter(p => !active.find(f => f.id === p.id));
+    const sub = pickInjurySub(player, available);
+    if (sub) {
+      addEvent(minute, 'substitution', teamId, sub.id, player.id,
+        `🔄 Вынужденная замена: ${commentarySub(sub.name, player.name)}`);
+      active.push(sub);
+    }
   }
-
-  const subsDone = { home:0, away:0 };
-
-  // Reserves for substitutions
-  const homeReserves = allHomePlayers.filter(p => !activeHome.find(f => f.id === p.id));
-  const awayReserves = allAwayPlayers.filter(p => !activeAway.find(f => f.id === p.id));
 
   const RATE   = useSkillRate ? 0.018  : 0.013;
   const OFFSET = useSkillRate ? 0.5    : 4.5;
