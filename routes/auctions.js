@@ -25,6 +25,36 @@ router.get('/', (req, res) => {
   res.json(auctions);
 });
 
+// ─── GET /auctions/:id ───────────────────────────────────────────────────────
+router.get('/:id', (req, res) => {
+  const db = getDb();
+  const auctionId = parseInt(req.params.id);
+
+  const auction = db.prepare(`
+    SELECT a.id, a.player_id, a.start_bid, a.current_bid, a.bidder_team_id,
+           a.start_time, a.end_time, a.status,
+           p.name AS player_name, p.position, p.market_value, p.image_url,
+           p.ovr_fixed, p.date_of_birth, p.height,
+           bt.name AS bidder_team_name
+    FROM fa_auctions a
+    JOIN players p ON a.player_id = p.id
+    LEFT JOIN teams bt ON a.bidder_team_id = bt.id
+    WHERE a.id = ?
+  `).get(auctionId);
+
+  if (!auction) return res.status(404).json({ error: 'Auction not found' });
+
+  const bids = db.prepare(`
+    SELECT b.amount, b.bid_at, t.name AS team_name, t.id AS team_id
+    FROM fa_bids b
+    JOIN teams t ON b.team_id = t.id
+    WHERE b.auction_id = ?
+    ORDER BY b.amount DESC
+  `).all(auctionId);
+
+  res.json({ ...auction, bids });
+});
+
 // ─── POST /auctions/start (admin) ─────────────────────────────────────────────
 router.post('/start', requireAdmin, (req, res) => {
   const db = getDb();

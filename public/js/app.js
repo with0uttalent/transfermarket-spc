@@ -4721,10 +4721,11 @@ function renderFreeAgentsTable(players, auctionMap, canBid, myTeamId) {
       if (a && a.status === 'active') {
         const myBid = a.bidder_team_id === myTeamId;
         const endTime = new Date(a.end_time).toLocaleTimeString('ru', {hour:'2-digit',minute:'2-digit'});
-        auctionCell = `<div style="font-size:12px">
+        auctionCell = `<div style="font-size:12px;cursor:pointer" onclick="event.stopPropagation();showAuctionDetail(${a.id},${p.id})" title="Подробности аукциона">
           <div>💰 ${fmtValue(a.current_bid || a.start_bid)}</div>
           <div style="color:var(--text-muted)">до ${endTime}</div>
           ${myBid ? '<div style="color:var(--green);font-size:11px">✓ Ваша ставка</div>' : ''}
+          <div style="color:var(--accent);font-size:11px">🔍 Подробнее</div>
         </div>`;
         if (canBid) {
           const minBid = (a.current_bid || a.start_bid) + 100000;
@@ -4792,6 +4793,120 @@ async function clearAllFreeAgents() {
     toast('Все свободные агенты удалены');
     navigate('/free-agents');
   } catch(e) { toast(e.message, 'error'); }
+}
+
+let _auctionCountdownInterval = null;
+
+async function showAuctionDetail(auctionId, playerId) {
+  let modal = document.getElementById('auction-detail-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'auction-detail-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    modal.addEventListener('click', e => { if (e.target === modal) closeAuctionModal(); });
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = '<div class="card" style="width:100%;max-width:520px;max-height:85vh;overflow-y:auto;padding:24px"><div class="loading">Загрузка...</div></div>';
+  modal.style.display = 'flex';
+
+  try {
+    const data = await GET('/auctions/' + auctionId);
+    _renderAuctionModal(modal, data, auctionId, playerId);
+  } catch(e) {
+    modal.querySelector('.card').innerHTML = `<p style="color:var(--red)">Ошибка: ${escHtml(e.message)}</p><button class="btn btn-sm btn-outline" onclick="closeAuctionModal()">Закрыть</button>`;
+  }
+}
+
+function _renderAuctionModal(modal, data, auctionId, playerId) {
+  if (_auctionCountdownInterval) { clearInterval(_auctionCountdownInterval); _auctionCountdownInterval = null; }
+
+  const endDate = new Date(data.end_time);
+  const canBid = isCoach() && State.coachProfile?.team_id;
+  const myTeamId = State.coachProfile?.team_id;
+  const minBid = (data.current_bid || data.start_bid) + 100000;
+  const ovr = data.ovr_fixed;
+  const ovrColor = !ovr ? '#888' : ovr>=90 ? '#e74c3c' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
+
+  function timeLeft() {
+    const diff = endDate - Date.now();
+    if (diff <= 0) return '<span style="color:var(--red)">Завершён</span>';
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    const color = diff < 300000 ? 'var(--red)' : diff < 1800000 ? '#f1c40f' : 'var(--green)';
+    return `<span style="color:${color};font-weight:700">${h > 0 ? h+'ч ' : ''}${m}м ${s}с</span>`;
+  }
+
+  const bidsHtml = data.bids && data.bids.length
+    ? `<table style="width:100%;font-size:13px;border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:6px 4px">#</th>
+          <th style="text-align:left;padding:6px 4px">Команда</th>
+          <th style="text-align:right;padding:6px 4px">Ставка</th>
+          <th style="text-align:right;padding:6px 4px">Время</th>
+        </tr></thead>
+        <tbody>${data.bids.map((b, i) => {
+          const isLeader = i === 0;
+          const isMe = b.team_id === myTeamId;
+          const rowStyle = isLeader ? 'background:rgba(46,204,113,.08)' : '';
+          return `<tr style="${rowStyle};border-bottom:1px solid var(--border)">
+            <td style="padding:6px 4px;color:var(--text-muted)">${isLeader ? '🥇' : i+1}</td>
+            <td style="padding:6px 4px;font-weight:${isLeader?'700':'400'}">${escHtml(b.team_name)}${isMe ? ' <span style="color:var(--green);font-size:11px">(вы)</span>' : ''}</td>
+            <td style="padding:6px 4px;text-align:right;font-weight:${isLeader?'700':'400'};color:${isLeader?'var(--green)':'inherit'}">${fmtValue(b.amount)}</td>
+            <td style="padding:6px 4px;text-align:right;color:var(--text-muted);font-size:11px">${new Date(b.bid_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`
+    : '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">Ставок ещё нет — будьте первым!</div>';
+
+  const card = modal.querySelector('.card');
+  card.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+      <div>
+        <h3 style="margin:0 0 4px">${escHtml(data.player_name)}</h3>
+        <div style="font-size:13px;color:var(--text-muted)">${escHtml(data.position||'–')} · OVR <span style="color:${ovrColor};font-weight:800">${ovr??'?'}</span></div>
+      </div>
+      <button onclick="closeAuctionModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);padding:0 4px">×</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Текущая ставка</div>
+        <div style="font-weight:800;color:var(--green)">${fmtValue(data.current_bid || data.start_bid)}</div>
+        ${data.bidder_team_name ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${escHtml(data.bidder_team_name)}</div>` : ''}
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Начальная ставка</div>
+        <div style="font-weight:700">${fmtValue(data.start_bid)}</div>
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">До конца</div>
+        <div id="auction-countdown">${timeLeft()}</div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:16px">
+      <div style="font-weight:700;margin-bottom:8px">История ставок (${data.bids?.length || 0})</div>
+      <div style="max-height:200px;overflow-y:auto">${bidsHtml}</div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${canBid ? `<button class="btn btn-green" onclick="closeAuctionModal();placeBid(${auctionId},${minBid},${playerId})">💰 Сделать ставку ${fmtValue(minBid)}</button>` : ''}
+      <button class="btn btn-outline" onclick="showAuctionDetail(${auctionId},${playerId})">🔄 Обновить</button>
+      <button class="btn btn-outline" onclick="closeAuctionModal()">Закрыть</button>
+    </div>`;
+
+  _auctionCountdownInterval = setInterval(() => {
+    const el = document.getElementById('auction-countdown');
+    if (!el) { clearInterval(_auctionCountdownInterval); return; }
+    el.innerHTML = timeLeft();
+  }, 1000);
+}
+
+function closeAuctionModal() {
+  if (_auctionCountdownInterval) { clearInterval(_auctionCountdownInterval); _auctionCountdownInterval = null; }
+  const modal = document.getElementById('auction-detail-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 async function sellPlayer(playerId, marketValue) {
