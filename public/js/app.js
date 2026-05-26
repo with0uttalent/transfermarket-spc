@@ -233,7 +233,7 @@ function calcOverall(player, assignedSlot) {
 function ovrBadge(ovr, assignedZone, naturalZone) {
   if (ovr === null || ovr === undefined) return '';
   const outOfPos = assignedZone && naturalZone && assignedZone !== naturalZone;
-  const color = ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+  const color = ovr >= 90 ? '#e74c3c' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
   const style = `background:${color};color:#000;font-weight:700;font-size:11px;padding:1px 5px;border-radius:3px;${outOfPos?'opacity:0.75':''}`;
   return `<span style="${style}" title="${outOfPos?'Не на своей позиции (-штраф)':'Рейтинг'}">${ovr}${outOfPos?'⚠':''}</span>`;
 }
@@ -409,7 +409,7 @@ function renderPitchFromLineup(lineupSlots, isAway = false) {
       const lastName = name.split(' ').slice(-1)[0];
       const ini = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
       const ovr = typeof calcOverall === 'function' ? calcOverall(s, s.position_override) : null;
-      const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+      const ovrColor = !ovr ? '#888' : ovr >= 90 ? '#e74c3c' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
       const avatarHtml = s.image_url
         ? `<img src="${escHtml(s.image_url)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
           + `<span class="mp-ini" style="display:none">${escHtml(ini)}</span>`
@@ -3852,7 +3852,7 @@ function renderPitchZones(lineupSlots) {
       const ovr = calcOverall(p, slot.id);
       const naturalZone = posToZone(p.position);
       const outOfPos = naturalZone !== slot.zone;
-      const ovrColor = !ovr ? '#888' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
+      const ovrColor = !ovr ? '#888' : ovr>=90 ? '#e74c3c' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
       const isInjured = s.injury_matches_remaining > 0;
       const zoneLabel = { GK:'Вратарь', DEF:'Защитник', DMF:'Опорный', MID:'Полузащитник', AMF:'Атакующий', FWD:'Нападающий' };
       const bestZone = zoneLabel[naturalZone] || naturalZone;
@@ -3904,7 +3904,7 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
   return available.map(p => {
     const sel = p.id === selectedId;
     const ovr = calcOverall(p);
-    const ovrColor = !ovr ? '#888' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
+    const ovrColor = !ovr ? '#888' : ovr >= 90 ? '#e74c3c' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
     const natZone = posToZone(p.position);
     const zoneNames = { GK:'Вратарь', DEF:'Защитник', DMF:'Опорный', MID:'Полузащитник', AMF:'Атакующий', FWD:'Нападающий' };
     const tooltip = `${p.name} | Позиция: ${p.position||'–'} | Лучшая зона: ${zoneNames[natZone]||natZone}${p.sub_position?' ('+p.sub_position+')':''}`;
@@ -3944,7 +3944,7 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
     const p = allPlayers.find(pl=>pl.id===s.player_id);
     if (!p) return '';
     const ovr = calcOverall(p);
-    const ovrColor = !ovr?'#888':ovr>=80?'#f1c40f':ovr>=70?'#2ecc71':ovr>=60?'#3498db':'#95a5a6';
+    const ovrColor = !ovr?'#888':ovr>=90?'#e74c3c':ovr>=80?'#f1c40f':ovr>=70?'#2ecc71':ovr>=60?'#3498db':'#95a5a6';
     const assignedZone = s.position_override && ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(p.position);
     return `<div class="bench-card${opts.priority?' bench-priority':''}"
       draggable="true"
@@ -4700,7 +4700,7 @@ function renderFreeAgentsTable(players, auctionMap, canBid, myTeamId) {
     <tbody>${players.map(p => {
       const a = auctionMap[p.id];
       const ovr = p.overall;
-      const ovrColor = !ovr ? '#888' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
+      const ovrColor = !ovr ? '#888' : ovr>=90 ? '#e74c3c' : ovr>=80 ? '#f1c40f' : ovr>=70 ? '#2ecc71' : ovr>=60 ? '#3498db' : '#95a5a6';
       const rarity = p.rarity || 'common';
       const rc = rarityColor[rarity] || '#888';
       const rn = rarityName[rarity] || rarity;
@@ -4818,7 +4818,7 @@ function renderPackTab(pack, coach) {
           const rc = rarityColor[rarity] || '#888';
           const rn = rarityName[rarity] || rarity;
           const glow = rarityGlow[rarity] || 'none';
-          const ovrColor = p.ovr>=80 ? '#f1c40f' : p.ovr>=70 ? '#2ecc71' : p.ovr>=60 ? '#3498db' : '#95a5a6';
+          const ovrColor = p.ovr>=90 ? '#e74c3c' : p.ovr>=80 ? '#f1c40f' : p.ovr>=70 ? '#2ecc71' : p.ovr>=60 ? '#3498db' : '#95a5a6';
           const isSpecial = p.ovr >= 80;
           return `
             <div class="pack-card pack-card-hidden" id="pack-card-${p.id}" data-player-id="${p.id}" data-ovr="${p.ovr}" data-rarity="${rarity}" style="animation-delay:${i*0.15}s">
@@ -4929,7 +4929,7 @@ async function testPackOpen() {
           ${pack.players.map(p => {
             const rc = rarityColor[p.rarity]||'#888';
             const rn = rarityName[p.rarity]||p.rarity;
-            const ovrColor = p.ovr>=80?'#f1c40f':p.ovr>=70?'#2ecc71':p.ovr>=60?'#3498db':'#95a5a6';
+            const ovrColor = p.ovr>=90?'#e74c3c':p.ovr>=80?'#f1c40f':p.ovr>=70?'#2ecc71':p.ovr>=60?'#3498db':'#95a5a6';
             return `<div class="pack-card-mini" style="border-color:${rc}">
               <div style="color:${rc};font-size:11px;font-weight:700">${rn}</div>
               <div style="font-size:22px;font-weight:900;color:${ovrColor}">${p.ovr}</div>
