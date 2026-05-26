@@ -260,6 +260,31 @@ router.post('/:id/pick', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── POST /packs/buy (coach buys a pack for €1M) ─────────────────────────────
+router.post('/buy', requireAuth, (req, res) => {
+  const db = getDb();
+  const coach = db.prepare('SELECT * FROM coaches WHERE user_id=?').get(req.user.id);
+  if (!coach || !coach.team_id) return res.status(403).json({ error: 'No team' });
+
+  const team = db.prepare('SELECT transfer_budget, transfer_budget_spent FROM teams WHERE id=?').get(coach.team_id);
+  const available = (team.transfer_budget || 0) - (team.transfer_budget_spent || 0);
+  const PACK_PRICE = 1000000;
+
+  if (available < PACK_PRICE) return res.status(400).json({ error: 'Недостаточно средств (нужно €1M)' });
+
+  // Check no pending pack
+  const existing = db.prepare(`SELECT id FROM player_packs WHERE coach_id=? AND status='pending'`).get(coach.id);
+  if (existing) return res.status(400).json({ error: 'У вас уже есть нераскрытый пак' });
+
+  // Deduct budget
+  db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(PACK_PRICE, coach.team_id);
+
+  const countries = db.prepare('SELECT id FROM countries').all();
+  generatePackForCoach(db, coach.id, countries);
+
+  res.json({ ok: true });
+});
+
 // ─── POST /packs/generate-for-coach (admin, single coach) ────────────────────
 router.post('/generate-for-coach', requireAdmin, (req, res) => {
   const db = getDb();

@@ -761,9 +761,78 @@ function checkPendingMatchdayStandings() {
   }
 }
 
+function autoResolveOvertime(db, m) {
+  // Auto-resolve overtime/draw for tournament matches
+  // Returns { newHome, newAway, ot_type }
+  const homePl = db.prepare(`SELECT market_value FROM players WHERE team_id=? AND status='active'`).all(m.home_team_id);
+  const awayPl = db.prepare(`SELECT market_value FROM players WHERE team_id=? AND status='active'`).all(m.away_team_id);
+
+  const str = pl => pl.reduce((s, p) => s + Math.log10(Math.max(p.market_value || 500000, 100000)), 0);
+  const homeStr = str(homePl), awayStr = str(awayPl);
+  const homeWinProb = (homeStr + awayStr) > 0 ? homeStr / (homeStr + awayStr) : 0.5;
+
+  // ET: 40% home scores, 40% away scores, 20% no goal
+  const roll = Math.random();
+  if (roll < 0.4) {
+    // Home scores in ET
+    const newHome = m.home_score + 1;
+    db.prepare(`UPDATE matches SET home_score=?, ot_type='golden_goal', ot_home=1, ot_away=0, status='finished' WHERE id=?`).run(newHome, m.id);
+    return { newHome, newAway: m.away_score, ot_type: 'golden_goal', winnerId: m.home_team_id };
+  } else if (roll < 0.8) {
+    // Away scores in ET
+    const newAway = m.away_score + 1;
+    db.prepare(`UPDATE matches SET away_score=?, ot_type='golden_goal', ot_home=0, ot_away=1, status='finished' WHERE id=?`).run(newAway, m.id);
+    return { newHome: m.home_score, newAway, ot_type: 'golden_goal', winnerId: m.away_team_id };
+  } else {
+    // No goal in ET → Penalties
+    const HIT = 0.75;
+    let penHome = 0, penAway = 0;
+    for (let i = 0; i < 5; i++) {
+      if (Math.random() < HIT) penHome++;
+      if (Math.random() < HIT) penAway++;
+    }
+    while (penHome === penAway) {
+      if (Math.random() < HIT) penHome++;
+      if (Math.random() < HIT) penAway++;
+    }
+    const homeWins = penHome > penAway;
+    db.prepare(`UPDATE matches SET pen_home=?, pen_away=?, ot_type='penalties', status='finished' WHERE id=?`).run(penHome, penAway, m.id);
+    return { newHome: m.home_score, newAway: m.away_score, ot_type: 'penalties', winnerId: homeWins ? m.home_team_id : m.away_team_id };
+  }
+}
+
 function finalizeExpiredMatches() {
   try {
     const db = getDb();
+
+    // First handle 'overtime' matches that were set to overtime automatically
+    const overdueOT = db.prepare(`
+      SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
+             m.league_id, m.matchday, m.is_friendly, m.tournament_id
+      FROM matches m
+      WHERE m.status = 'overtime'
+    `).all();
+
+    for (const m of overdueOT) {
+      try {
+        const r = db.prepare(`UPDATE matches SET status='overtime' WHERE id=? AND status='overtime'`).run(m.id);
+        // Auto-resolve the overtime
+        const result = autoResolveOvertime(db, m);
+        const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(m.home_team_id);
+        const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(m.away_team_id);
+        const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
+        if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, result.newHome, result.newAway, evRows);
+        if (m.tournament_id) {
+          try {
+            const { advanceTournamentWinner } = require('../routes/matches');
+            const updatedMatch = db.prepare('SELECT * FROM matches WHERE id=?').get(m.id);
+            advanceTournamentWinner(updatedMatch, result.newHome, result.newAway);
+          } catch(e) { console.warn('[Finalizer] overtime tournament advance error:', e.message); }
+        }
+        console.log(`[Finalizer] Auto-resolved OT: match ${m.id} → ${result.ot_type}, winner team ${result.winnerId}`);
+      } catch(e) { console.warn('[Finalizer] OT auto-resolve error:', e.message); }
+    }
+
     const expired = db.prepare(`
       SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
              m.league_id, m.matchday, m.is_friendly, m.tournament_id
@@ -774,6 +843,25 @@ function finalizeExpiredMatches() {
     `).all();
 
     for (const m of expired) {
+      // For tournament draw → auto-resolve overtime instead of manual
+      if (m.tournament_id && m.home_score === m.away_score) {
+        const r = db.prepare(`UPDATE matches SET status='overtime' WHERE id=? AND status='in_progress'`).run(m.id);
+        if (r.changes === 0) continue;
+        // Immediately auto-resolve
+        const result = autoResolveOvertime(db, m);
+        const ht = db.prepare(`SELECT name, logo_url, stadium_url FROM teams WHERE id=?`).get(m.home_team_id);
+        const at = db.prepare(`SELECT name, logo_url FROM teams WHERE id=?`).get(m.away_team_id);
+        const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
+        if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, result.newHome, result.newAway, evRows);
+        try {
+          const { advanceTournamentWinner } = require('../routes/matches');
+          const updatedMatch = db.prepare('SELECT * FROM matches WHERE id=?').get(m.id);
+          advanceTournamentWinner(updatedMatch, result.newHome, result.newAway);
+        } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
+        console.log(`[Finalizer] Tournament draw auto-resolved: match ${m.id} → ${result.ot_type}`);
+        continue;
+      }
+
       const r = db.prepare(`UPDATE matches SET status='finished' WHERE id=? AND status='in_progress'`).run(m.id);
       if (r.changes === 0) continue;
 
@@ -784,7 +872,10 @@ function finalizeExpiredMatches() {
       if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
 
       if (m.tournament_id) {
-        try { advanceTournamentWinner(m, m.home_score, m.away_score); } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
+        try {
+          const { advanceTournamentWinner } = require('../routes/matches');
+          advanceTournamentWinner(m, m.home_score, m.away_score);
+        } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
       }
     }
   } catch(e) {

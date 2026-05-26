@@ -126,6 +126,29 @@ router.patch('/:id/about', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// PATCH /:id/visuals — coach updates team visual fields (logo, banners, kits etc.)
+router.patch('/:id/visuals', requireAuth, (req, res) => {
+  const db = getDb();
+  const id = req.params.id;
+  if (req.user.role !== 'admin') {
+    const coach = db.prepare('SELECT team_id FROM coaches WHERE user_id=?').get(req.user.id);
+    if (!coach || coach.team_id != id) return res.status(403).json({ error: 'Forbidden' });
+  }
+  const allowed = ['logo_url', 'goal_banner_url', 'team_photo_url', 'stadium_url', 'kit_home_url', 'kit_away_url', 'kit_third_url'];
+  const updates = [];
+  const values = [];
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) {
+      updates.push(`${field}=?`);
+      values.push(req.body[field] || null);
+    }
+  }
+  if (!updates.length) return res.status(400).json({ error: 'No valid fields provided' });
+  values.push(id);
+  db.prepare(`UPDATE teams SET ${updates.join(',')} WHERE id=?`).run(...values);
+  res.json({ ok: true });
+});
+
 router.delete('/:id', requireAuth, (req, res) => {
   const db = getDb();
   const id = req.params.id;

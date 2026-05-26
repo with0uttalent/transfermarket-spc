@@ -572,6 +572,23 @@ async function respondChallengePush(id, action, btn) {
 async function buildNotifications(ch) {
   const items = [];
 
+  // Include DB coach notifications (auction wins, loan updates, champion, etc.)
+  if (isCoach()) {
+    try {
+      const dbNotifs = await GET('/notifications').catch(() => []);
+      for (const n of (Array.isArray(dbNotifs) ? dbNotifs : []).filter(n => !n.read).slice(0, 10)) {
+        const iconMap = { auction_win: '🏆', champion: '🏆', loan_offer: '🤝', loan_accepted: '✅', loan_rejected: '❌', info: 'ℹ️' };
+        items.push({
+          id: `db-notif-${n.id}`,
+          icon: iconMap[n.type] || 'ℹ️',
+          text: `<strong>${escHtml(n.title)}</strong>${n.body ? ': ' + escHtml(n.body) : ''}`,
+          time: n.created_at,
+          actions: [{ label: '✓ Прочитано', cls: 'btn-outline', fn: `markNotifRead(${n.id})` }],
+        });
+      }
+    } catch {}
+  }
+
   if (isCoach()) {
     // Use pre-fetched challenge data if provided, otherwise fetch
     if (!ch) ch = await GET('/match-challenges').catch(() => ({ incoming: [], outgoing: [] }));
@@ -651,6 +668,13 @@ function renderNotifList(items) {
       : '');
 }
 
+async function markNotifRead(notifId) {
+  try {
+    await POST('/notifications/' + notifId + '/read', {});
+    await loadNotifications();
+  } catch {}
+}
+
 async function clearAllNotifications() {
   if (!isCoach()) return;
   try {
@@ -663,6 +687,8 @@ async function clearAllNotifications() {
     for (const c of (ch.outgoing || [])) {
       if (c.status !== 'pending') await DEL('/match-challenges/' + c.id).catch(() => {});
     }
+    // Mark all DB notifications as read
+    await POST('/notifications/read-all', {}).catch(() => {});
     _notifExpanded = false;
     await loadNotifications();
     toast('Уведомления очищены');
@@ -888,6 +914,29 @@ async function renderHome(app) {
         </table></div>
       </div>` : ''}
     `;
+
+    // Champion banner
+    try {
+      const pubSettings = await GET('/admin/settings/public').catch(() => ({}));
+      const champ = pubSettings.league_champion;
+      if (champ && champ.team_name) {
+        const champBanner = document.createElement('div');
+        champBanner.className = 'champion-banner';
+        champBanner.innerHTML = `
+          <div class="champion-banner-inner">
+            <div class="champion-icon">🏆</div>
+            <div class="champion-info">
+              <div class="champion-title">Чемпион ${escHtml(champ.league_name || '')} · Сезон ${escHtml(String(champ.season || ''))}</div>
+              <div class="champion-team">
+                ${champ.logo_url ? `<img src="${escHtml(champ.logo_url)}" class="champion-logo" onerror="this.style.display='none'">` : ''}
+                <span class="champion-name">${escHtml(champ.team_name)}</span>
+                ${champ.points ? `<span class="champion-pts">${champ.points} очков</span>` : ''}
+              </div>
+            </div>
+          </div>`;
+        app.insertBefore(champBanner, app.firstChild);
+      }
+    } catch {}
 
     // Poll live matches every 4 seconds while on the home page
     if (_homeLivePollTimer) clearInterval(_homeLivePollTimer);
@@ -1124,16 +1173,18 @@ async function renderTeamDetail(app, id) {
     })();
 
     const teamJson = JSON.stringify(team).replace(/"/g,'&quot;');
+    const isOwnTeam = isCoach() && State.coachProfile?.team_id === team.id;
 
     app.innerHTML=`
       <h1 class="tp-title">${escHtml(team.name)}</h1>
 
       <div class="tp-header-card">
         <!-- Logo -->
-        <div class="tp-logo-col">
+        <div class="tp-logo-col" style="position:relative">
           ${team.logo_url
             ? `<img src="${escHtml(team.logo_url)}" class="tp-logo-img" onerror="this.style.display='none'">`
             : `<div class="tp-logo-ph">${escHtml(team.name[0])}</div>`}
+          ${isOwnTeam ? `<button class="upload-overlay-btn" title="Загрузить логотип" onclick="openCropUpload(1,1,url=>uploadTeamVisual(${team.id},'logo_url',url))">📷</button>` : ''}
         </div>
 
         <!-- Center: trophy strip + stats -->
@@ -1149,6 +1200,11 @@ async function renderTeamDetail(app, id) {
             ${transfers.length?`<div class="tp-stat"><span class="tp-stat-key">Трансферный баланс:</span> <span class="tp-stat-val" style="color:${balance>=0?'#27ae60':'#e74c3c'}">${balSign}${fmtValue(balance)}</span></div>`:''}
           </div>
           ${isAdmin()?`<div style="margin-top:12px"><button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="showTeamForm(${teamJson})">✏️ Редактировать</button></div>`:''}
+          ${isOwnTeam ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+            <button class="btn btn-sm btn-outline" onclick="openCropUpload(16,9,url=>uploadTeamVisual(${team.id},'goal_banner_url',url))">📷 Баннер гола</button>
+            <button class="btn btn-sm btn-outline" onclick="openCropUpload(16,9,url=>uploadTeamVisual(${team.id},'team_photo_url',url))">📷 Фото клуба</button>
+            <button class="btn btn-sm btn-outline" onclick="openCropUpload(16,9,url=>uploadTeamVisual(${team.id},'stadium_url',url))">📷 Стадион</button>
+          </div>` : ''}
         </div>
 
         <!-- Right: competition card -->
@@ -1271,14 +1327,15 @@ function renderKitsTab(team, isOwnTeam) {
     { key: 'kit_third_url', label: '🔵 Третья',    url: team.kit_third_url },
   ];
   const editBtn = isOwnTeam
-    ? `<div style="margin-bottom:16px"><button class="btn btn-sm btn-green" onclick="showKitsForm(${JSON.stringify(team).replace(/"/g,'&quot;')})">✏️ Редактировать форму</button></div>`
+    ? `<div style="margin-bottom:16px"><button class="btn btn-sm btn-green" onclick="showKitsForm(${JSON.stringify(team).replace(/"/g,'&quot;')})">✏️ Редактировать URL форм</button></div>`
     : '';
   const cards = kits.map(k => `
-    <div class="kit-card">
+    <div class="kit-card" style="position:relative">
       <div class="kit-card-label">${k.label}</div>
       ${k.url
         ? `<img src="${escHtml(k.url)}" class="kit-card-img" alt="${k.label}" onerror="this.src='';this.style.display='none'">`
         : `<div class="kit-card-empty">Не задана</div>`}
+      ${isOwnTeam ? `<button class="kit-upload-btn" onclick="openCropUpload(16,9,url=>uploadTeamVisual(${team.id},'${k.key}',url))">📷 Загрузить</button>` : ''}
     </div>`).join('');
   return `<div style="padding:12px 0">${editBtn}<div class="kits-grid">${cards}</div></div>`;
 }
@@ -1692,15 +1749,25 @@ async function renderPlayerDetail(app, id) {
     ].filter(Boolean);
 
     const playerJson = JSON.stringify(player).replace(/"/g,'&quot;');
+    const isOwnTeamPlayer = isCoach() && player.team_id === State.coachProfile?.team_id;
+    const isOtherTeamPlayer = isCoach() && player.team_id && player.team_id !== State.coachProfile?.team_id;
     const actionBtns = isAdmin()
       ? `<div class="pp-actions">
           <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="showPlayerForm(${playerJson})">✏️ Редактировать</button>
           <button class="btn btn-green" onclick="showQuickTransfer(${playerJson})">→ Перевести</button>
         </div>`
-      : isCoach()&&player.team_id===State.coachProfile?.team_id
-        ? `<div class="pp-actions"><button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="sellPlayer(${player.id},${player.market_value||0})">💸 Продать (60%)</button></div>`
-        : isCoach()&&player.team_id!==State.coachProfile?.team_id
-          ? `<div class="pp-actions"><button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button><button class="btn btn-outline" onclick="showSwapOfferForm(${playerJson},${State.coachProfile?.team_id})">🔄 Обмен</button></div>`
+      : isOwnTeamPlayer
+        ? `<div class="pp-actions">
+            <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="sellPlayer(${player.id},${player.market_value||0})">💸 Продать (60%)</button>
+            <button class="btn btn-outline" style="color:#3498db;border-color:#3498db" onclick="openCropUpload(1,1,url=>uploadPlayerPhoto(${player.id},url))">📷 Фото</button>
+            <button class="btn btn-outline" onclick="showLoanOutForm(${playerJson})">↗ Аренда</button>
+          </div>`
+        : isOtherTeamPlayer
+          ? `<div class="pp-actions">
+              <button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button>
+              <button class="btn btn-outline" onclick="showSwapOfferForm(${playerJson},${State.coachProfile?.team_id})">🔄 Обмен</button>
+              <button class="btn btn-outline" onclick="showLoanInForm(${playerJson})">🤝 Взять в аренду</button>
+            </div>`
           : '';
 
     app.innerHTML=`
@@ -3683,17 +3750,20 @@ async function renderCoachDashboard(app) {
     const coach = State.coachProfile || await GET('/coaches/me');
     if (!coach) { app.innerHTML = `<div class="empty-state"><div class="empty-icon">⚽</div><p>No coach profile found. Contact admin.</p></div>`; return; }
     State.coachProfile = coach;
-    const [team, lineupData, offersData, challengesData] = await Promise.all([
+    const [team, lineupData, offersData, challengesData, loanOffersData] = await Promise.all([
       GET('/teams/'+coach.team_id),
       GET('/lineups/'+coach.team_id).catch(()=>({lineup:[]})),
       GET('/transfer-offers').catch(()=>[]),
       GET('/match-challenges').catch(()=>({incoming:[],outgoing:[]})),
+      GET('/loans/offers').catch(()=>[]),
     ]);
     const lineup = { slots: lineupData.lineup || [] };
     const offers = Array.isArray(offersData) ? offersData : [];
     const pendingCount = offers.filter(o=>o.status==='pending').length;
     const challenges = challengesData || { incoming: [], outgoing: [] };
     const pendingChallenges = challenges.incoming.length;
+    const loanOffers = Array.isArray(loanOffersData) ? loanOffersData : [];
+    const pendingLoanOffers = loanOffers.filter(o => o.status === 'pending' && o.from_team_id === coach.team_id).length;
     const totalBudget = team.transfer_budget != null ? team.transfer_budget : 10000000;
     const budgetSpent = team.transfer_budget_spent || 0;
     const budgetAvailable = Math.max(0, totalBudget - budgetSpent);
@@ -3732,6 +3802,7 @@ async function renderCoachDashboard(app) {
       <div class="detail-tabs">
         <button class="detail-tab active" data-tab="lineup">Состав</button>
         <button class="detail-tab" data-tab="offers">Трансферы ${pendingCount?`<span class="badge badge-gold">${pendingCount}</span>`:''}</button>
+        <button class="detail-tab" data-tab="loan-offers">Аренда ${pendingLoanOffers?`<span class="badge badge-gold">${pendingLoanOffers}</span>`:''}</button>
         <button class="detail-tab" data-tab="challenges" id="coach-tab-challenges">⚔️ Вызовы ${pendingChallenges?`<span class="badge badge-gold" id="coach-challenges-badge">${pendingChallenges}</span>`:`<span class="badge badge-gold hidden" id="coach-challenges-badge"></span>`}</button>
         <button class="detail-tab" data-tab="post-news">Новость клуба</button>
         <button class="detail-tab" data-tab="squad">Весь состав</button>
@@ -3740,6 +3811,7 @@ async function renderCoachDashboard(app) {
       </div>
       <div id="tab-lineup" class="tab-panel active"></div>
       <div id="tab-offers" class="tab-panel"></div>
+      <div id="tab-loan-offers" class="tab-panel"></div>
       <div id="tab-challenges" class="tab-panel"></div>
       <div id="tab-post-news" class="tab-panel"></div>
       <div id="tab-squad" class="tab-panel"></div>
@@ -3753,6 +3825,19 @@ async function renderCoachDashboard(app) {
 
     // Render offers tab
     document.getElementById('tab-offers').innerHTML = renderTransferOffersTab(offers, coach.team_id);
+
+    // Render loan offers tab
+    document.getElementById('tab-loan-offers').innerHTML = renderLoanOffersTab(loanOffers, coach.team_id);
+
+    // Refresh loan offers tab on click
+    app.querySelector('[data-tab="loan-offers"]')?.addEventListener('click', async () => {
+      const panel = document.getElementById('tab-loan-offers');
+      if (!panel) return;
+      try {
+        const fresh = await GET('/loans/offers').catch(() => []);
+        panel.innerHTML = renderLoanOffersTab(Array.isArray(fresh) ? fresh : [], coach.team_id);
+      } catch {}
+    });
 
     // Render challenges tab
     document.getElementById('tab-challenges').innerHTML = renderChallengesTab(challenges, coach.team_id);
@@ -4930,17 +5015,42 @@ async function loadPackTab(coach) {
   const el = document.getElementById('tab-pack');
   if (!el) return;
   try {
-    const pack = await GET('/packs/my').catch(() => null);
+    const [pack, teamData] = await Promise.all([
+      GET('/packs/my').catch(() => null),
+      coach.team_id ? GET('/teams/' + coach.team_id).catch(() => null) : Promise.resolve(null),
+    ]);
+    // Attach budget info to coach object for renderPackTab
+    if (teamData) {
+      coach._budgetAvailable = Math.max(0, (teamData.transfer_budget || 10000000) - (teamData.transfer_budget_spent || 0));
+    }
     el.innerHTML = renderPackTab(pack, coach);
   } catch(e) { if (el) el.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; }
 }
 
+async function buyPack() {
+  if (!confirm('Купить пак за €1,000,000?')) return;
+  try {
+    await POST('/packs/buy', {});
+    toast('Пак куплен! 🎁');
+    const coach = State.coachProfile;
+    if (coach) loadPackTab(coach);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
 function renderPackTab(pack, coach) {
   if (!pack || !pack.id) {
+    // Show buy button with budget info
+    const team = State.coachProfile ? null : null; // budget fetched separately
+    const budgetAvail = coach._budgetAvailable != null ? coach._budgetAvailable : null;
+    const budgetStr = budgetAvail != null ? fmtValue(budgetAvail) : '…';
     return `<div class="empty-state" style="padding:40px">
       <div style="font-size:48px;margin-bottom:16px">📦</div>
       <h3>Нет доступных паков</h3>
       <p style="color:var(--text-muted)">Паки выдаются раз в неделю. Ожидайте следующей доставки.</p>
+      <div style="margin-top:20px;padding:16px;background:rgba(255,255,255,0.05);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Доступный бюджет: <strong>${budgetStr}</strong></div>
+        <button class="btn btn-green" onclick="buyPack()">🛒 Купить пак (€1M)</button>
+      </div>
     </div>`;
   }
 
@@ -5093,6 +5203,314 @@ async function testPackOpen() {
         </div>
       </div>`;
   } catch(e) { toast(e.message, 'error'); if(el) el.innerHTML=''; }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IMAGE CROP UPLOAD
+// ═══════════════════════════════════════════════════════════
+
+function openCropUpload(aspectW, aspectH, onSuccess) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  input.click();
+  input.onchange = () => {
+    const file = input.files[0];
+    input.remove();
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => showCropModal(e.target.result, aspectW, aspectH, onSuccess);
+    reader.readAsDataURL(file);
+  };
+}
+
+function showCropModal(imgSrc, aspectW, aspectH, onSuccess) {
+  const overlay = document.createElement('div');
+  overlay.className = 'crop-modal-overlay';
+
+  const isSquare = aspectW === aspectH;
+  overlay.innerHTML = `
+    <div class="crop-modal">
+      <div class="crop-modal-header">
+        <h3>Обрезать изображение <span style="font-size:12px;color:rgba(255,255,255,.5)">(${aspectW}:${aspectH})</span></h3>
+        <button class="crop-close-btn">&times;</button>
+      </div>
+      <div class="crop-container" id="crop-container">
+        <canvas id="crop-canvas"></canvas>
+        <div class="crop-overlay ${isSquare ? 'crop-overlay-circle' : ''}" id="crop-overlay"></div>
+      </div>
+      <div class="crop-controls">
+        <div style="font-size:12px;color:rgba(255,255,255,.5);text-align:center;margin-bottom:8px">Перетаскивайте для перемещения · Колесо для масштаба</div>
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button class="btn btn-outline" id="crop-cancel-btn">Отмена</button>
+          <button class="btn btn-green" id="crop-confirm-btn">✓ Подтвердить</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const canvas = document.getElementById('crop-canvas');
+  const ctx = canvas.getContext('2d');
+  const overlayEl = document.getElementById('crop-overlay');
+  const container = document.getElementById('crop-container');
+
+  const CROP_SIZE = isSquare ? 280 : 0; // for square
+  const CROP_W = isSquare ? 280 : 400;
+  const CROP_H = isSquare ? 280 : Math.round(400 * aspectH / aspectW);
+
+  canvas.width = 480;
+  canvas.height = Math.max(CROP_H + 80, 320);
+
+  // Position crop overlay
+  const overlayLeft = (canvas.width - CROP_W) / 2;
+  const overlayTop  = (canvas.height - CROP_H) / 2;
+  overlayEl.style.left   = overlayLeft + 'px';
+  overlayEl.style.top    = overlayTop + 'px';
+  overlayEl.style.width  = CROP_W + 'px';
+  overlayEl.style.height = CROP_H + 'px';
+
+  const img = new Image();
+  img.onload = () => {
+    // Initial scale to fill crop area
+    let scale = Math.max(CROP_W / img.width, CROP_H / img.height) * 1.05;
+    let offsetX = (canvas.width - img.width * scale) / 2;
+    let offsetY = (canvas.height - img.height * scale) / 2;
+    let dragging = false, lastX = 0, lastY = 0;
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Dark background
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, offsetX, offsetY, img.width * scale, img.height * scale);
+      // Darken outside crop
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Clear crop area
+      if (isSquare) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(overlayLeft + CROP_W/2, overlayTop + CROP_H/2, CROP_W/2, 0, Math.PI*2);
+        ctx.clip();
+        ctx.drawImage(img, offsetX, offsetY, img.width * scale, img.height * scale);
+        ctx.restore();
+        // Circle border
+        ctx.beginPath();
+        ctx.arc(overlayLeft + CROP_W/2, overlayTop + CROP_H/2, CROP_W/2, 0, Math.PI*2);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else {
+        ctx.clearRect(overlayLeft, overlayTop, CROP_W, CROP_H);
+        ctx.drawImage(img, offsetX, offsetY, img.width * scale, img.height * scale);
+        // Re-apply darkening outside (clip trick)
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, 0, canvas.width, overlayTop);
+        ctx.fillRect(0, overlayTop + CROP_H, canvas.width, canvas.height);
+        ctx.fillRect(0, overlayTop, overlayLeft, CROP_H);
+        ctx.fillRect(overlayLeft + CROP_W, overlayTop, canvas.width, CROP_H);
+        // Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(overlayLeft, overlayTop, CROP_W, CROP_H);
+      }
+    }
+
+    draw();
+
+    canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+    canvas.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      offsetX += e.clientX - lastX;
+      offsetY += e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      draw();
+    });
+    canvas.addEventListener('mouseup', () => { dragging = false; });
+    canvas.addEventListener('mouseleave', () => { dragging = false; });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      const minScale = Math.max(CROP_W / img.width, CROP_H / img.height);
+      scale = Math.max(minScale, scale * factor);
+      draw();
+    }, { passive: false });
+
+    // Touch support
+    let lastTouchDist = 0;
+    canvas.addEventListener('touchstart', e => { if (e.touches.length === 1) { dragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; } else if (e.touches.length === 2) { lastTouchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); } });
+    canvas.addEventListener('touchmove', e => { e.preventDefault(); if (e.touches.length === 1 && dragging) { offsetX += e.touches[0].clientX - lastX; offsetY += e.touches[0].clientY - lastY; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; draw(); } else if (e.touches.length === 2) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); const factor = d / lastTouchDist; lastTouchDist = d; const minScale = Math.max(CROP_W / img.width, CROP_H / img.height); scale = Math.max(minScale, scale * factor); draw(); } }, { passive: false });
+    canvas.addEventListener('touchend', () => { dragging = false; });
+
+    document.getElementById('crop-confirm-btn').onclick = async () => {
+      // Extract cropped area to a new canvas
+      const out = document.createElement('canvas');
+      out.width  = CROP_W;
+      out.height = CROP_H;
+      const octx = out.getContext('2d');
+      octx.drawImage(img, offsetX - overlayLeft, offsetY - overlayTop, img.width * scale, img.height * scale);
+      out.toBlob(async blob => {
+        try {
+          const fd = new FormData();
+          fd.append('image', blob, 'crop.jpg');
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + State.token },
+            body: fd,
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Upload failed');
+          overlay.remove();
+          onSuccess(data.url);
+        } catch(e) { toast(e.message, 'error'); }
+      }, 'image/jpeg', 0.92);
+    };
+  };
+  img.src = imgSrc;
+
+  overlay.querySelector('.crop-close-btn').onclick = () => overlay.remove();
+  document.getElementById('crop-cancel-btn').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function uploadPlayerPhoto(playerId, url) {
+  try {
+    await api('PATCH', '/players/' + playerId, { image_url: url });
+    toast('Фото обновлено!');
+    // Refresh the page content
+    const img = document.querySelector('.pp-photo');
+    if (img) img.src = url;
+    else router();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function uploadTeamVisual(teamId, field, url) {
+  try {
+    await api('PATCH', '/teams/' + teamId + '/visuals', { [field]: url });
+    toast('Изображение обновлено!');
+    router();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LOAN OFFERS UI
+// ═══════════════════════════════════════════════════════════
+
+function renderLoanOffersTab(offers, myTeamId) {
+  const incoming = offers.filter(o => o.from_team_id === myTeamId && o.status === 'pending');
+  const outgoing = offers.filter(o => o.to_team_id === myTeamId && o.status === 'pending');
+  const history  = offers.filter(o => o.status !== 'pending');
+
+  const fmtV = v => v > 0 ? fmtValue(v) : 'Бесплатно';
+
+  const renderOffer = (o, isIncoming) => `
+    <div class="loan-offer-card">
+      <div class="loan-offer-player">
+        ${o.image_url ? `<img src="${escHtml(o.image_url)}" class="avatar" alt="">` : `<div class="avatar-placeholder">${(o.player_name||'?')[0]}</div>`}
+        <div>
+          <div style="font-weight:700">${escHtml(o.player_name || '?')}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${escHtml(o.position || '')} · ${fmtValue(o.market_value)}</div>
+        </div>
+      </div>
+      <div class="loan-offer-info">
+        <div style="font-size:12px;color:var(--text-muted)">${isIncoming ? `Запрос от: ${escHtml(o.to_team_name||'?')}` : `Команда: ${escHtml(o.from_team_name||'?')}`}</div>
+        <div style="font-size:13px">Аренда: <strong>${fmtV(o.loan_fee)}</strong></div>
+        ${o.message ? `<div style="font-size:12px;color:var(--text-muted);font-style:italic">"${escHtml(o.message)}"</div>` : ''}
+      </div>
+      ${isIncoming ? `
+        <div class="loan-offer-actions">
+          <button class="btn btn-sm btn-green" onclick="acceptLoanOffer(${o.id})">✅ Одобрить</button>
+          <button class="btn btn-sm btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="rejectLoanOffer(${o.id})">❌ Отклонить</button>
+        </div>` : `<div style="font-size:12px;color:var(--text-muted)">Ожидание…</div>`}
+    </div>`;
+
+  const statusBadge = s => ({accepted:'✅ Принято', rejected:'❌ Отклонено', cancelled:'↩ Отменено', pending:'⏳ Ожидание'}[s] || s);
+
+  return `
+    <div style="padding:12px 0">
+      ${incoming.length ? `
+        <div class="card mb-2">
+          <div class="card-header">📥 Входящие запросы (${incoming.length})</div>
+          <div style="padding:8px">${incoming.map(o => renderOffer(o, true)).join('')}</div>
+        </div>` : ''}
+      ${outgoing.length ? `
+        <div class="card mb-2">
+          <div class="card-header">📤 Исходящие запросы (${outgoing.length})</div>
+          <div style="padding:8px">${outgoing.map(o => renderOffer(o, false)).join('')}</div>
+        </div>` : ''}
+      ${!incoming.length && !outgoing.length ? `<div class="empty-state"><div class="empty-icon">🤝</div><p>Нет активных предложений аренды</p></div>` : ''}
+      ${history.length ? `
+        <div class="card">
+          <div class="card-header">📋 История аренды</div>
+          <div style="padding:8px">${history.slice(0,10).map(o => `
+            <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:12px">${statusBadge(o.status)}</span>
+              <span>${escHtml(o.player_name||'?')}</span>
+              <span style="color:var(--text-muted);font-size:12px">${escHtml(o.from_team_name||'?')} → ${escHtml(o.to_team_name||'?')}</span>
+            </div>`).join('')}
+          </div>
+        </div>` : ''}
+    </div>`;
+}
+
+async function acceptLoanOffer(offerId) {
+  try {
+    await POST('/loans/offers/' + offerId + '/accept', {});
+    toast('Аренда одобрена!');
+    const fresh = await GET('/loans/offers').catch(() => []);
+    const panel = document.getElementById('tab-loan-offers');
+    if (panel) panel.innerHTML = renderLoanOffersTab(Array.isArray(fresh) ? fresh : [], State.coachProfile?.team_id);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function rejectLoanOffer(offerId) {
+  try {
+    await POST('/loans/offers/' + offerId + '/reject', {});
+    toast('Аренда отклонена');
+    const fresh = await GET('/loans/offers').catch(() => []);
+    const panel = document.getElementById('tab-loan-offers');
+    if (panel) panel.innerHTML = renderLoanOffersTab(Array.isArray(fresh) ? fresh : [], State.coachProfile?.team_id);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function showLoanInForm(player) {
+  // Coach wants to borrow player from another team
+  mkModal('🤝 Взять в аренду: ' + player.name, `
+    <p style="color:var(--text-muted);font-size:13px">Отправьте предложение аренды команде <strong>${escHtml(player.team_name||'?')}</strong></p>
+    <div class="form-group"><label>Арендная плата (€)</label><input type="number" id="loan-fee-in" value="0" min="0" step="50000"/></div>
+    <div class="form-group"><label>Сообщение (необязательно)</label><input type="text" id="loan-msg-in" placeholder="Ваше сообщение…"/></div>
+  `, async () => {
+    const fee = parseFloat(document.getElementById('loan-fee-in').value) || 0;
+    const msg = document.getElementById('loan-msg-in').value.trim() || null;
+    await POST('/loans/offers', { player_id: player.id, target_team_id: player.team_id, offer_type: 'loan_in', loan_fee: fee, message: msg });
+    toast('Запрос на аренду отправлен!');
+    return true;
+  });
+}
+
+async function showLoanOutForm(player) {
+  // Coach wants to send own player to another team
+  let teams = [];
+  try { teams = await GET('/teams'); } catch {}
+  const otherTeams = teams.filter(t => t.id !== State.coachProfile?.team_id);
+  mkModal('↗ Отдать в аренду: ' + player.name, `
+    <div class="form-group"><label>Команда назначения</label>
+      <select id="loan-target-team">
+        ${otherTeams.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label>Арендная плата (€)</label><input type="number" id="loan-fee-out" value="0" min="0" step="50000"/></div>
+    <div class="form-group"><label>Сообщение (необязательно)</label><input type="text" id="loan-msg-out" placeholder="Ваше сообщение…"/></div>
+  `, async () => {
+    const targetTeamId = parseInt(document.getElementById('loan-target-team').value);
+    const fee = parseFloat(document.getElementById('loan-fee-out').value) || 0;
+    const msg = document.getElementById('loan-msg-out').value.trim() || null;
+    await POST('/loans/offers', { player_id: player.id, target_team_id: targetTeamId, offer_type: 'loan_out', loan_fee: fee, message: msg });
+    toast('Предложение аренды отправлено!');
+    return true;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════

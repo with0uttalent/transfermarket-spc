@@ -419,3 +419,4 @@ router.delete('/:id', requireAuth, (req, res) => {
 });
 
 module.exports = router;
+module.exports.advanceTournamentWinner = advanceTournamentWinner;
