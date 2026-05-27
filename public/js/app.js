@@ -4037,17 +4037,24 @@ function renderPitchZones(lineupSlots) {
       const bestZone = zoneLabel[naturalZone] || naturalZone;
       const curZone = zoneLabel[slot.zone] || slot.zone;
       const posHint = `${escHtml(p.name)} | Предпочитает: ${escHtml(p.position||naturalZone)} (${bestZone})${outOfPos?' | Текущая позиция: '+curZone+' ⚠':''}${isInjured?' | ⚠ ТРАВМА':''}`;
+      const stamVal = Math.max(0, Math.min(100, p.stamina ?? 100));
+      const stamColor = stamVal >= 70 ? '#2ecc71' : stamVal >= 40 ? '#f39c12' : '#e74c3c';
+      const ovrBg = isInjured ? '#e74c3c' : ovrColor;
+      const ovrText = isInjured ? '❌' : (ovr != null ? ovr + (outOfPos ? '⚠' : '') : '?');
+      const shortName = (p.shirt_number ? p.shirt_number + ' ' : '') + escHtml(p.name.split(' ')[0]);
       html += `<div class="pb-slot pb-slot-filled${isInjured?' pb-slot-injured':''}"
         style="left:${slot.x}%;top:${slot.y}%"
         onclick="event.stopPropagation();pitchPlayerDotClick(${p.id})"
-        title="${posHint}">
+        title="${posHint}"
+        draggable="true"
+        ondragstart="dragPlayerStart(${p.id},'pitch',event)">
+        <div class="pb-stamina-bar"><div class="pb-stamina-fill" style="width:${stamVal}%;background:${stamColor}"></div></div>
         <div class="pb-slot-av">
           ${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}
           ${isInjured?'<span class="pb-inj-icon">🚑</span>':''}
+          <div class="pb-slot-ovr" style="background:${ovrBg}">${ovrText}</div>
         </div>
-        <div class="pb-slot-name">${escHtml(p.name.split(' ')[0])}</div>
-        <div class="pb-slot-ovr" style="color:${isInjured?'#e74c3c':ovrColor}">${isInjured?'❌':(ovr!=null?ovr+(outOfPos?'⚠':''):'?')}</div>
-        ${staminaBar(p.stamina, true)}
+        <div class="pb-slot-name">${shortName}</div>
         <div class="pb-slot-remove-badge">✕</div>
       </div>`;
     } else {
