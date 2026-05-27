@@ -114,8 +114,11 @@ router.get('/my', requireAuth, (req, res) => {
   const coach = db.prepare('SELECT * FROM coaches WHERE user_id=?').get(req.user.id);
   if (!coach) return res.status(404).json({ error: 'Coach not found' });
 
-  const pack = db.prepare(`SELECT * FROM player_packs WHERE coach_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1`).get(coach.id);
+  // Return oldest pending pack first (queue order) + total count
+  const pack = db.prepare(`SELECT * FROM player_packs WHERE coach_id=? AND status='pending' ORDER BY created_at ASC LIMIT 1`).get(coach.id);
   if (!pack) return res.json(null);
+
+  const pendingCount = db.prepare(`SELECT COUNT(*) as cnt FROM player_packs WHERE coach_id=? AND status='pending'`).get(coach.id).cnt;
 
   const players = db.prepare(`
     SELECT pp.id AS pack_player_id, pp.ovr, pp.rarity, pp.kept,
@@ -126,7 +129,7 @@ router.get('/my', requireAuth, (req, res) => {
     ORDER BY pp.id ASC
   `).all(pack.id);
 
-  res.json({ ...pack, players });
+  res.json({ ...pack, players, pending_count: pendingCount });
 });
 
 // ─── Shared pack generation logic (used by route + scheduler) ────────────────
@@ -271,10 +274,6 @@ router.post('/buy', requireAuth, (req, res) => {
   const PACK_PRICE = 1000000;
 
   if (available < PACK_PRICE) return res.status(400).json({ error: 'Недостаточно средств (нужно €1M)' });
-
-  // Check no pending pack
-  const existing = db.prepare(`SELECT id FROM player_packs WHERE coach_id=? AND status='pending'`).get(coach.id);
-  if (existing) return res.status(400).json({ error: 'У вас уже есть нераскрытый пак' });
 
   // Deduct budget
   db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(PACK_PRICE, coach.team_id);

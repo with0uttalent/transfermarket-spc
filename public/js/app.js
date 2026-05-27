@@ -1585,6 +1585,7 @@ async function renderPlayers(app, params) {
         <select id="player-pos-filter"><option value="">All Positions</option>${POSITIONS.map(p=>`<option value="${p}">${p}</option>`).join('')}</select>
         <select id="player-team-filter"><option value="">All Teams</option><option value="free">Free Agents</option>${teams.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select>
         <select id="player-status-filter"><option value="">All Status</option><option value="active">Active</option><option value="retired">Retired</option><option value="free_agent">Free Agent</option></select>
+        <select id="player-sort"><option value="ovr_desc">OVR ↓</option><option value="ovr_asc">OVR ↑</option><option value="mv_desc">Стоимость ↓</option><option value="mv_asc">Стоимость ↑</option><option value="name_asc">Имя A–Z</option></select>
       </div>
       <div class="card"><div class="table-wrap"><table>
         <thead><tr><th>Игрок</th><th>Нац.</th><th>Позиция</th><th>Возраст</th><th>Команда</th><th>Нога</th><th class="text-right">OVR</th><th class="text-right">Ценность</th>${isAdmin()?'<th></th>':''}</tr></thead>
@@ -1610,15 +1611,22 @@ async function renderPlayers(app, params) {
           </td>`:''}
         </tr>`).join('');
     };
-    renderRows(players);
+    renderRows([...players].sort((a,b)=>(calcOverall(b)||0)-(calcOverall(a)||0)));
     const applyFilters=()=>{
       const s=document.getElementById('player-search').value.toLowerCase();
       const pos=document.getElementById('player-pos-filter').value;
       const tv=document.getElementById('player-team-filter').value;
       const st=document.getElementById('player-status-filter').value;
-      renderRows(players.filter(p=>(!s||p.name.toLowerCase().includes(s))&&(!pos||p.position===pos)&&(!tv||(tv==='free'?!p.team_id:String(p.team_id)===tv))&&(!st||p.status===st)));
+      const sort=document.getElementById('player-sort').value;
+      let list=players.filter(p=>(!s||p.name.toLowerCase().includes(s))&&(!pos||p.position===pos)&&(!tv||(tv==='free'?!p.team_id:String(p.team_id)===tv))&&(!st||p.status===st));
+      if(sort==='ovr_desc') list=[...list].sort((a,b)=>(calcOverall(b)||0)-(calcOverall(a)||0));
+      else if(sort==='ovr_asc') list=[...list].sort((a,b)=>(calcOverall(a)||0)-(calcOverall(b)||0));
+      else if(sort==='mv_desc') list=[...list].sort((a,b)=>(b.market_value||0)-(a.market_value||0));
+      else if(sort==='mv_asc') list=[...list].sort((a,b)=>(a.market_value||0)-(b.market_value||0));
+      else if(sort==='name_asc') list=[...list].sort((a,b)=>a.name.localeCompare(b.name));
+      renderRows(list);
     };
-    ['player-search','player-pos-filter','player-team-filter','player-status-filter'].forEach(id=>{
+    ['player-search','player-pos-filter','player-team-filter','player-status-filter','player-sort'].forEach(id=>{
       document.getElementById(id).addEventListener('change',applyFilters);
       document.getElementById(id).addEventListener('input',applyFilters);
     });
@@ -5019,12 +5027,33 @@ async function loadPackTab(coach) {
       GET('/packs/my').catch(() => null),
       coach.team_id ? GET('/teams/' + coach.team_id).catch(() => null) : Promise.resolve(null),
     ]);
-    // Attach budget info to coach object for renderPackTab
     if (teamData) {
       coach._budgetAvailable = Math.max(0, (teamData.transfer_budget || 10000000) - (teamData.transfer_budget_spent || 0));
     }
+    // Reset revealed state when a different pack is shown
+    if (pack && _revealedState.packId !== pack.id) {
+      _revealedState.packId = pack.id;
+      _revealedState.cards.clear();
+    }
     el.innerHTML = renderPackTab(pack, coach);
+    // Restore visual state of already-revealed cards (tab switch re-renders DOM)
+    if (pack) {
+      for (const pid of _revealedState.cards) {
+        _restoreRevealedCard(pid);
+      }
+    }
   } catch(e) { if (el) el.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+function _restoreRevealedCard(playerId) {
+  const card = document.getElementById('pack-card-'+playerId);
+  if (!card) return;
+  const back = card.querySelector('.pack-card-back');
+  const front = card.querySelector('.pack-card-front');
+  if (back) back.style.display = 'none';
+  if (front) front.style.display = 'flex';
+  card.classList.remove('pack-card-hidden', 'pack-card-flipping');
+  card.classList.add('pack-card-revealed');
 }
 
 async function buyPack() {
@@ -5109,10 +5138,10 @@ function renderPackTab(pack, coach) {
     </div>`;
 }
 
-let _revealedCards = new Set();
+let _revealedState = { packId: null, cards: new Set() };
 async function revealPackCard(playerId) {
-  if (_revealedCards.has(playerId)) return;
-  _revealedCards.add(playerId);
+  if (_revealedState.cards.has(playerId)) return;
+  _revealedState.cards.add(playerId);
   const card = document.getElementById('pack-card-'+playerId);
   if (!card) return;
 

@@ -187,10 +187,12 @@ function startDailyAuctions(db) {
   for (const p of freeAgents) {
     const startBid = Math.max(100000, Math.round(p.market_value * 0.5 / 100000) * 100000);
     try {
+      // Remove old expired/won record — UNIQUE constraint on player_id blocks re-auction otherwise
+      db.prepare(`DELETE FROM fa_auctions WHERE player_id=? AND status IN ('expired','won')`).run(p.id);
       db.prepare(`INSERT OR IGNORE INTO fa_auctions (player_id, start_bid, start_time, end_time, status) VALUES (?,?,?,?,'active')`)
         .run(p.id, startBid, now.toISOString(), endTime.toISOString());
       count++;
-    } catch { /* already has auction */ }
+    } catch { /* already has active auction */ }
   }
 
   console.log(`[Auctions] Daily window opened at ${now.toISOString()}: ${count} auctions started (ends 17:00)`);
