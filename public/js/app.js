@@ -5356,7 +5356,6 @@ function showCropModal(imgSrc, aspectW, aspectH, onSuccess) {
       </div>
       <div class="crop-container" id="crop-container">
         <canvas id="crop-canvas"></canvas>
-        <div class="crop-overlay" id="crop-overlay"></div>
       </div>
       <div class="crop-controls">
         <div style="font-size:12px;color:rgba(255,255,255,.5);text-align:center;margin-bottom:8px">Перетаскивайте для перемещения · Колесо для масштаба</div>
@@ -5370,23 +5369,16 @@ function showCropModal(imgSrc, aspectW, aspectH, onSuccess) {
 
   const canvas = document.getElementById('crop-canvas');
   const ctx = canvas.getContext('2d');
-  const overlayEl = document.getElementById('crop-overlay');
   const container = document.getElementById('crop-container');
 
-  const CROP_SIZE = isSquare ? 280 : 0; // for square
   const CROP_W = isSquare ? 280 : 400;
   const CROP_H = isSquare ? 280 : Math.round(400 * aspectH / aspectW);
 
   canvas.width = 480;
   canvas.height = Math.max(CROP_H + 80, 320);
 
-  // Position crop overlay
   const overlayLeft = (canvas.width - CROP_W) / 2;
   const overlayTop  = (canvas.height - CROP_H) / 2;
-  overlayEl.style.left   = overlayLeft + 'px';
-  overlayEl.style.top    = overlayTop + 'px';
-  overlayEl.style.width  = CROP_W + 'px';
-  overlayEl.style.height = CROP_H + 'px';
 
   const img = new Image();
   img.onload = () => {
@@ -5405,34 +5397,19 @@ function showCropModal(imgSrc, aspectW, aspectH, onSuccess) {
       // Darken outside crop
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // Clear crop area
-      if (isSquare) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(overlayLeft + CROP_W/2, overlayTop + CROP_H/2, CROP_W/2, 0, Math.PI*2);
-        ctx.clip();
-        ctx.drawImage(img, offsetX, offsetY, img.width * scale, img.height * scale);
-        ctx.restore();
-        // Circle border
-        ctx.beginPath();
-        ctx.arc(overlayLeft + CROP_W/2, overlayTop + CROP_H/2, CROP_W/2, 0, Math.PI*2);
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      } else {
-        ctx.clearRect(overlayLeft, overlayTop, CROP_W, CROP_H);
-        ctx.drawImage(img, offsetX, offsetY, img.width * scale, img.height * scale);
-        // Re-apply darkening outside (clip trick)
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(0, 0, canvas.width, overlayTop);
-        ctx.fillRect(0, overlayTop + CROP_H, canvas.width, canvas.height);
-        ctx.fillRect(0, overlayTop, overlayLeft, CROP_H);
-        ctx.fillRect(overlayLeft + CROP_W, overlayTop, canvas.width, CROP_H);
-        // Border
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(overlayLeft, overlayTop, CROP_W, CROP_H);
-      }
+      // Clear crop area (square for both 1:1 and custom ratio)
+      ctx.clearRect(overlayLeft, overlayTop, CROP_W, CROP_H);
+      ctx.drawImage(img, offsetX, offsetY, img.width * scale, img.height * scale);
+      // Re-darken outside crop area
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, canvas.width, overlayTop);
+      ctx.fillRect(0, overlayTop + CROP_H, canvas.width, canvas.height);
+      ctx.fillRect(0, overlayTop, overlayLeft, CROP_H);
+      ctx.fillRect(overlayLeft + CROP_W, overlayTop, canvas.width, CROP_H);
+      // Border
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(overlayLeft, overlayTop, CROP_W, CROP_H);
     }
 
     draw();
