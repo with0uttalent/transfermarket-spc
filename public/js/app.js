@@ -155,16 +155,16 @@ const ALL_ZONES = ['GK','DEF','DMF','MID','AMF','FWD'];
 
 // 5 uniform circles per row — simple grid layout
 const _ROWS = [
-  { zone:'FWD', y:12 },
-  { zone:'AMF', y:26 },
-  { zone:'MID', y:41 },
-  { zone:'DMF', y:56 },
-  { zone:'DEF', y:71 },
+  { zone:'FWD', y:10 },
+  { zone:'AMF', y:25 },
+  { zone:'MID', y:40 },
+  { zone:'DMF', y:55 },
+  { zone:'DEF', y:70 },
 ];
-const _5X = [10, 27.5, 50, 72.5, 90]; // 5 evenly spaced x positions
+const _5X = [8, 26, 50, 74, 92]; // 5 evenly spaced x positions with wider spread
 
 const PITCH_SLOTS = [
-  { id:'GK-1', x:50, y:86, zone:'GK', label:'' },
+  { id:'GK-1', x:50, y:85, zone:'GK', label:'' },
   ..._ROWS.flatMap(r => _5X.map((x,i) => ({ id:`${r.zone}-${i+1}`, x, y:r.y, zone:r.zone, label:'' }))),
 ];
 
@@ -4048,13 +4048,13 @@ function renderPitchZones(lineupSlots) {
         title="${posHint}"
         draggable="true"
         ondragstart="dragPlayerStart(${p.id},'pitch',event)">
-        <div class="pb-stamina-bar"><div class="pb-stamina-fill" style="width:${stamVal}%;background:${stamColor}"></div></div>
         <div class="pb-slot-av">
           ${p.image_url?`<img src="${escHtml(p.image_url)}" onerror="this.style.display='none'">`:`<span>${escHtml(ini)}</span>`}
           ${isInjured?'<span class="pb-inj-icon">🚑</span>':''}
           <div class="pb-slot-ovr" style="background:${ovrBg}">${ovrText}</div>
         </div>
         <div class="pb-slot-name">${shortName}</div>
+        <div class="pb-stamina-bar"><div class="pb-stamina-fill" style="width:${stamVal}%;background:${stamColor}"></div></div>
         <div class="pb-slot-remove-badge">✕</div>
       </div>`;
     } else {
