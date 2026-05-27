@@ -233,11 +233,9 @@ function calcOverall(player, assignedSlot) {
     );
   }
 
-  // ovr_fixed is the pack/initial rating, but skill growth can exceed it
+  // ovr_fixed is the authoritative pack rating; skillOvr is fallback only when no fixed rating exists
   let base;
-  if (player.ovr_fixed != null && skillOvr !== null) {
-    base = Math.max(player.ovr_fixed, skillOvr);
-  } else if (player.ovr_fixed != null) {
+  if (player.ovr_fixed != null) {
     base = player.ovr_fixed;
   } else if (skillOvr !== null) {
     base = skillOvr;
