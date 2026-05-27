@@ -487,10 +487,19 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
 
   if (champion) {
     const titleName = `${league.name} Champion Season ${league.season}`;
+    const year = new Date().getFullYear();
+    const season = `Season ${league.season}`;
     db.prepare(`
       INSERT INTO titles (team_id, title_name, season, year)
       VALUES (?,?,?,?)
-    `).run(champion.team_id, titleName, `Season ${league.season}`, new Date().getFullYear());
+    `).run(champion.team_id, titleName, season, year);
+
+    // Award individual titles to all current squad members
+    const champPlayers = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(champion.team_id);
+    const insertPlayerTitle = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year) VALUES (?,?,?,?,?)`);
+    for (const cp of champPlayers) {
+      insertPlayerTitle.run(champion.team_id, cp.id, titleName, season, year);
+    }
 
     db.prepare(`INSERT INTO news (title, body, type) VALUES (?,?,?)`).run(
       `${champion.team_name} — чемпион ${league.name}!`,

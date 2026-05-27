@@ -87,9 +87,9 @@ router.get('/:id', (req, res) => {
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
     LEFT JOIN teams t ON ti.team_id = t.id
-    WHERE ti.player_id = ? OR (ti.team_id IS NOT NULL AND ti.team_id = ?)
+    WHERE ti.player_id = ?
     ORDER BY ti.year DESC
-  `).all(req.params.id, player.team_id || 0);
+  `).all(req.params.id);
 
   const marketHistory = db.prepare(`
     SELECT market_value, recorded_at

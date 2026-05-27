@@ -225,13 +225,16 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
   const home = getLineupInfo(db, match.home_team_id);
   const away = getLineupInfo(db, match.away_team_id);
 
-  // Build skills map for all players
+  // Build skills map and stamina map for all players
   const allPlayerIds = [...home.players, ...away.players].map(p => p.id);
   let skillsMap = {};
+  let staminaMap = {};
   if (allPlayerIds.length) {
     const placeholders = allPlayerIds.map(() => '?').join(',');
     const skillRows = db.prepare(`SELECT * FROM player_skills WHERE player_id IN (${placeholders})`).all(...allPlayerIds);
     for (const sk of skillRows) skillsMap[sk.player_id] = sk;
+    const staminaRows = db.prepare(`SELECT id, COALESCE(stamina, 100) as stamina FROM players WHERE id IN (${placeholders})`).all(...allPlayerIds);
+    for (const sr of staminaRows) staminaMap[sr.id] = sr.stamina;
   }
 
   // Get bench players (slots 12-22) for substitutions
@@ -256,10 +259,11 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
       match.home_team_id, match.away_team_id,
       home.players, homeReserves,
       away.players, awayReserves,
-      skillsMap
+      skillsMap,
+      match.is_friendly ? {} : staminaMap
     );
   } else {
-    result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
+    result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap, match.is_friendly ? {} : staminaMap);
   }
 
   const startedAt = new Date().toISOString();

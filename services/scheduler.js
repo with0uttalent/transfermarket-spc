@@ -131,6 +131,22 @@ function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
     const tot = db.prepare('SELECT COALESCE(SUM(market_value),0) as t FROM players WHERE team_id=?').get(tid);
     db.prepare('UPDATE teams SET market_value=? WHERE id=?').run(tot.t, tid);
   }
+
+  // Stamina update — skip for friendly matches
+  const matchMeta = db.prepare('SELECT is_friendly FROM matches WHERE id=?').get(matchId);
+  if (!matchMeta || !matchMeta.is_friendly) {
+    const playedIds = new Set(Object.keys(playerStats).map(Number));
+    for (const tid of [homeTeamId, awayTeamId]) {
+      const teamPlayers = db.prepare('SELECT id FROM players WHERE team_id=?').all(tid);
+      for (const p of teamPlayers) {
+        if (playedIds.has(p.id)) {
+          db.prepare('UPDATE players SET stamina = MAX(0, COALESCE(stamina, 100) - 15) WHERE id=?').run(p.id);
+        } else {
+          db.prepare('UPDATE players SET stamina = MIN(100, COALESCE(stamina, 100) + 10) WHERE id=?').run(p.id);
+        }
+      }
+    }
+  }
 }
 
 function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, events) {
@@ -421,18 +437,23 @@ function simulateLeagueMatchday(leagueId) {
       `).all(srow.away_team_id);
     }
 
-    // Build skills map
+    // Build skills map and stamina map
     const allPlayerIds = useLineup
       ? [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves].map(p => p.player_id)
       : [...(homePlayers||[]), ...(awayPlayers||[])].map(p => p.id);
 
     const skillsMap = {};
+    const staminaMap = {};
     if (allPlayerIds.length) {
       const placeholders = allPlayerIds.map(() => '?').join(',');
       const skillRows = db.prepare(
         `SELECT * FROM player_skills WHERE player_id IN (${placeholders})`
       ).all(...allPlayerIds);
       for (const sk of skillRows) skillsMap[sk.player_id] = sk;
+      const staminaRows = db.prepare(
+        `SELECT id, COALESCE(stamina, 100) as stamina FROM players WHERE id IN (${placeholders})`
+      ).all(...allPlayerIds);
+      for (const sr of staminaRows) staminaMap[sr.id] = sr.stamina;
     }
 
     // Simulate first so we have the result for the INSERT
@@ -442,10 +463,11 @@ function simulateLeagueMatchday(leagueId) {
         srow.home_team_id, srow.away_team_id,
         homeStarters, homeReserves,
         awayStarters, awayReserves,
-        skillsMap
+        skillsMap,
+        staminaMap
       );
     } else {
-      result = simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers);
+      result = simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers, null, null, staminaMap);
     }
 
     // Create match record with staggered kick-off using league settings
@@ -918,15 +940,18 @@ function simulateSingleLeagueMatch(db, league, srow) {
     ? [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves].map(p => p.player_id)
     : [...(homePlayers||[]), ...(awayPlayers||[])].map(p => p.id);
   const skillsMap = {};
+  const staminaMap2 = {};
   if (allPlayerIds.length) {
     const placeholders = allPlayerIds.map(() => '?').join(',');
     const skillRows = db.prepare(`SELECT * FROM player_skills WHERE player_id IN (${placeholders})`).all(...allPlayerIds);
     for (const sk of skillRows) skillsMap[sk.player_id] = sk;
+    const staminaRows2 = db.prepare(`SELECT id, COALESCE(stamina, 100) as stamina FROM players WHERE id IN (${placeholders})`).all(...allPlayerIds);
+    for (const sr of staminaRows2) staminaMap2[sr.id] = sr.stamina;
   }
 
   const result = useLineup
-    ? simulateMatchWithLineup(srow.home_team_id, srow.away_team_id, homeStarters, homeReserves, awayStarters, awayReserves, skillsMap)
-    : simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers);
+    ? simulateMatchWithLineup(srow.home_team_id, srow.away_team_id, homeStarters, homeReserves, awayStarters, awayReserves, skillsMap, staminaMap2)
+    : simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers, null, null, staminaMap2);
 
   const now = new Date();
   const pad2 = n => String(n).padStart(2, '0');

@@ -494,6 +494,7 @@ function initSchema() {
     )`,
     `ALTER TABLE players ADD COLUMN acquired_season INTEGER DEFAULT 0`,
     `INSERT OR IGNORE INTO app_settings (key, value) VALUES ('current_season', '1')`,
+    `ALTER TABLE players ADD COLUMN stamina INTEGER DEFAULT 100`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

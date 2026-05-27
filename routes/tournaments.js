@@ -226,8 +226,12 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
         .run(`🏆 ${champ.name} выигрывает ${tour.name}!`, `${champ.name} стал чемпионом турнира «${tour.name}»!`, 'tournament', req.params.id);
       const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(allWinners[0]);
       const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
+      const insertPlayerTitle = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?,?)`);
+      const tourYear = new Date().getFullYear();
+      const tourSeason = `Турнир ${tourYear}`;
       for (const cp of champPl) {
         insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tour.name}`, req.params.id);
+        insertPlayerTitle.run(allWinners[0], cp.id, tour.name, tourSeason, tourYear, req.params.id, tour.trophy_url || null);
         const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
         if (pl && pl.market_value > 0) {
           const nv = pl.market_value * 1.05;

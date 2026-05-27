@@ -32,6 +32,7 @@ router.get('/:teamId', (req, res) => {
     SELECT tl.slot, tl.player_id, tl.position_override, tl.priority_sub,
            p.name AS player_name, p.position, p.shirt_number, p.market_value,
            p.status AS player_status, p.image_url,
+           COALESCE(p.stamina, 100) AS stamina,
            pi.matches_remaining AS injury_matches_remaining,
            pi.injury_type
     FROM team_lineups tl

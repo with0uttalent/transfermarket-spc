@@ -148,6 +148,23 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function rand() { return Math.random(); }
 function ri(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
 
+// ─── Stamina helpers ──────────────────────────────────────────────────────────
+function calcAvgStamina(players, staminaMap) {
+  if (!players.length) return 100;
+  const total = players.reduce((s, p) => s + (staminaMap[p.id] ?? p.stamina ?? 100), 0);
+  return total / players.length;
+}
+
+function staminaFactor(avgStamina) {
+  if (avgStamina >= 70) return 1.0;
+  // Below 70: up to 15% strength debuff at stamina = 0
+  return 0.85 + (avgStamina / 70) * 0.15;
+}
+
+function applyStaminaDebuff(str, factor) {
+  return { attack: str.attack * factor, defense: str.defense * factor, midfield: str.midfield * factor };
+}
+
 function getPositionGroup(pos) {
   if (!pos) return 'MID';
   if (GK_POSITIONS.has(pos)) return 'GK';
@@ -609,13 +626,18 @@ function generateMatchFullStats(homeStr, awayStr, homeScore, awayScore) {
 }
 
 // ─── simulateMatch — market-value based, optional zone maps ──────────────────
-function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, homeZoneMap, awayZoneMap) {
-  const homeStr = homeZoneMap && Object.keys(homeZoneMap).length
+function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, homeZoneMap, awayZoneMap, staminaMap = {}) {
+  let homeStr = homeZoneMap && Object.keys(homeZoneMap).length
     ? teamStrengthWithZones(homePlayers, homeZoneMap)
     : homePlayers.length ? teamStrength(homePlayers) : { attack: 6, defense: 6, midfield: 6 };
-  const awayStr = awayZoneMap && Object.keys(awayZoneMap).length
+  let awayStr = awayZoneMap && Object.keys(awayZoneMap).length
     ? teamStrengthWithZones(awayPlayers, awayZoneMap)
     : awayPlayers.length ? teamStrength(awayPlayers) : { attack: 6, defense: 6, midfield: 6 };
+
+  if (Object.keys(staminaMap).length) {
+    homeStr = applyStaminaDebuff(homeStr, staminaFactor(calcAvgStamina(homePlayers, staminaMap)));
+    awayStr = applyStaminaDebuff(awayStr, staminaFactor(calcAvgStamina(awayPlayers, staminaMap)));
+  }
 
   return simulateMatchCore(
     homeTeamId, awayTeamId,
@@ -634,19 +656,25 @@ function simulateMatchWithLineup(
   homeTeamId, awayTeamId,
   homeStarters, homeReserves,
   awayStarters, awayReserves,
-  playerSkillsMap
+  playerSkillsMap,
+  staminaMap = {}
 ) {
   const skillsMap = playerSkillsMap || {};
 
   const homeAll = [...homeStarters, ...homeReserves];
   const awayAll = [...awayStarters, ...awayReserves];
 
-  const homeStr = homeStarters.length
+  let homeStr = homeStarters.length
     ? teamStrengthFromSkills(homeStarters, skillsMap)
     : { attack: 0.6, defense: 0.6, midfield: 0.6 };
-  const awayStr = awayStarters.length
+  let awayStr = awayStarters.length
     ? teamStrengthFromSkills(awayStarters, skillsMap)
     : { attack: 0.6, defense: 0.6, midfield: 0.6 };
+
+  if (Object.keys(staminaMap).length) {
+    homeStr = applyStaminaDebuff(homeStr, staminaFactor(calcAvgStamina(homeStarters, staminaMap)));
+    awayStr = applyStaminaDebuff(awayStr, staminaFactor(calcAvgStamina(awayStarters, staminaMap)));
+  }
 
   return simulateMatchCore(
     homeTeamId, awayTeamId,
@@ -688,4 +716,6 @@ module.exports = {
   generateMatchFullStats,
   teamStrengthFromSkills,
   teamStrengthWithZones,
+  calcAvgStamina,
+  staminaFactor,
 };

@@ -220,23 +220,33 @@ const OVR_WEIGHTS = {
 };
 
 function calcOverall(player, assignedSlot) {
-  // Pack players carry a fixed OVR that must not be recalculated
-  if (player.ovr_fixed != null) {
-    if (!assignedSlot) return player.ovr_fixed;
-    const naturalZone  = posToZone(player.position);
-    const assignedZone = slotToZone(assignedSlot);
-    if (!assignedZone || assignedZone === naturalZone) return player.ovr_fixed;
-    return Math.round(player.ovr_fixed * positionPenalty(naturalZone, assignedZone));
-  }
   const { pace, shooting, passing, defending, physical } = player;
-  if (!pace && !shooting && !passing && !defending && !physical) return null;
-  const naturalZone = posToZone(player.position);
-  const w = OVR_WEIGHTS[naturalZone] || OVR_WEIGHTS.MID;
-  const base = Math.round(
-    w[0]*(pace||50) + w[1]*(shooting||50) + w[2]*(passing||50) +
-    w[3]*(defending||50) + w[4]*(physical||50)
-  );
+  const hasSkills = pace || shooting || passing || defending || physical;
+
+  let skillOvr = null;
+  if (hasSkills) {
+    const nz = posToZone(player.position);
+    const w = OVR_WEIGHTS[nz] || OVR_WEIGHTS.MID;
+    skillOvr = Math.round(
+      w[0]*(pace||50) + w[1]*(shooting||50) + w[2]*(passing||50) +
+      w[3]*(defending||50) + w[4]*(physical||50)
+    );
+  }
+
+  // ovr_fixed is the pack/initial rating, but skill growth can exceed it
+  let base;
+  if (player.ovr_fixed != null && skillOvr !== null) {
+    base = Math.max(player.ovr_fixed, skillOvr);
+  } else if (player.ovr_fixed != null) {
+    base = player.ovr_fixed;
+  } else if (skillOvr !== null) {
+    base = skillOvr;
+  } else {
+    return null;
+  }
+
   if (!assignedSlot) return base;
+  const naturalZone  = posToZone(player.position);
   const assignedZone = slotToZone(assignedSlot);
   if (!assignedZone || assignedZone === naturalZone) return base;
   return Math.round(base * positionPenalty(naturalZone, assignedZone));
@@ -248,6 +258,23 @@ function ovrBadge(ovr, assignedZone, naturalZone) {
   const color = ovr >= 90 ? '#e74c3c' : ovr >= 80 ? '#f1c40f' : ovr >= 70 ? '#2ecc71' : ovr >= 60 ? '#3498db' : '#95a5a6';
   const style = `background:${color};color:#000;font-weight:700;font-size:11px;padding:1px 5px;border-radius:3px;${outOfPos?'opacity:0.75':''}`;
   return `<span style="${style}" title="${outOfPos?'Не на своей позиции (-штраф)':'Рейтинг'}">${ovr}${outOfPos?'⚠':''}</span>`;
+}
+
+function staminaBar(stamina, compact = false) {
+  const s = stamina ?? 100;
+  const color = s >= 70 ? '#27ae60' : s >= 40 ? '#f39c12' : '#e74c3c';
+  const label = s >= 70 ? 'Хорошая форма' : s >= 40 ? 'Усталость' : 'Истощён';
+  if (compact) {
+    return `<div title="Выносливость: ${s}% — ${label}" style="width:32px;height:4px;background:#444;border-radius:2px;overflow:hidden">
+      <div style="height:100%;width:${s}%;background:${color};border-radius:2px"></div>
+    </div>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:4px" title="Выносливость: ${s}% — ${label}">
+    <div style="flex:1;height:5px;background:#333;border-radius:3px;overflow:hidden;min-width:30px">
+      <div style="height:100%;width:${s}%;background:${color};border-radius:3px"></div>
+    </div>
+    <span style="font-size:9px;color:${color};font-weight:700;min-width:22px">${s}%</span>
+  </div>`;
 }
 
 // Interactive pitch builder state
@@ -1107,10 +1134,16 @@ async function deleteTeam(id, name) {
 async function renderTeamDetail(app, id) {
   app.innerHTML='<div class="empty-state"><p>Загрузка…</p></div>';
   try {
-    const team = await GET('/teams/'+id);
+    const [team, lineupData] = await Promise.all([
+      GET('/teams/'+id),
+      GET('/lineups/'+id).catch(()=>({ lineup: [] })),
+    ]);
 
     // ── Stats calculations ────────────────────────────────────
     const players = team.players || [];
+    const starterIds = new Set(
+      (lineupData.lineup || []).filter(l => l.slot >= 1 && l.slot <= 11).map(l => l.player_id)
+    );
     const ages = players.map(p => calcAge(p.date_of_birth)).filter(Boolean);
     const avgAge = ages.length ? (ages.reduce((a,b)=>a+b,0)/ages.length).toFixed(1) : '–';
     const foreigners = players.filter(p => p.nationality_id && p.nationality_id !== team.country_id).length;
@@ -1119,17 +1152,19 @@ async function renderTeamDetail(app, id) {
     const transfers = team.transfers || [];
     const income  = transfers.filter(t=>t.from_team_id===team.id).reduce((s,t)=>s+(t.transfer_fee||0),0);
 
-    // ── OVR strength breakdown (admin only) ──────────────────
+    // ── OVR strength breakdown (admin only, based on starting 11) ──
     const ATK_POS = new Set(['Centre-Forward','Striker','Left Winger','Right Winger','Attacking Midfield']);
     const MID_POS = new Set(['Central Midfield','Defensive Midfield']);
     const DEF_POS = new Set(['Centre-Back','Left-Back','Right-Back']);
     const GK_POS  = new Set(['Goalkeeper']);
     const lineAvg = pls => { const v = pls.map(p=>calcOverall(p)).filter(x=>x!==null); return v.length ? Math.round(v.reduce((a,b)=>a+b,0)/v.length) : null; };
-    const atkPl = players.filter(p=>ATK_POS.has(p.position||'')), midPl = players.filter(p=>MID_POS.has(p.position||''));
-    const defPl = players.filter(p=>DEF_POS.has(p.position||'')), gkPl  = players.filter(p=>GK_POS.has(p.position||''));
+    const ovrPlayers = starterIds.size >= 7 ? players.filter(p => starterIds.has(p.id)) : players;
+    const atkPl = ovrPlayers.filter(p=>ATK_POS.has(p.position||'')), midPl = ovrPlayers.filter(p=>MID_POS.has(p.position||''));
+    const defPl = ovrPlayers.filter(p=>DEF_POS.has(p.position||'')), gkPl  = ovrPlayers.filter(p=>GK_POS.has(p.position||''));
     const atkOvr = lineAvg(atkPl), midOvr = lineAvg(midPl), defOvr = lineAvg(defPl), gkOvr = lineAvg(gkPl);
-    const allOvrs = players.map(p=>calcOverall(p)).filter(x=>x!==null);
+    const allOvrs = ovrPlayers.map(p=>calcOverall(p)).filter(x=>x!==null);
     const sqOvr = allOvrs.length ? Math.round(allOvrs.reduce((a,b)=>a+b,0)/allOvrs.length) : null;
+    const ovrLabel = starterIds.size >= 7 ? 'Старт. состав' : 'Средний OVR';
     // Weighted attack/defense using simulator formula
     const A = atkOvr??sqOvr??60, M = midOvr??sqOvr??60, D = defOvr??sqOvr??60, G = gkOvr??sqOvr??60;
     const teamAtkStr = Math.round(A*0.55 + M*0.30 + D*0.10 + G*0.05);
@@ -1144,7 +1179,7 @@ async function renderTeamDetail(app, id) {
     const ovrPanel = sqOvr===null ? '<div style="color:var(--text-muted);font-size:12px">Нет данных по навыкам</div>' : `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <div style="font-size:32px;font-weight:900;line-height:1;color:var(--green)">${sqOvr}</div>
-        <div style="font-size:11px;color:var(--text-muted);line-height:1.4">Средний<br>OVR состава</div>
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.4">Средний<br>${ovrLabel}</div>
         <div style="margin-left:auto;text-align:right">
           <div style="font-size:11px;color:var(--text-muted)">Атак. сила</div>
           <div style="font-weight:800;color:#e67e22">${teamAtkStr}</div>
@@ -1450,6 +1485,7 @@ function _buildSquadInner() {
           <th>Нога</th>
           ${th('ovr','OVR','text-right')}
           ${th('market_value','Ценность','text-right')}
+          <th title="Выносливость">⚡</th>
           ${showActions?'<th></th>':''}
         </tr></thead>
         <tbody>
@@ -1466,12 +1502,13 @@ function _buildSquadInner() {
               <td class="text-muted">${p.foot||'–'}</td>
               <td class="text-right">${ovrBadge(p._ovr === -1 ? null : p._ovr, null, null)||'–'}</td>
               <td class="text-right mv">${fmtValue(p.market_value)}</td>
+              <td style="min-width:48px">${staminaBar(p.stamina, true)}</td>
               ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
                 <button class="btn-icon" onclick="showPlayerForm(${pJson})">✏️</button>
                 <button class="btn-icon" onclick="showQuickTransfer(${pJson})" title="Transfer">→</button>
                 <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
               </td>`:(isCoach()&&isOwnTeam)?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${pJson})">✏️</button></td>`:''}
-            </tr>`;}).join('') : `<tr><td colspan="${showActions?9:8}" class="text-muted" style="text-align:center;padding:24px">Нет игроков</td></tr>`}
+            </tr>`;}).join('') : `<tr><td colspan="${showActions?10:9}" class="text-muted" style="text-align:center;padding:24px">Нет игроков</td></tr>`}
         </tbody>
       </table></div>
     </div>`;
@@ -1526,8 +1563,24 @@ async function showCoachPlayerEditForm(player) {
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+State.token},
       body:JSON.stringify({name, nationality_id, shirt_number, position, foot}),
     }).then(r=>{if(!r.ok) throw new Error('Ошибка сохранения'); return r.json();});
+    // Update in-memory squad state so table refreshes without full page reload
+    const idx = _squadState.players.findIndex(p2 => p2.id === player.id);
+    if (idx >= 0) {
+      const nat = countries.find(c => c.id == nationality_id);
+      _squadState.players[idx] = {
+        ..._squadState.players[idx],
+        name,
+        nationality_id: nationality_id ? parseInt(nationality_id) : null,
+        flag_emoji: nat ? nat.flag_emoji : _squadState.players[idx].flag_emoji,
+        nationality_name: nat ? nat.name : _squadState.players[idx].nationality_name,
+        shirt_number: shirt_number || null,
+        position: position || null,
+        foot: foot || null,
+      };
+      _refreshSquadTable();
+    }
     toast('Игрок обновлён');
-  });
+  }, { noReload: true });
 }
 
 function renderTitlesTab(titles, teamId, playerId) {
@@ -1959,12 +2012,16 @@ function renderPentagonChart(skills, position) {
       <path d="${skillPath}" fill="rgba(39,174,96,.25)" stroke="var(--green)" stroke-width="2"/>
       ${skillPts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="var(--green)"/>`).join('')}
       ${labelPts.map((p, i) => `
-        <text x="${p.x.toFixed(1)}" y="${(p.y - 7).toFixed(1)}"
+        <text x="${p.x.toFixed(1)}" y="${(p.y - 6).toFixed(1)}"
           text-anchor="${textAnchors[i]}"
-          font-size="9" fill="var(--text-muted)" font-family="sans-serif">${labels[i]}</text>
-        <text x="${p.x.toFixed(1)}" y="${(p.y + 5).toFixed(1)}"
+          font-size="10" font-family="sans-serif"
+          stroke="#1a1a2e" stroke-width="3" stroke-linejoin="round" paint-order="stroke"
+          fill="rgba(200,210,230,0.9)" font-weight="600">${labels[i]}</text>
+        <text x="${p.x.toFixed(1)}" y="${(p.y + 6).toFixed(1)}"
           text-anchor="${textAnchors[i]}"
-          font-size="11" fill="var(--text)" font-weight="700" font-family="sans-serif">${values[i] || 50}</text>
+          font-size="13" font-family="sans-serif"
+          stroke="#1a1a2e" stroke-width="3" stroke-linejoin="round" paint-order="stroke"
+          fill="#ffffff" font-weight="800">${values[i] || 50}</text>
       `).join('')}
     </svg>
   </div>`;
@@ -3990,6 +4047,7 @@ function renderPitchZones(lineupSlots) {
         </div>
         <div class="pb-slot-name">${escHtml(p.name.split(' ')[0])}</div>
         <div class="pb-slot-ovr" style="color:${isInjured?'#e74c3c':ovrColor}">${isInjured?'❌':(ovr!=null?ovr+(outOfPos?'⚠':''):'?')}</div>
+        ${staminaBar(p.stamina, true)}
         <div class="pb-slot-remove-badge">✕</div>
       </div>`;
     } else {
@@ -4040,7 +4098,10 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
         <div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>
         <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:1px">${posBadge(p.position)}${zoneBadge(natZone, p)}</div>
       </div>
-      <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+        <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
+        ${staminaBar(p.stamina, true)}
+      </div>
       ${sel?`<span style="color:var(--blue);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
     </div>`;
   }).join('');
@@ -4078,6 +4139,7 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
         <span style="font-size:11px;font-weight:800;color:${ovrColor}">${ovr??'?'}</span>
+        ${staminaBar(p.stamina, true)}
         ${opts.showPriority?`<label class="priority-sub-label" title="Приоритетная замена" onclick="event.stopPropagation()"><input type="checkbox" ${s.priority_sub?'checked':''} onchange="togglePrioritySub(${p.id},${teamId},this.checked)"> ⭐</label>`:''}
         <button class="btn-icon" onclick="pitchReserveToStarter(${p.id},${teamId})" title="В основу">⚡</button>
         <button class="btn-icon danger" onclick="pitchRemoveFromLineup(${p.id},${teamId})" title="Убрать">✕</button>
@@ -5289,7 +5351,7 @@ function showCropModal(imgSrc, aspectW, aspectH, onSuccess) {
       </div>
       <div class="crop-container" id="crop-container">
         <canvas id="crop-canvas"></canvas>
-        <div class="crop-overlay ${isSquare ? 'crop-overlay-circle' : ''}" id="crop-overlay"></div>
+        <div class="crop-overlay" id="crop-overlay"></div>
       </div>
       <div class="crop-controls">
         <div style="font-size:12px;color:rgba(255,255,255,.5);text-align:center;margin-bottom:8px">Перетаскивайте для перемещения · Колесо для масштаба</div>
@@ -5566,7 +5628,7 @@ async function showLoanOutForm(player) {
 // ═══════════════════════════════════════════════════════════
 //  MODAL HELPER
 // ═══════════════════════════════════════════════════════════
-function mkModal(title, bodyHtml, onSave) {
+function mkModal(title, bodyHtml, onSave, opts = {}) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.innerHTML = `
@@ -5588,7 +5650,10 @@ function mkModal(title, bodyHtml, onSave) {
   modal.querySelector('.modal-save').addEventListener('click', async () => {
     try {
       const result = await onSave();
-      if (result !== false) { close(); router(); }
+      if (result !== false) {
+        close();
+        if (!opts.noReload) router();
+      }
     } catch(e) { toast(e.message, 'error'); }
   });
   return modal;
