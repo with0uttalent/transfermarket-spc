@@ -23,7 +23,7 @@ function syncNotifSettings(db) {
 // ─── Public settings (no auth) ────────────────────────────────────────────────
 router.get('/settings/public', (req, res) => {
   const db = getDb();
-  const PUBLIC_KEYS = ['league_champion'];
+  const PUBLIC_KEYS = ['league_champion', 'current_season'];
   const rows = db.prepare(`SELECT key, value FROM app_settings WHERE key IN (${PUBLIC_KEYS.map(() => '?').join(',')})`).all(...PUBLIC_KEYS);
   const settings = {};
   for (const r of rows) {

@@ -581,6 +581,11 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     db.prepare(`UPDATE teams SET transfer_budget = 10000000, transfer_budget_spent = 0 WHERE id = ?`).run(tid);
   }
 
+  // Advance global season counter so trade bans from previous season expire
+  const seasonRow = db.prepare("SELECT value FROM app_settings WHERE key='current_season'").get();
+  const newGlobalSeason = (seasonRow ? parseInt(seasonRow.value) : 1) + 1;
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('current_season', ?)").run(String(newGlobalSeason));
+
   db.prepare(`
     UPDATE leagues
     SET season=?, status='active', current_matchday=0, total_matchdays=?, start_date=?,
@@ -592,6 +597,7 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     message: `Season ${newSeason} started`,
     champion: champion ? champion.team_name : null,
     new_season: newSeason,
+    global_season: newGlobalSeason,
   });
 });
 

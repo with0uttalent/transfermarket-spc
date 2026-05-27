@@ -1,5 +1,5 @@
 const express = require('express');
-const { getDb } = require('../database/db');
+const { getDb, getCurrentSeason, isTradeBanned } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 
@@ -147,6 +147,11 @@ router.post('/offers', requireAuth, (req, res) => {
     from_team_id = coach.team_id;
     to_team_id = parseInt(target_team_id);
     if (player.team_id !== coach.team_id) return res.status(400).json({ error: 'Player does not belong to your team' });
+    // Trade ban applies to loan_out (can't send away a just-acquired player)
+    const currentSeason = getCurrentSeason(db);
+    if (isTradeBanned(player, currentSeason)) {
+      return res.status(400).json({ error: `Торговый бан — ${player.name} должен отыграть минимум один сезон прежде чем его можно отдать в аренду` });
+    }
   }
 
   const fee = parseFloat(loan_fee) || 0;

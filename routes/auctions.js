@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { getDb } = require('../database/db');
+const { getDb, getCurrentSeason } = require('../database/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -137,7 +137,8 @@ function finalizeExpiredAuctions(db) {
       // Auction won: transfer player to winning team
       db.transaction(() => {
         const player = db.prepare('SELECT * FROM players WHERE id=?').get(auction.player_id);
-        db.prepare(`UPDATE players SET team_id=?, status='active' WHERE id=?`).run(auction.bidder_team_id, auction.player_id);
+        const currentSeason = getCurrentSeason(db);
+        db.prepare(`UPDATE players SET team_id=?, status='active', acquired_season=? WHERE id=?`).run(auction.bidder_team_id, currentSeason, auction.player_id);
         db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(auction.current_bid, auction.bidder_team_id);
         // Add to lineup (bench)
         const usedSlots = new Set(db.prepare('SELECT slot FROM team_lineups WHERE team_id=?').all(auction.bidder_team_id).map(r => r.slot));

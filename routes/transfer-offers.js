@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { getDb } = require('../database/db');
+const { getDb, getCurrentSeason, isTradeBanned } = require('../database/db');
 const { requireAdmin, requireCoach, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -135,6 +135,14 @@ router.post('/', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Player already has a pending transfer offer' });
   }
 
+  // Trade ban: player must have completed at least one full season with the selling team
+  if (!isAdmin && (offerType === 'buy' || offerType === 'swap')) {
+    const currentSeason = getCurrentSeason(db);
+    if (isTradeBanned(player, currentSeason)) {
+      return res.status(400).json({ error: `Игрок под торговым баном — ${player.name} должен отыграть минимум один сезон в текущей команде` });
+    }
+  }
+
   const offerAmount = parseFloat(amount) || 0;
 
   if (offerType === 'swap') {
@@ -214,10 +222,25 @@ router.put('/:id/accept', requireAuth, (req, res) => {
   const toTeam = db.prepare('SELECT * FROM teams WHERE id=?').get(offer.to_team_id);
   const now = new Date().toISOString().slice(0, 10);
 
+  // Trade ban check: selling team's player must have completed at least one season
+  if (!isAdmin && (offer.offer_type === 'buy' || offer.offer_type === 'swap' || offer.offer_type === 'loan')) {
+    const currentSeason = getCurrentSeason(db);
+    if (isTradeBanned(player, currentSeason)) {
+      return res.status(400).json({ error: `Игрок под торговым баном — ${player.name} должен отыграть минимум один сезон в текущей команде` });
+    }
+    if (offer.offer_type === 'swap' && offer.swap_player_id) {
+      const swapPlayer = db.prepare('SELECT * FROM players WHERE id=?').get(offer.swap_player_id);
+      if (swapPlayer && isTradeBanned(swapPlayer, currentSeason)) {
+        return res.status(400).json({ error: `Игрок под торговым баном — ${swapPlayer.name} должен отыграть минимум один сезон в текущей команде` });
+      }
+    }
+  }
+
   const executeTransfer = db.transaction(() => {
+    const currentSeason = getCurrentSeason(db);
     if (offer.offer_type === 'buy') {
-      // Update player team
-      db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.from_team_id, offer.player_id);
+      // Update player team with trade ban for buying team's current season
+      db.prepare('UPDATE players SET team_id=?, acquired_season=? WHERE id=?').run(offer.from_team_id, currentSeason, offer.player_id);
 
       // Insert transfer record
       db.prepare(`
@@ -258,10 +281,10 @@ router.put('/:id/accept', requireAuth, (req, res) => {
       );
 
     } else if (offer.offer_type === 'swap') {
-      // Move player_id: to_team → from_team
-      db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.from_team_id, offer.player_id);
+      // Move player_id: to_team → from_team (both get trade ban in their new team)
+      db.prepare('UPDATE players SET team_id=?, acquired_season=? WHERE id=?').run(offer.from_team_id, currentSeason, offer.player_id);
       // Move swap_player_id: from_team → to_team
-      db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.to_team_id, offer.swap_player_id);
+      db.prepare('UPDATE players SET team_id=?, acquired_season=? WHERE id=?').run(offer.to_team_id, currentSeason, offer.swap_player_id);
       // Cash top-up: if amount > 0, from_team pays to_team
       if (offer.amount > 0) {
         db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?')
@@ -298,8 +321,8 @@ router.put('/:id/accept', requireAuth, (req, res) => {
         VALUES (?,?,?,?,?,?,'active')
       `).run(offer.player_id, offer.to_team_id, offer.from_team_id, offer.amount, now, endDateStr);
 
-      // Update player team to loaning team
-      db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.from_team_id, offer.player_id);
+      // Update player team to loaning team (trade ban applies while on loan)
+      db.prepare('UPDATE players SET team_id=?, acquired_season=? WHERE id=?').run(offer.from_team_id, currentSeason, offer.player_id);
 
       // Insert transfer record for loan
       db.prepare(`

@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { getDb } = require('../database/db');
+const { getDb, getCurrentSeason, isTradeBanned } = require('../database/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -53,6 +53,12 @@ router.post('/:id/sell', requireAuth, (req, res) => {
   const player = db.prepare('SELECT * FROM players WHERE id=?').get(playerId);
   if (!player) return res.status(404).json({ error: 'Player not found' });
   if (player.team_id !== coach.team_id) return res.status(403).json({ error: 'Player not on your team' });
+
+  // Trade ban: player must have completed at least one full season before being sold
+  const currentSeason = getCurrentSeason(db);
+  if (isTradeBanned(player, currentSeason)) {
+    return res.status(400).json({ error: `Торговый бан — ${player.name} должен отыграть минимум один сезон в вашей команде` });
+  }
 
   const price = Math.round(player.market_value * 0.6 / 50000) * 50000;
 

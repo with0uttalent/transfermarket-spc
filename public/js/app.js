@@ -109,6 +109,10 @@ function teamLogoEl(url, name) {
 function escHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function playerTradeBanned(player) {
+  const season = State.currentSeason || 1;
+  return (player.acquired_season || 0) >= season;
+}
 function eventIcon(type) {
   return {goal:'⚽',own_goal:'⚽',yellow_card:'🟨',red_card:'🟥',substitution:'🔄',penalty:'⚽',penalty_miss:'❌',penalty_awarded:'🚨',var_review:'📺',injury:'🚑',save:'🧤',near_miss:'🎯',buildup:'🔵',free_kick:'🟡',corner_kick:'🚩'}[type]||'📋';
 }
@@ -459,6 +463,13 @@ async function loadCoachProfile() {
   try { State.coachProfile = await GET('/coaches/me'); } catch { State.coachProfile = null; }
 }
 
+async function loadCurrentSeason() {
+  try {
+    const s = await GET('/admin/settings/public').catch(() => ({}));
+    State.currentSeason = parseInt(s.current_season) || 1;
+  } catch { State.currentSeason = 1; }
+}
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 let _notifPollTimer = null;
 const _seenChallengeIds = new Set(); // IDs already shown as push toasts
@@ -734,7 +745,7 @@ async function doLogin() {
     localStorage.setItem('tm_token', data.token);
     document.getElementById('login-modal').classList.add('hidden');
     document.getElementById('login-password').value = '';
-    updateAuthUI(); await loadCoachProfile(); toast('Вход выполнен: ' + data.username); startNotifPolling(); router();
+    updateAuthUI(); await Promise.all([loadCoachProfile(), loadCurrentSeason()]); toast('Вход выполнен: ' + data.username); startNotifPolling(); router();
   } catch (err) { errEl.textContent = err.message; errEl.style.display = 'block'; }
 }
 document.getElementById('btn-logout').addEventListener('click', () => {
@@ -819,7 +830,7 @@ function router() {
   app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>Page not found</p></div>`;
 }
 window.addEventListener('hashchange', router);
-window.addEventListener('load', async () => { updateAuthUI(); await loadCoachProfile(); loadBanners(); startNotifPolling(); router(); });
+window.addEventListener('load', async () => { updateAuthUI(); await Promise.all([loadCoachProfile(), loadCurrentSeason()]); loadBanners(); startNotifPolling(); router(); });
 // Re-sync notifications immediately when user switches back to this tab
 document.addEventListener('visibilitychange', () => { if (!document.hidden && isLoggedIn()) loadNotifications(); });
 
@@ -915,9 +926,10 @@ async function renderHome(app) {
       </div>` : ''}
     `;
 
-    // Champion banner
+    // Champion banner + current season (for trade ban display)
     try {
       const pubSettings = await GET('/admin/settings/public').catch(() => ({}));
+      State.currentSeason = parseInt(pubSettings.current_season) || 1;
       const champ = pubSettings.league_champion;
       if (champ && champ.team_name) {
         const champBanner = document.createElement('div');
@@ -1441,10 +1453,13 @@ function _buildSquadInner() {
           ${showActions?'<th></th>':''}
         </tr></thead>
         <tbody>
-          ${filtered.length ? filtered.map(p=>`
+          ${filtered.length ? filtered.map(p=>{
+            const banned = playerTradeBanned(p);
+            const pJson = JSON.stringify(p).replace(/"/g,'&quot;');
+            return `
             <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
               <td class="text-muted">${p.shirt_number||'–'}</td>
-              <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<span class="font-bold">${escHtml(p.name)}</span></div></td>
+              <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><span class="font-bold">${escHtml(p.name)}</span>${banned?` <span class="badge" style="background:rgba(231,76,60,.18);color:#e74c3c;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle" title="Торговый бан — нельзя продать в этом сезоне">🔒 Бан</span>`:''}</div></div></td>
               <td>${p.flag_emoji||'–'}</td>
               <td>${posBadge(p.position)}</td>
               <td class="text-muted">${calcAge(p.date_of_birth)||'–'}</td>
@@ -1452,11 +1467,11 @@ function _buildSquadInner() {
               <td class="text-right">${ovrBadge(p._ovr === -1 ? null : p._ovr, null, null)||'–'}</td>
               <td class="text-right mv">${fmtValue(p.market_value)}</td>
               ${isAdmin()?`<td onclick="event.stopPropagation()" style="white-space:nowrap">
-                <button class="btn-icon" onclick="showPlayerForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
-                <button class="btn-icon" onclick="showQuickTransfer(${JSON.stringify(p).replace(/"/g,'&quot;')})" title="Transfer">→</button>
+                <button class="btn-icon" onclick="showPlayerForm(${pJson})">✏️</button>
+                <button class="btn-icon" onclick="showQuickTransfer(${pJson})" title="Transfer">→</button>
                 <button class="btn-icon danger" onclick="deletePlayer(${p.id},'${escHtml(p.name)}')">🗑️</button>
-              </td>`:(isCoach()&&isOwnTeam)?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button></td>`:''}
-            </tr>`).join('') : `<tr><td colspan="${showActions?9:8}" class="text-muted" style="text-align:center;padding:24px">Нет игроков</td></tr>`}
+              </td>`:(isCoach()&&isOwnTeam)?`<td onclick="event.stopPropagation()"><button class="btn-icon" onclick="showCoachPlayerEditForm(${pJson})">✏️</button></td>`:''}
+            </tr>`;}).join('') : `<tr><td colspan="${showActions?9:8}" class="text-muted" style="text-align:center;padding:24px">Нет игроков</td></tr>`}
         </tbody>
       </table></div>
     </div>`;
@@ -1766,9 +1781,15 @@ async function renderPlayerDetail(app, id) {
         </div>`
       : isOwnTeamPlayer
         ? `<div class="pp-actions">
-            <button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="sellPlayer(${player.id},${player.market_value||0})">💸 Продать (60%)</button>
+            ${playerTradeBanned(player)
+              ? `<button class="btn btn-outline" style="color:#888;border-color:#555;cursor:not-allowed" disabled title="Торговый бан: игрок должен отыграть минимум один сезон в вашей команде">🔒 Торговый бан</button>`
+              : `<button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="sellPlayer(${player.id},${player.market_value||0})">💸 Продать (60%)</button>`
+            }
             <button class="btn btn-outline" style="color:#3498db;border-color:#3498db" onclick="openCropUpload(1,1,url=>uploadPlayerPhoto(${player.id},url))">📷 Фото</button>
-            <button class="btn btn-outline" onclick="showLoanOutForm(${playerJson})">↗ Аренда</button>
+            ${playerTradeBanned(player)
+              ? `<button class="btn btn-outline" style="color:#888;border-color:#555;cursor:not-allowed" disabled title="Торговый бан">↗ Аренда</button>`
+              : `<button class="btn btn-outline" onclick="showLoanOutForm(${playerJson})">↗ Аренда</button>`
+            }
           </div>`
         : isOtherTeamPlayer
           ? `<div class="pp-actions">

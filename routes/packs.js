@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { getDb } = require('../database/db');
+const { getDb, getCurrentSeason } = require('../database/db');
 const { requireCoach, requireAdmin, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -242,8 +242,9 @@ router.post('/:id/pick', requireAuth, (req, res) => {
     // Mark pack as opened
     db.prepare(`UPDATE player_packs SET status='opened', opened_at=CURRENT_TIMESTAMP WHERE id=?`).run(packId);
 
-    // Assign chosen player to coach's team
-    db.prepare(`UPDATE players SET team_id=?, status='active' WHERE id=?`).run(coach.team_id, player_id);
+    // Assign chosen player to coach's team with trade ban for current season
+    const currentSeason = getCurrentSeason(db);
+    db.prepare(`UPDATE players SET team_id=?, status='active', acquired_season=? WHERE id=?`).run(coach.team_id, currentSeason, player_id);
     db.prepare('UPDATE pack_players SET kept=1 WHERE pack_id=? AND player_id=?').run(packId, player_id);
 
     // Add chosen player to team lineup (bench)

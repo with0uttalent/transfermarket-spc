@@ -492,10 +492,21 @@ function initSchema() {
       FOREIGN KEY (to_team_id) REFERENCES teams(id) ON DELETE CASCADE,
       FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
     )`,
+    `ALTER TABLE players ADD COLUMN acquired_season INTEGER DEFAULT 0`,
+    `INSERT OR IGNORE INTO app_settings (key, value) VALUES ('current_season', '1')`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }
   }
 }
 
-module.exports = { getDb };
+function getCurrentSeason(db) {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='current_season'").get();
+  return row ? parseInt(row.value) : 1;
+}
+
+function isTradeBanned(player, currentSeason) {
+  return (player.acquired_season || 0) >= currentSeason;
+}
+
+module.exports = { getDb, getCurrentSeason, isTradeBanned };
