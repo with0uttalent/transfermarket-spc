@@ -1017,8 +1017,6 @@ async function renderHome(app) {
 
     // Hero match: pick live match or first upcoming
     const heroMatch = liveMatches[0] || null;
-    // Other live matches (not the hero)
-    const otherLive = liveMatches.slice(1);
 
     function renderHeroMatch(m) {
       if (!m) return '';
@@ -1108,90 +1106,52 @@ async function renderHome(app) {
         </div>`;
     }
 
-    // Upcoming events section
-    function renderUpcomingStrip(matches) {
-      if (!matches || !matches.length) return '';
-      return `
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-header">Ближайшие матчи
-            <a href="#/matches" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все матчи →</a>
-          </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0">
-            ${matches.slice(0,3).map(m => `
-              <div class="upcoming-match-chip" onclick="navigate('/matches/${m.id}')">
-                <span style="font-size:11px;color:var(--text-muted)">⚽</span>
-                <span class="font-bold" style="font-size:12px">${escHtml(m.home_team_name||'?')} vs ${escHtml(m.away_team_name||'?')}</span>
-                <span style="font-size:11px;color:var(--text-muted)">${m.match_date||''} ${m.match_time||''}</span>
-              </div>`).join('')}
-          </div>
-        </div>`;
-    }
-
-    // Top value player mini card
-    function renderTopValueCard(p) {
-      if (!p) return '';
-      const ini = (p.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-      return `
-        <div class="home-top-value-row" onclick="navigate('/players/${p.id}')">
-          ${p.image_url
-            ? `<img src="${escHtml(p.image_url)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`
-            : `<div class="avatar-placeholder" style="width:40px;height:40px;font-size:14px;flex-shrink:0">${ini}</div>`}
-          <div style="flex:1;min-width:0">
-            <div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>
-            <div style="font-size:11px;color:var(--text-muted)">${escHtml(p.position||'')} · ${escHtml(p.team_name||'Free Agent')}</div>
-          </div>
-          <div style="font-size:14px;font-weight:800;color:var(--mv-color);white-space:nowrap">${fmtValue(p.market_value)}</div>
-        </div>`;
-    }
-
     app.innerHTML = `
       ${heroMatch ? renderHeroMatch(heroMatch) : ''}
-      ${otherLive.length ? `<div class="card" style="margin-bottom:20px;padding:14px 16px">${renderHomeLiveMatches(otherLive)}</div>` : ''}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+      <div class="home-grid-3">
         ${renderHomeNews(newsData.rows)}
-        <div>
-          <div class="card" style="margin-bottom:20px">
-            <div class="card-header">
-              Most Valuable Players
-              <a href="#/players" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все игроки →</a>
-            </div>
-            ${featured?.topValue ? `<div style="padding:10px 16px;border-bottom:1px solid var(--border)">${renderTopValueCard(featured.topValue)}</div>` : ''}
-            <div class="table-wrap"><table>
-              <thead><tr><th>#</th><th>Игрок</th><th>Поз</th><th class="text-right">Ценность</th></tr></thead>
-              <tbody>
-                ${stats.top_players.slice(0,7).map((p,i) => `
-                  <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
-                    <td class="text-muted" style="width:24px">${i+1}</td>
-                    <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><div class="font-bold" style="font-size:12px">${escHtml(p.name)}</div></div></div></td>
-                    <td>${posBadge(p.position)}</td>
-                    <td class="text-right" style="white-space:nowrap;font-size:12px;color:var(--mv-color);font-weight:700">${fmtValue(p.market_value)}</td>
-                  </tr>`).join('')}
-              </tbody>
-            </table></div>
+        <div class="card home-mv-card">
+          <div class="card-header">
+            Most Valuable Players
+            <a href="#/players" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все игроки →</a>
           </div>
-          <div class="card" style="margin-bottom:20px">
-            <div class="card-header">
-              Most Valuable Teams
-              <a href="#/teams" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все команды →</a>
-            </div>
-            <div class="table-wrap"><table>
-              <thead><tr><th>#</th><th>Команда</th><th>Лига</th><th class="text-right">Ценность</th></tr></thead>
-              <tbody>
-                ${stats.top_teams.slice(0,7).map((t,i) => `
-                  <tr class="clickable-row" onclick="navigate('/teams/${t.id}')">
-                    <td class="text-muted" style="width:24px">${i+1}</td>
-                    <td><div class="flex-center gap-2">${teamLogoEl(t.logo_url,t.name)}<span class="font-bold" style="font-size:12px">${escHtml(t.name)}</span></div></td>
-                    <td class="text-muted" style="font-size:11px">${escHtml(t.competition_name||'–')}</td>
-                    <td class="text-right" style="font-size:12px;font-weight:700;color:var(--mv-color)">${fmtValue(t.market_value)}</td>
-                  </tr>`).join('')}
-              </tbody>
-            </table></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>#</th><th>Игрок</th><th>Поз</th><th class="text-right">Ценность</th></tr></thead>
+            <tbody>
+              ${stats.top_players.slice(0,8).map((p,i) => `
+                <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
+                  <td class="text-muted" style="width:24px">${i+1}</td>
+                  <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><div class="font-bold" style="font-size:12px">${escHtml(p.name)}</div></div></div></td>
+                  <td>${posBadge(p.position)}</td>
+                  <td class="text-right" style="white-space:nowrap;font-size:12px;color:var(--mv-color);font-weight:700">${fmtValue(p.market_value)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>
+        <div class="card home-mv-card">
+          <div class="card-header">
+            Most Valuable Teams
+            <a href="#/teams" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все команды →</a>
           </div>
-          ${renderUpcomingStrip(upcomingMatches)}
+          <div class="table-wrap"><table>
+            <thead><tr><th>#</th><th>Команда</th><th>Лига</th><th class="text-right">Ценность</th></tr></thead>
+            <tbody>
+              ${stats.top_teams.slice(0,8).map((t,i) => `
+                <tr class="clickable-row" onclick="navigate('/teams/${t.id}')">
+                  <td class="text-muted" style="width:24px">${i+1}</td>
+                  <td><div class="flex-center gap-2">${teamLogoEl(t.logo_url,t.name)}<span class="font-bold" style="font-size:12px">${escHtml(t.name)}</span></div></td>
+                  <td class="text-muted" style="font-size:11px">${escHtml(t.competition_name||'–')}</td>
+                  <td class="text-right" style="font-size:12px;font-weight:700;color:var(--mv-color)">${fmtValue(t.market_value)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
         </div>
       </div>
       ${renderPopularClubs(stats.top_teams.slice(0, 10))}
     `;
+
+    // Populate the right panel with live matches, upcoming events, top value
+    renderRightPanel(liveMatches, featured, upcomingMatches);
 
     // Champion banner
     const champ = pubSettings.league_champion;
