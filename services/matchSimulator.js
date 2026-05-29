@@ -64,7 +64,10 @@ function teamStrengthFromOVR(players) {
   let atkSum = 0, midSum = 0, defSum = 0, gkSum = 0;
   let na = 0, nm = 0, nd = 0, ng = 0;
   for (const p of players) {
-    const ovr = Math.min(99, Math.max(40, p.ovr_fixed || 65)) / 99;
+    // Competitive floor at OVR 50: amplifies differences in the 65-90 range
+    // without exploding for very large gaps (cap applied separately in the goal formula)
+    const rawOvr = Math.min(99, Math.max(50, p.ovr_fixed || 65));
+    const ovr = (rawOvr - 50) / 49;
     const pos = p.position || '';
     if (ATTACK_POSITIONS.has(pos)) { atkSum += ovr; na++; }
     else if (MID_POSITIONS.has(pos)) { midSum += ovr; nm++; }
@@ -383,10 +386,11 @@ function simulateMatchCore(
     }
   }
 
-  // useSkillRate path: near-zero OFFSET so ratio dominates; EXPONENT amplifies class gap sharply
-  const RATE     = useSkillRate ? 0.016  : 0.013;
-  const OFFSET   = useSkillRate ? 0.02   : 4.5;
-  const EXPONENT = useSkillRate ? 1.6    : 1.0;
+  // useSkillRate path: near-zero OFFSET so ratio dominates; capped to prevent absurd scores
+  const RATE        = useSkillRate ? 0.016  : 0.013;
+  const OFFSET      = useSkillRate ? 0.02   : 4.5;
+  const EXPONENT    = useSkillRate ? 1.5    : 1.0;
+  const GOAL_PROB_CAP = useSkillRate ? 0.055 : 999;
 
   function tryPenalty(minute, isHome) {
     const attackers = isHome ? activeHome : activeAway;
@@ -522,8 +526,8 @@ function simulateMatchCore(
     const aAtkEff = awayStr.attack  * Math.pow(0.88, awayRed);
     const aDefEff = awayStr.defense * Math.pow(0.85, awayRed);
 
-    if (rand() < RATE * Math.pow(hAtkEff / (aDefEff + OFFSET), EXPONENT)) tryGoal(m, true);
-    if (rand() < RATE * Math.pow(aAtkEff / (hDefEff + OFFSET), EXPONENT)) tryGoal(m, false);
+    if (rand() < Math.min(GOAL_PROB_CAP, RATE * Math.pow(hAtkEff / (aDefEff + OFFSET), EXPONENT))) tryGoal(m, true);
+    if (rand() < Math.min(GOAL_PROB_CAP, RATE * Math.pow(aAtkEff / (hDefEff + OFFSET), EXPONENT))) tryGoal(m, false);
     if (rand() < 0.008) tryPenalty(m, rand() < 0.5);
     if (rand() < 0.028) tryCard(m, rand() < 0.5);
     if (rand() < 0.0012) tryDirectRed(m, rand() < 0.5);
