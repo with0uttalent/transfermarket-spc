@@ -825,12 +825,15 @@ document.getElementById('search-global').addEventListener('input', e => {
 // ─── Banner loader ────────────────────────────────────────────
 async function loadBanners() {
   try {
-    const [b, featured, liveMatches, upcomingMatches] = await Promise.all([
+    const [b, featured, liveMatches, scheduledMatches] = await Promise.all([
       GET('/banners/public'),
       GET('/stats/featured').catch(() => ({})),
       GET('/matches?status=in_progress').catch(() => []),
-      GET('/matches?status=scheduled').catch(() => []),
+      GET('/matches?status=scheduled&limit=30').catch(() => []),
     ]);
+    // Prefer scheduled league matches for "Ближайшие события", fall back to any scheduled
+    const leagueScheduled = scheduledMatches.filter(m => m.league_id || m.league_name);
+    const upcomingMatches = (leagueScheduled.length ? leagueScheduled : scheduledMatches).slice(0, 3);
     renderBannerCol('banner-left',  b.left  || [], featured?.topValue || null, '💰 Top Value');
     renderBannerCol('banner-right', b.right || [], featured?.topRated || null, '⭐ Top Rated');
     renderRightPanel(liveMatches, featured, upcomingMatches);
@@ -1004,16 +1007,20 @@ let _homeLivePollTimer = null;
 async function renderHome(app) {
   app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
-    const [stats, newsData, liveMatches, upcomingMatches, featured, pubSettings] = await Promise.all([
+    const [stats, newsData, liveMatches, scheduledMatches, featured, pubSettings] = await Promise.all([
       GET('/stats'),
       GET('/news?limit=3'),
       GET('/matches?status=in_progress').catch(() => []),
-      GET('/matches?status=scheduled&limit=3').catch(() => []),
+      GET('/matches?status=scheduled&limit=30').catch(() => []),
       GET('/stats/featured').catch(() => ({})),
       GET('/admin/settings/public').catch(() => ({})),
     ]);
 
     State.currentSeason = parseInt(pubSettings.current_season) || 1;
+
+    // Upcoming events: prefer scheduled league matches, fall back to any scheduled
+    const leagueScheduled = scheduledMatches.filter(m => m.league_id || m.league_name);
+    const upcomingMatches = (leagueScheduled.length ? leagueScheduled : scheduledMatches).slice(0, 3);
 
     // Hero match: pick live match or first upcoming
     const heroMatch = liveMatches[0] || null;

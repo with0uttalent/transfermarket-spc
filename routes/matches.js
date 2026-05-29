@@ -48,9 +48,21 @@ router.get('/', (req, res) => {
         db.prepare(`UPDATE matches SET status=? WHERE id=? AND status='in_progress'`).run(nextStatus, m.id);
         return { ...m, status: nextStatus };
       }
-      // Live: return live minute but keep actual scores hidden
+      // Live: compute current score from goal events up to the live minute
       const liveMin = Math.floor(elapsed);
-      return { ...m, live_minute: liveMin, home_score: null, away_score: null };
+      const goalEvents = db.prepare(
+        `SELECT minute, event_type, team_id FROM match_events
+         WHERE match_id=? AND event_type IN ('goal','own_goal') AND minute <= ?`
+      ).all(m.id, liveMin);
+      let liveHome = 0, liveAway = 0;
+      for (const e of goalEvents) {
+        if (e.event_type === 'goal') {
+          if (e.team_id === m.home_team_id) liveHome++; else liveAway++;
+        } else { // own_goal counts for the opponent
+          if (e.team_id === m.home_team_id) liveAway++; else liveHome++;
+        }
+      }
+      return { ...m, live_minute: liveMin, minute: liveMin, home_score: liveHome, away_score: liveAway };
     }
     return m;
   });
