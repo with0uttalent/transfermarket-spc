@@ -291,4 +291,37 @@ router.post('/reschedule-league', requireAdmin, (req, res) => {
   res.json({ ok: true, results });
 });
 
+// ─── PATCH /admin/teams/:id/budget — manually adjust team transfer budget ─────
+router.patch('/teams/:id/budget', requireAdmin, (req, res) => {
+  const db = getDb();
+  const teamId = req.params.id;
+  const team = db.prepare('SELECT id, name FROM teams WHERE id=?').get(teamId);
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+
+  const { transfer_budget, transfer_budget_spent } = req.body;
+  const fields = [];
+  const values = [];
+
+  if (transfer_budget !== undefined) {
+    const v = parseFloat(transfer_budget);
+    if (isNaN(v) || v < 0) return res.status(400).json({ error: 'transfer_budget must be a non-negative number' });
+    fields.push('transfer_budget = ?');
+    values.push(v);
+  }
+  if (transfer_budget_spent !== undefined) {
+    const v = parseFloat(transfer_budget_spent);
+    if (isNaN(v) || v < 0) return res.status(400).json({ error: 'transfer_budget_spent must be a non-negative number' });
+    fields.push('transfer_budget_spent = ?');
+    values.push(v);
+  }
+
+  if (!fields.length) return res.status(400).json({ error: 'Nothing to update' });
+
+  values.push(teamId);
+  db.prepare(`UPDATE teams SET ${fields.join(', ')} WHERE id=?`).run(...values);
+
+  const updated = db.prepare('SELECT id, name, transfer_budget, transfer_budget_spent FROM teams WHERE id=?').get(teamId);
+  res.json(updated);
+});
+
 module.exports = router;

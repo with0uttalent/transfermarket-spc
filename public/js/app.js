@@ -3184,10 +3184,11 @@ async function deleteTournament(id, name) {
 // ═══════════════════════════════════════════════════════════
 async function renderAdmin(app) {
   if (!isAdmin()) { app.innerHTML=`<div class="empty-state"><div class="empty-icon">🔒</div><p>Login required</p></div>`; return; }
-  const [stats, countries, banners, users, leagues] = await Promise.all([
+  const [stats, countries, banners, users, leagues, allTeams] = await Promise.all([
     GET('/stats'), GET('/countries'), GET('/banners'),
     GET('/auth/users').catch(()=>[]),
     GET('/leagues').catch(()=>[]),
+    GET('/teams').catch(()=>[]),
   ]);
   app.innerHTML=`
     <div class="page-header"><h1 class="page-title">Панель администратора</h1><span class="badge badge-gold">ADMIN</span></div>
@@ -3255,6 +3256,29 @@ async function renderAdmin(app) {
             </td>
           </tr>`).join('')}
           ${!users.length?`<tr><td colspan="5" class="text-center text-muted" style="padding:20px">No users yet</td></tr>`:''}
+        </tbody>
+      </table></div>
+    </div>
+
+    <!-- Transfer Budgets -->
+    <div class="card mt-3">
+      <div class="card-header">💰 Трансферные балансы тренеров</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Команда</th><th class="text-right">Бюджет</th><th class="text-right">Потрачено</th><th class="text-right">Доступно</th><th></th></tr></thead>
+        <tbody>
+          ${allTeams.filter(t=>t.id).map(t=>{
+            const budget = t.transfer_budget != null ? t.transfer_budget : 10000000;
+            const spent = t.transfer_budget_spent || 0;
+            const avail = Math.max(0, budget - spent);
+            return `<tr>
+              <td class="font-bold">${escHtml(t.name)}</td>
+              <td class="text-right">${fmtValue(budget)}</td>
+              <td class="text-right" style="color:${spent>budget?'#e74c3c':'var(--text-muted)'}">${fmtValue(spent)}</td>
+              <td class="text-right" style="color:${avail<=0?'#e74c3c':avail<budget*0.2?'#f39c12':'#27ae60'};font-weight:700">${fmtValue(avail)}</td>
+              <td><button class="btn btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border:none;white-space:nowrap" onclick="showBudgetEditForm(${t.id},'${escHtml(t.name)}',${budget},${spent})">✏️ Изменить</button></td>
+            </tr>`;
+          }).join('')}
+          ${!allTeams.length?`<tr><td colspan="5" class="text-center text-muted" style="padding:20px">Нет команд</td></tr>`:''}
         </tbody>
       </table></div>
     </div>
@@ -3445,6 +3469,50 @@ async function showAssignCoachForm(userId, username) {
     else await POST('/coaches', {user_id:userId,team_id,name,age,height,playing_style});
     toast(`Клуб назначен: ${username}!`);
   });
+}
+
+function showBudgetEditForm(teamId, teamName, budget, spent) {
+  const fmtM = v => (v / 1000000).toFixed(2);
+  mkModal(`💰 Бюджет: ${teamName}`, `
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+      Текущий бюджет: <b style="color:#fff">${fmtValue(budget)}</b> &nbsp;|&nbsp;
+      Потрачено: <b style="color:#fff">${fmtValue(spent)}</b> &nbsp;|&nbsp;
+      Доступно: <b style="color:#27ae60">${fmtValue(Math.max(0, budget - spent))}</b>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Общий бюджет (€)</label>
+        <input type="number" id="be-budget" value="${budget}" min="0" step="100000"/>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${fmtM(budget)} млн €</div>
+      </div>
+      <div class="form-group">
+        <label>Потрачено (€)</label>
+        <input type="number" id="be-spent" value="${spent}" min="0" step="100000"/>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${fmtM(spent)} млн €</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+      <button class="btn btn-sm" style="background:rgba(39,174,96,.2);color:#27ae60;border:1px solid #27ae60" onclick="document.getElementById('be-spent').value=0">Обнулить расходы</button>
+      <button class="btn btn-sm" style="background:rgba(52,152,219,.2);color:#3498db;border:1px solid #3498db" onclick="document.getElementById('be-budget').value=10000000;document.getElementById('be-spent').value=0">Сброс (10M / 0)</button>
+    </div>
+  `, async () => {
+    const transfer_budget = parseFloat(document.getElementById('be-budget').value);
+    const transfer_budget_spent = parseFloat(document.getElementById('be-spent').value);
+    if (isNaN(transfer_budget) || transfer_budget < 0) { toast('Введите корректный бюджет', 'error'); return false; }
+    if (isNaN(transfer_budget_spent) || transfer_budget_spent < 0) { toast('Введите корректную сумму расходов', 'error'); return false; }
+    await api('PATCH', '/admin/teams/' + teamId + '/budget', { transfer_budget, transfer_budget_spent });
+    toast('Бюджет обновлён');
+  });
+  // Live preview: update hint when input changes
+  setTimeout(() => {
+    ['be-budget','be-spent'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', function() {
+        const bv = parseFloat(document.getElementById('be-budget').value) || 0;
+        const sv = parseFloat(document.getElementById('be-spent').value) || 0;
+        this.nextElementSibling.textContent = fmtM(parseFloat(this.value)||0) + ' млн €';
+      });
+    });
+  }, 50);
 }
 
 async function saveTgEnabled(checked) {
