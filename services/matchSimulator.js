@@ -268,6 +268,10 @@ function simulateMatchCore(
   const activeAway = [...awayField];
   const injuredPlayers = [];
 
+  // Track players who actually played: starters + anyone brought on as a sub.
+  // Used so only these players lose stamina (bench players who never entered recover).
+  const playedIds = new Set([...homeField, ...awayField].map(p => p.id));
+
   const stats = {};
   const track = (pid) => {
     if (!pid) return;
@@ -403,7 +407,7 @@ function simulateMatchCore(
     if (sub) {
       addEvent(minute, 'substitution', teamId, sub.id, player.id,
         `🔄 Вынужденная замена: ${commentarySub(sub.name, player.name)}`);
-      active.push(sub);
+      active.push(sub); playedIds.add(sub.id);
     }
   }
 
@@ -564,7 +568,7 @@ function simulateMatchCore(
         if (sub) {
           addEvent(m, 'substitution', homeTeamId, sub.on.id, sub.off.id,
             `🔄 Замена: ${commentarySub(sub.on.name, sub.off.name)}`);
-          removePlayer(sub.off, true); activeHome.push(sub.on); subsDone.home++;
+          removePlayer(sub.off, true); activeHome.push(sub.on); playedIds.add(sub.on.id); subsDone.home++;
         }
       }
       if (subsDone.away < 3 && rand() < 0.055 && activeAway.length > 8) {
@@ -573,7 +577,7 @@ function simulateMatchCore(
         if (sub) {
           addEvent(m, 'substitution', awayTeamId, sub.on.id, sub.off.id,
             `🔄 Замена: ${commentarySub(sub.on.name, sub.off.name)}`);
-          removePlayer(sub.off, false); activeAway.push(sub.on); subsDone.away++;
+          removePlayer(sub.off, false); activeAway.push(sub.on); playedIds.add(sub.on.id); subsDone.away++;
         }
       }
     }
@@ -658,7 +662,7 @@ function simulateMatchCore(
   }
 
   const matchStats = generateMatchFullStats(homeStr, awayStr, homeScore, awayScore);
-  return { homeScore, awayScore, events, playerStats: stats, mvDeltas, matchStats, injuredPlayers, skillDeltas };
+  return { homeScore, awayScore, events, playerStats: stats, mvDeltas, matchStats, injuredPlayers, skillDeltas, playedIds: Array.from(playedIds) };
 }
 
 // ─── generateMatchFullStats ───────────────────────────────────────────────────

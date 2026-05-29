@@ -47,7 +47,7 @@ function applySkillDeltas(db, skillDeltas) {
 
 function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
   const db = getDb();
-  const { homeScore, awayScore, events, playerStats, mvDeltas, matchStats, injuredPlayers, skillDeltas } = result;
+  const { homeScore, awayScore, events, playerStats, mvDeltas, matchStats, injuredPlayers, skillDeltas, playedIds } = result;
 
   // Do not change match status here — caller is responsible for status transitions
   db.prepare(`UPDATE matches SET home_score=?, away_score=? WHERE id=?`)
@@ -135,11 +135,13 @@ function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
   // Stamina update — skip for friendly matches
   const matchMeta = db.prepare('SELECT is_friendly FROM matches WHERE id=?').get(matchId);
   if (!matchMeta || !matchMeta.is_friendly) {
-    const playedIds = new Set(Object.keys(playerStats).map(Number));
+    // Only players who actually played (starters + subs brought on) lose stamina.
+    // Fall back to playerStats keys if playedIds wasn't provided (older callers).
+    const playedSet = new Set((playedIds || Object.keys(playerStats)).map(Number));
     for (const tid of [homeTeamId, awayTeamId]) {
       const teamPlayers = db.prepare('SELECT id FROM players WHERE team_id=?').all(tid);
       for (const p of teamPlayers) {
-        if (playedIds.has(p.id)) {
+        if (playedSet.has(p.id)) {
           db.prepare('UPDATE players SET stamina = MAX(0, COALESCE(stamina, 100) - 15) WHERE id=?').run(p.id);
         } else {
           db.prepare('UPDATE players SET stamina = MIN(100, COALESCE(stamina, 100) + 10) WHERE id=?').run(p.id);
