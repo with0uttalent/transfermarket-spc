@@ -229,17 +229,26 @@ function pickGKSub(field, bench) {
 }
 
 function pickInjurySub(injuredPlayer, availableBench) {
-  const priorityBench = availableBench.filter(p => p.priority_sub);
-  if (!priorityBench.length) return null;
+  if (!availableBench.length) return null;
 
-  // Strict: exact position match first
-  const exact = priorityBench.filter(p => p.position === injuredPlayer.position);
+  // Injury = forced sub: use ANY bench player, not just priority ones
+  // 1. Exact position match
+  const exact = availableBench.filter(p => p.position === injuredPlayer.position);
   if (exact.length) return pick(exact);
 
-  // Fallback for injuries only: same broad group (e.g. CB replaces LB)
+  // 2. Same broad group (e.g. CB for LB, but not GK for outfield)
   const injGroup = getPositionGroup(injuredPlayer.position || '');
-  const sameGroup = priorityBench.filter(p => getPositionGroup(p.position || '') === injGroup);
-  return sameGroup.length ? pick(sameGroup) : null;
+  const sameGroup = availableBench.filter(p => getPositionGroup(p.position || '') === injGroup);
+  if (sameGroup.length) return pick(sameGroup);
+
+  // 3. Any non-GK bench player (avoid putting outfield player in goal)
+  if (!GK_POSITIONS.has(injuredPlayer.position || '')) {
+    const nonGK = availableBench.filter(p => !GK_POSITIONS.has(p.position || ''));
+    if (nonGK.length) return pick(nonGK);
+  }
+
+  // 4. Last resort: any available
+  return pick(availableBench);
 }
 
 // ─── Match simulation core ────────────────────────────────────────────────────
