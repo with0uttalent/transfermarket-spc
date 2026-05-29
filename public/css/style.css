@@ -1279,9 +1279,16 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .cp-title { font-weight: 700; font-size: 14px; flex: 1; color: var(--text); }
 .cp-close { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 2px; }
 .cp-close:hover { color: var(--text); }
-.cp-body { padding: 0 14px 14px; }
+.cp-body { display: flex; align-items: center; gap: 10px; padding: 0 14px 12px; }
+.cp-logo { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; border-radius: 6px; background: var(--bg-darker); padding: 3px; }
+.cp-info { flex: 1; min-width: 0; }
+.cp-team { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-msg { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cp-challenger { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
-.cp-actions { display: flex; gap: 8px; }
+.cp-actions { display: flex; gap: 8px; padding: 0 14px 12px; }
+.cp-actions .btn { flex: 1; justify-content: center; }
+.cp-btn-decline { background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.4); color: var(--red); }
+.cp-btn-decline:hover { background: rgba(239,68,68,.28); }
 
 /* ─── Goal celebration ───────────────────────────────────────── */
 @keyframes particle-fly { 0% { transform: translate(0,0) scale(1); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(0.3); opacity: 0; } }
