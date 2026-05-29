@@ -105,11 +105,23 @@ router.post('/:id/bid', requireAuth, (req, res) => {
     return res.status(400).json({ error: `Minimum bid is ${minBid.toLocaleString()} €` });
   }
 
-  // Check budget
+  // Check budget — must account for amounts already committed as the leading
+  // bidder on OTHER active auctions, otherwise a team could lead several
+  // auctions whose combined cost exceeds its budget.
   const team = db.prepare('SELECT transfer_budget, transfer_budget_spent FROM teams WHERE id=?').get(coach.team_id);
   const available = (team?.transfer_budget || 10000000) - (team?.transfer_budget_spent || 0);
-  if (amount > available) {
-    return res.status(400).json({ error: `Insufficient budget. Available: ${Math.round(available).toLocaleString()} €` });
+  const { committed } = db.prepare(
+    `SELECT COALESCE(SUM(current_bid), 0) AS committed
+     FROM fa_auctions
+     WHERE status='active' AND bidder_team_id=? AND id != ?`
+  ).get(coach.team_id, auctionId);
+  if (amount + committed > available) {
+    const remaining = Math.max(0, available - committed);
+    return res.status(400).json({
+      error: committed > 0
+        ? `Недостаточно средств. Уже зарезервировано ${Math.round(committed).toLocaleString()} € на других аукционах. Доступно: ${Math.round(remaining).toLocaleString()} €`
+        : `Недостаточно средств. Доступно: ${Math.round(remaining).toLocaleString()} €`
+    });
   }
 
   db.transaction(() => {
@@ -131,37 +143,54 @@ function finalizeExpiredAuctions(db) {
   const now = new Date().toISOString();
   const expired = db.prepare(`SELECT * FROM fa_auctions WHERE status='active' AND end_time <= ?`).all(now);
 
+  const fmtV = v => v >= 1e6 ? '€'+(v/1e6).toFixed(2)+'M' : v >= 1e3 ? '€'+(v/1e3).toFixed(0)+'K' : '€'+v;
+
   let count = 0;
   for (const auction of expired) {
-    if (auction.bidder_team_id && auction.current_bid) {
-      // Auction won: transfer player to winning team
+    // Determine the winner: highest bidder who can still afford their bid.
+    // Walk bids from highest to lowest (one per team) so that if the top
+    // bidder can't afford it (e.g. they won other auctions this round), the
+    // player goes to the next team that can.
+    const teamBids = db.prepare(`
+      SELECT team_id, MAX(amount) AS amount
+      FROM fa_bids WHERE auction_id=?
+      GROUP BY team_id ORDER BY amount DESC
+    `).all(auction.id);
+
+    let winner = null;
+    for (const tb of teamBids) {
+      const team = db.prepare('SELECT transfer_budget, transfer_budget_spent FROM teams WHERE id=?').get(tb.team_id);
+      const available = (team?.transfer_budget || 10000000) - (team?.transfer_budget_spent || 0);
+      if (tb.amount <= available) { winner = tb; break; }
+    }
+
+    if (winner) {
       db.transaction(() => {
         const player = db.prepare('SELECT * FROM players WHERE id=?').get(auction.player_id);
         const currentSeason = getCurrentSeason(db);
-        db.prepare(`UPDATE players SET team_id=?, status='active', acquired_season=? WHERE id=?`).run(auction.bidder_team_id, currentSeason, auction.player_id);
-        db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(auction.current_bid, auction.bidder_team_id);
+        db.prepare(`UPDATE players SET team_id=?, status='active', acquired_season=? WHERE id=?`).run(winner.team_id, currentSeason, auction.player_id);
+        db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(winner.amount, winner.team_id);
         // Add to lineup (bench)
-        const usedSlots = new Set(db.prepare('SELECT slot FROM team_lineups WHERE team_id=?').all(auction.bidder_team_id).map(r => r.slot));
+        const usedSlots = new Set(db.prepare('SELECT slot FROM team_lineups WHERE team_id=?').all(winner.team_id).map(r => r.slot));
         let slot = 12;
         while (usedSlots.has(slot)) slot++;
-        db.prepare('INSERT OR IGNORE INTO team_lineups (team_id, player_id, slot) VALUES (?,?,?)').run(auction.bidder_team_id, auction.player_id, slot);
-        db.prepare(`UPDATE fa_auctions SET status='won' WHERE id=?`).run(auction.id);
+        db.prepare('INSERT OR IGNORE INTO team_lineups (team_id, player_id, slot) VALUES (?,?,?)').run(winner.team_id, auction.player_id, slot);
+        db.prepare(`UPDATE fa_auctions SET status='won', current_bid=?, bidder_team_id=? WHERE id=?`).run(winner.amount, winner.team_id, auction.id);
 
         // Insert transfer record
         const today = new Date().toISOString().slice(0, 10);
         db.prepare(`INSERT INTO transfers (player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type, notes) VALUES (?,NULL,?,?,?,'free_agent','FA Auction win')`)
-          .run(auction.player_id, auction.bidder_team_id, auction.current_bid, today);
+          .run(auction.player_id, winner.team_id, winner.amount, today);
 
         // Notify winning coach
-        const winningCoach = db.prepare('SELECT id FROM coaches WHERE team_id=?').get(auction.bidder_team_id);
+        const winningCoach = db.prepare('SELECT id FROM coaches WHERE team_id=?').get(winner.team_id);
         if (winningCoach && player) {
-          const fmtV = v => v >= 1e6 ? '€'+(v/1e6).toFixed(2)+'M' : v >= 1e3 ? '€'+(v/1e3).toFixed(0)+'K' : '€'+v;
           db.prepare(`INSERT INTO coach_notifications (coach_id, title, body, type) VALUES (?,?,?,?)`)
-            .run(winningCoach.id, 'Игрок выкуплен!', `Вы выиграли аукцион на ${player.name} за ${fmtV(auction.current_bid)}`, 'auction_win');
+            .run(winningCoach.id, 'Игрок выкуплен!', `Вы выиграли аукцион на ${player.name} за ${fmtV(winner.amount)}`, 'auction_win');
         }
       })();
     } else {
-      // No bids — just expire
+      // No bids, or no bidder can afford — expire with no winner
       db.prepare(`UPDATE fa_auctions SET status='expired' WHERE id=?`).run(auction.id);
     }
     count++;

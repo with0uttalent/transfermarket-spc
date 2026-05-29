@@ -5133,21 +5133,39 @@ async function coachChangePassword() {
 async function renderFreeAgents(app) {
   app.innerHTML = '<div class="loading">Загрузка...</div>';
   try {
-    const [freeAgents, auctions] = await Promise.all([
+    const myTeamId = State.coachProfile?.team_id;
+    const [freeAgents, auctions, myTeam] = await Promise.all([
       GET('/free-agents'),
       GET('/auctions'),
+      (isCoach() && myTeamId) ? GET('/teams/' + myTeamId).catch(() => null) : Promise.resolve(null),
     ]);
 
     const auctionByPlayerId = {};
     for (const a of (auctions || [])) auctionByPlayerId[a.player_id] = a;
 
     const canBid = isCoach() && State.coachProfile?.team_id;
-    const myTeamId = State.coachProfile?.team_id;
+
+    // Compute the coach's available budget after subtracting amounts already
+    // committed as the leading bidder on active auctions.
+    let budgetInfo = '';
+    if (myTeam) {
+      const total = myTeam.transfer_budget != null ? myTeam.transfer_budget : 10000000;
+      const spent = myTeam.transfer_budget_spent || 0;
+      const committed = (auctions || [])
+        .filter(a => a.bidder_team_id === myTeamId)
+        .reduce((s, a) => s + (a.current_bid || 0), 0);
+      const available = Math.max(0, total - spent - committed);
+      budgetInfo = `<div style="font-size:13px;color:var(--text-muted)">
+        Доступно: <b style="color:${available<=0?'#e74c3c':'#27ae60'}">${fmtValue(available)}</b>
+        ${committed > 0 ? `<span style="margin-left:8px">• Зарезервировано на аукционах: <b style="color:#f39c12">${fmtValue(committed)}</b></span>` : ''}
+      </div>`;
+    }
 
     app.innerHTML = `
       <div class="page-header">
         <h2>🏪 Свободные агенты</h2>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          ${budgetInfo}
           <div style="color:var(--text-muted);font-size:13px">Ежедневный аукцион 13:00–17:00 • Шаг ставки: 100 000 € • Без ставок — удаление через 3 дня</div>
           ${isAdmin() ? `<button class="btn btn-sm" style="background:#c0392b;color:#fff;border:none" onclick="clearAllFreeAgents()">🗑 Очистить всех</button>` : ''}
         </div>
