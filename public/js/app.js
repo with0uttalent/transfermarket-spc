@@ -476,16 +476,52 @@ function updateAuthUI() {
   const loggedIn = isLoggedIn();
   document.getElementById('btn-login').classList.toggle('hidden', loggedIn);
   document.getElementById('btn-logout').classList.toggle('hidden', !loggedIn);
+
+  // Topbar user
+  const topbarUser = document.getElementById('topbar-user');
+  if (topbarUser) topbarUser.classList.toggle('hidden', !loggedIn);
   const indEl = document.getElementById('user-indicator');
-  indEl.classList.toggle('hidden', !loggedIn);
-  if (loggedIn) { indEl.textContent = isCoach() ? 'COACH' : 'ADMIN'; indEl.style.color = isCoach() ? '#3498db' : '#f1c40f'; }
+  if (indEl) {
+    indEl.textContent = loggedIn ? (isCoach() ? 'COACH' : 'ADMIN') : '';
+  }
+  const topbarAv = document.getElementById('topbar-avatar');
+  if (topbarAv && loggedIn) {
+    topbarAv.textContent = (State.user || '?')[0].toUpperCase();
+    topbarAv.style.background = isCoach() ? '#1a56db' : '#f5a623';
+  }
+
   document.getElementById('nav-admin').classList.toggle('hidden', !isAdmin());
   document.getElementById('nav-coach').classList.toggle('hidden', !isCoach());
+  updateSidebarCoachProfile();
+}
+
+function updateSidebarCoachProfile() {
+  const section = document.getElementById('sidebar-coach-section');
+  if (!section) return;
+  const show = isCoach() && !!State.coachProfile;
+  section.classList.toggle('hidden', !show);
+  if (!show) return;
+  const cp = State.coachProfile;
+  const nameEl = document.getElementById('sidebar-coach-name');
+  const teamEl = document.getElementById('sidebar-coach-team');
+  const descEl = document.getElementById('sidebar-coach-desc');
+  const avEl   = document.getElementById('sidebar-coach-avatar');
+  if (nameEl) nameEl.textContent = (State.user || 'COACH').toUpperCase();
+  if (teamEl) teamEl.textContent = cp.team_name || '';
+  if (descEl) descEl.textContent = cp.description || '';
+  if (avEl) {
+    if (cp.image_url) {
+      avEl.innerHTML = `<img src="${escHtml(cp.image_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+    } else {
+      avEl.textContent = (State.user || 'C')[0].toUpperCase();
+    }
+  }
 }
 
 async function loadCoachProfile() {
   if (!isCoach()) return;
   try { State.coachProfile = await GET('/coaches/me'); } catch { State.coachProfile = null; }
+  updateSidebarCoachProfile();
 }
 
 async function loadCurrentSeason() {
@@ -789,10 +825,93 @@ document.getElementById('search-global').addEventListener('input', e => {
 // ─── Banner loader ────────────────────────────────────────────
 async function loadBanners() {
   try {
-    const [b, featured] = await Promise.all([GET('/banners/public'), GET('/stats/featured').catch(()=>({}))]);
+    const [b, featured, liveMatches, upcomingMatches] = await Promise.all([
+      GET('/banners/public'),
+      GET('/stats/featured').catch(() => ({})),
+      GET('/matches?status=in_progress').catch(() => []),
+      GET('/matches?status=scheduled').catch(() => []),
+    ]);
     renderBannerCol('banner-left',  b.left  || [], featured?.topValue || null, '💰 Top Value');
     renderBannerCol('banner-right', b.right || [], featured?.topRated || null, '⭐ Top Rated');
+    renderRightPanel(liveMatches, featured, upcomingMatches);
   } catch { /* banners are optional */ }
+}
+
+function renderRightPanel(liveMatches, featured, upcomingMatches) {
+  // Live matches
+  const liveEl = document.getElementById('right-live');
+  if (liveEl) {
+    if (liveMatches && liveMatches.length) {
+      liveEl.innerHTML = `
+        <div class="rp-header">
+          <span class="rp-title">Live Матчи</span>
+          <a href="#/matches" class="rp-link">Смотреть все</a>
+        </div>
+        ${liveMatches.slice(0,5).map(m => `
+          <div class="rp-live-row" onclick="navigate('/matches/${m.id}')">
+            <span class="rp-live-badge">LIVE</span>
+            <span class="rp-live-min">${m.minute ? m.minute+"'" : ''}</span>
+            <div class="rp-live-teams">
+              <div class="rp-live-team">${escHtml(m.home_team_name||'?')}</div>
+              <div class="rp-live-team" style="color:var(--text-muted)">${escHtml(m.away_team_name||'?')}</div>
+            </div>
+            <div class="rp-live-score">${m.home_score ?? 0}<br>${m.away_score ?? 0}</div>
+          </div>
+        `).join('')}
+        ${liveMatches.length > 5 ? `<a href="#/matches" class="rp-all-link">Все Live матчи →</a>` : ''}
+      `;
+    } else {
+      liveEl.innerHTML = '';
+    }
+  }
+
+  // Upcoming matches
+  const eventsEl = document.getElementById('right-events');
+  if (eventsEl) {
+    const upcoming = (upcomingMatches || []).slice(0, 3);
+    if (upcoming.length) {
+      eventsEl.innerHTML = `
+        <div class="rp-header">
+          <span class="rp-title">Ближайшие события</span>
+        </div>
+        ${upcoming.map(m => `
+          <div class="rp-event-row" onclick="navigate('/matches/${m.id}')" style="cursor:pointer">
+            <div class="rp-event-icon">⚽</div>
+            <div class="rp-event-info">
+              <div class="rp-event-type">Матч дня</div>
+              <div class="rp-event-name">${escHtml(m.home_team_name||'?')} vs ${escHtml(m.away_team_name||'?')}</div>
+              <div class="rp-event-date">${m.match_date||''} ${m.match_time||''}</div>
+            </div>
+          </div>
+        `).join('')}
+      `;
+    } else {
+      eventsEl.innerHTML = '';
+    }
+  }
+
+  // Top value player
+  const topValEl = document.getElementById('right-top-value');
+  if (topValEl && featured?.topValue) {
+    const p = featured.topValue;
+    const initials = (p.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    topValEl.innerHTML = `
+      <div class="rp-header">
+        <span class="rp-title">Top Value</span>
+      </div>
+      <div class="rp-top-value" onclick="navigate('/players/${p.id}')">
+        ${p.image_url
+          ? `<img src="${escHtml(p.image_url)}" style="border-radius:50%;object-fit:cover;width:50px;height:50px;flex-shrink:0" onerror="this.style.display='none'">`
+          : `<div class="avatar-placeholder" style="width:50px;height:50px;font-size:18px;flex-shrink:0">${initials}</div>`}
+        <div class="rp-top-value-info">
+          <div class="rp-top-value-name">${escHtml(p.name)}</div>
+          <div class="rp-top-value-pos">${escHtml(p.position||'')}</div>
+          <div class="rp-top-value-team">${escHtml(p.team_name||'Free Agent')}</div>
+          <div class="rp-top-value-mv">${fmtValue(p.market_value)}</div>
+        </div>
+      </div>
+    `;
+  }
 }
 function renderBannerCol(containerId, banners, featuredPlayer, featuredLabel) {
   const el = document.getElementById(containerId);
@@ -819,6 +938,12 @@ function renderBannerCol(containerId, banners, featuredPlayer, featuredLabel) {
 }
 
 // ─── Router ───────────────────────────────────────────────────
+const PAGE_TITLES = {
+  home:'Главная', teams:'Команды', players:'Игроки', competitions:'Соревнования',
+  transfers:'Трансферы', matches:'Матчи', tournaments:'Турниры', leagues:'Лиги',
+  'free-agents':'Свободные агенты', coach:'Мой клуб', admin:'Администратор',
+  news:'Новости', search:'Поиск',
+};
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
   stopLiveMatchPoll(); // cancel live polling when navigating away
@@ -831,6 +956,11 @@ function router() {
     const active = rawPath==='/' ? r==='home' : rawPath.startsWith('/'+r) && r!=='home';
     a.classList.toggle('active', active);
   });
+  // Update topbar title
+  const parts0 = rawPath.split('/').filter(Boolean);
+  const titleKey = parts0[0] || 'home';
+  const titleEl = document.getElementById('page-title');
+  if (titleEl) titleEl.textContent = PAGE_TITLES[titleKey] || 'TransferMarket';
   const app = document.getElementById('app');
   const parts = rawPath.split('/').filter(Boolean);
   if (!rawPath||rawPath==='/') return renderHome(app);
@@ -867,122 +997,185 @@ let _homeLivePollTimer = null;
 async function renderHome(app) {
   app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
-    const [stats, newsData, liveMatches] = await Promise.all([
+    const [stats, newsData, liveMatches, pubSettings] = await Promise.all([
       GET('/stats'),
       GET('/news?limit=3'),
       GET('/matches?status=in_progress').catch(() => []),
+      GET('/admin/settings/public').catch(() => ({})),
     ]);
 
-    const liveBlock = `<div id="home-live-section" style="margin-bottom:20px">${renderHomeLiveMatches(liveMatches)}</div>`;
+    State.currentSeason = parseInt(pubSettings.current_season) || 1;
 
-    app.innerHTML = `
-      ${liveBlock}
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-value">${stats.totals.teams}</div><div class="stat-label">Teams</div></div>
-        <div class="stat-card"><div class="stat-value">${stats.totals.players}</div><div class="stat-label">Players</div></div>
-        <div class="stat-card"><div class="stat-value">${stats.totals.transfers}</div><div class="stat-label">Transfers</div></div>
-        <div class="stat-card"><div class="stat-value">${fmtValue(stats.totals.transfer_value)}</div><div class="stat-label">Transfer Value</div></div>
-      </div>
-      ${newsData.rows.length ? `
-      <div class="card mt-3 mb-3" style="margin-bottom:20px">
-        <div class="card-header">📰 Последние новости <a href="#/news" style="font-size:12px;color:rgba(255,255,255,.7);font-weight:400;float:right">Все новости →</a></div>
-        ${newsData.rows.map(n => `
-          <div class="news-item">
-            <div class="news-icon">${newsIcon(n.type)}</div>
-            <div class="news-body">
-              <div class="news-title">${escHtml(n.title)}</div>
-              ${n.body ? `<div class="news-meta">${escHtml(n.body.substring(0,120))}${n.body.length>120?'…':''}</div>` : ''}
-              <div class="news-meta">${fmtDate(n.created_at)}</div>
-            </div>
-          </div>
-        `).join('')}
-      </div>` : ''}
-      <div class="two-col">
-        <div class="card">
-          <div class="card-header">⭐ Most Valuable Players</div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Team</th><th class="text-right">Value</th></tr></thead>
-            <tbody>
-              ${stats.top_players.map((p,i) => `
-                <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
-                  <td class="text-muted">${i+1}</td>
-                  <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><div class="font-bold">${escHtml(p.name)}</div><div class="text-muted" style="font-size:11px">${p.flag_emoji||''}</div></div></div></td>
-                  <td>${posBadge(p.position)}</td>
-                  <td class="text-muted">${escHtml(p.team_name||'Free')}</td>
-                  <td class="text-right" style="white-space:nowrap;font-size:12px;color:var(--green);font-weight:700">${fmtValue(p.market_value)}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table></div>
-        </div>
-        <div class="card">
-          <div class="card-header">🏆 Most Valuable Teams</div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>#</th><th>Team</th><th>League</th><th class="text-right">Value</th></tr></thead>
-            <tbody>
-              ${stats.top_teams.map((t,i) => `
-                <tr class="clickable-row" onclick="navigate('/teams/${t.id}')">
-                  <td class="text-muted">${i+1}</td>
-                  <td><div class="flex-center gap-2">${teamLogoEl(t.logo_url,t.name)}<span class="font-bold">${escHtml(t.name)}</span></div></td>
-                  <td class="text-muted">${escHtml(t.competition_name||'–')}</td>
-                  <td class="text-right mv">${fmtValue(t.market_value)}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table></div>
-        </div>
-      </div>
-      ${stats.recent_transfers.length ? `
-      <div class="card mt-3">
-        <div class="card-header">🔄 Recent Transfers</div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Player</th><th>From</th><th></th><th>To</th><th>Type</th><th class="text-right">Fee</th><th>Date</th></tr></thead>
-          <tbody>
-            ${stats.recent_transfers.map(tr=>`
-              <tr class="clickable-row" onclick="navigate('/players/${tr.player_id}')">
-                <td><div class="flex-center gap-2">${posBadge(tr.position)}<span>${escHtml(tr.player_name)}</span></div></td>
-                <td class="text-muted">${escHtml(tr.from_team_name||'–')}</td>
-                <td><span style="color:var(--green)">→</span></td>
-                <td>${escHtml(tr.to_team_name||'–')}</td>
-                <td>${ttypeBadge(tr.transfer_type)}</td>
-                <td class="text-right transfer-fee">${tr.transfer_fee>0?fmtValue(tr.transfer_fee):'<span class="transfer-free">Free</span>'}</td>
-                <td class="text-muted">${fmtDate(tr.transfer_date)}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>` : ''}
-    `;
+    // Hero match: pick live match or first upcoming
+    const heroMatch = liveMatches[0] || null;
 
-    // Champion banner + current season (for trade ban display)
-    try {
-      const pubSettings = await GET('/admin/settings/public').catch(() => ({}));
-      State.currentSeason = parseInt(pubSettings.current_season) || 1;
-      const champ = pubSettings.league_champion;
-      if (champ && champ.team_name) {
-        const champBanner = document.createElement('div');
-        champBanner.className = 'champion-banner';
-        champBanner.innerHTML = `
-          <div class="champion-banner-inner">
-            <div class="champion-icon">🏆</div>
-            <div class="champion-info">
-              <div class="champion-title">Чемпион ${escHtml(champ.league_name || '')} · Сезон ${escHtml(String(champ.season || ''))}</div>
-              <div class="champion-team">
-                ${champ.logo_url ? `<img src="${escHtml(champ.logo_url)}" class="champion-logo" onerror="this.style.display='none'">` : ''}
-                <span class="champion-name">${escHtml(champ.team_name)}</span>
-                ${champ.points ? `<span class="champion-pts">${champ.points} очков</span>` : ''}
+    function renderHeroMatch(m) {
+      if (!m) return '';
+      const isLive = m.status === 'in_progress';
+      const score = isLive ? `<div class="hero-score">${m.home_score ?? 0} : ${m.away_score ?? 0}</div>` : `<div class="hero-vs">VS</div>`;
+      const badge = isLive ? `<span class="hero-live-badge">● LIVE ${m.minute ? m.minute+"'" : ''}</span>` : '';
+      const homeLogo = m.home_logo
+        ? `<img src="${escHtml(m.home_logo)}" class="hero-team-logo" onerror="this.outerHTML='<div class=hero-team-logo-ph>${escHtml((m.home_team_name||'?').substring(0,3).toUpperCase())}</div>'">`
+        : `<div class="hero-team-logo-ph">${escHtml((m.home_team_name||'?').substring(0,3).toUpperCase())}</div>`;
+      const awayLogo = m.away_logo
+        ? `<img src="${escHtml(m.away_logo)}" class="hero-team-logo" onerror="this.outerHTML='<div class=hero-team-logo-ph>${escHtml((m.away_team_name||'?').substring(0,3).toUpperCase())}</div>'">`
+        : `<div class="hero-team-logo-ph">${escHtml((m.away_team_name||'?').substring(0,3).toUpperCase())}</div>`;
+      const competition = m.league_name || m.tournament_name || (m.is_friendly ? 'Товарищеский матч' : '');
+      return `
+        <div class="hero-match-card" id="hero-match-card">
+          <div class="hero-match-bg"></div>
+          <div class="hero-match-content">
+            <div class="hero-match-label">ГЛАВНЫЙ МАТЧ ${badge}</div>
+            <div class="hero-match-teams">
+              <div class="hero-team">
+                ${homeLogo}
+                <div class="hero-team-name">${escHtml(m.home_team_name||'?')}</div>
+              </div>
+              ${score}
+              <div class="hero-team">
+                ${awayLogo}
+                <div class="hero-team-name">${escHtml(m.away_team_name||'?')}</div>
               </div>
             </div>
-          </div>`;
-        app.insertBefore(champBanner, app.firstChild);
-      }
-    } catch {}
+            <div class="hero-match-meta">
+              ${m.match_date ? `<span class="hero-match-date">📅 ${m.match_date}${m.match_time?' '+m.match_time:''}</span>` : ''}
+              ${competition ? `<span class="hero-match-league">${escHtml(competition).toUpperCase()}</span>` : ''}
+            </div>
+            <button class="hero-match-btn" onclick="navigate('/matches/${m.id}')">СМОТРЕТЬ МАТЧ</button>
+          </div>
+        </div>`;
+    }
 
-    // Poll live matches every 4 seconds while on the home page
+    function renderHomeNews(rows) {
+      if (!rows.length) return '';
+      return `
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">
+            Последние новости
+            <a href="#/news" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все новости →</a>
+          </div>
+          <div style="padding:8px 16px">
+            ${rows.map(n => `
+              <div class="news-card">
+                <div class="news-card-img">${newsIcon(n.type)}</div>
+                <div class="news-card-body">
+                  <div class="news-card-title">${escHtml(n.title)}</div>
+                  ${n.body ? `<div class="news-card-text">${escHtml(n.body.substring(0,140))}</div>` : ''}
+                  <div class="news-card-date">${fmtDate(n.created_at)}</div>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    function renderPopularClubs(teams) {
+      if (!teams.length) return '';
+      return `
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            Популярные клубы
+            <a href="#/teams" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все клубы →</a>
+          </div>
+          <div style="padding:12px 8px">
+            <div class="popular-clubs-scroll">
+              ${teams.map(t => {
+                const logoEl = t.logo_url
+                  ? `<img src="${escHtml(t.logo_url)}" class="popular-club-logo" onerror="this.outerHTML='<div class=popular-club-logo-ph>${escHtml((t.name||'?').substring(0,3).toUpperCase())}</div>'">`
+                  : `<div class="popular-club-logo-ph">${escHtml((t.name||'?').substring(0,3).toUpperCase())}</div>`;
+                return `
+                  <div class="popular-club-item" onclick="navigate('/teams/${t.id}')">
+                    ${logoEl}
+                    <div class="popular-club-name">${escHtml(t.name)}</div>
+                    <div class="popular-club-mv">${fmtValue(t.market_value)}</div>
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    app.innerHTML = `
+      ${heroMatch ? renderHeroMatch(heroMatch) : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+        ${renderHomeNews(newsData.rows)}
+        <div>
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-header">
+              Most Valuable Players
+              <a href="#/players" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все игроки →</a>
+            </div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>#</th><th>Игрок</th><th>Поз</th><th class="text-right">Ценность</th></tr></thead>
+              <tbody>
+                ${stats.top_players.slice(0,7).map((p,i) => `
+                  <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
+                    <td class="text-muted" style="width:24px">${i+1}</td>
+                    <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><div class="font-bold" style="font-size:12px">${escHtml(p.name)}</div></div></div></td>
+                    <td>${posBadge(p.position)}</td>
+                    <td class="text-right" style="white-space:nowrap;font-size:12px;color:var(--mv-color);font-weight:700">${fmtValue(p.market_value)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              Most Valuable Teams
+              <a href="#/teams" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все команды →</a>
+            </div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>#</th><th>Команда</th><th>Лига</th><th class="text-right">Ценность</th></tr></thead>
+              <tbody>
+                ${stats.top_teams.slice(0,7).map((t,i) => `
+                  <tr class="clickable-row" onclick="navigate('/teams/${t.id}')">
+                    <td class="text-muted" style="width:24px">${i+1}</td>
+                    <td><div class="flex-center gap-2">${teamLogoEl(t.logo_url,t.name)}<span class="font-bold" style="font-size:12px">${escHtml(t.name)}</span></div></td>
+                    <td class="text-muted" style="font-size:11px">${escHtml(t.competition_name||'–')}</td>
+                    <td class="text-right" style="font-size:12px;font-weight:700;color:var(--mv-color)">${fmtValue(t.market_value)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+      ${renderPopularClubs(stats.top_teams.slice(0, 10))}
+    `;
+
+    // Champion banner
+    const champ = pubSettings.league_champion;
+    if (champ && champ.team_name) {
+      const champBanner = document.createElement('div');
+      champBanner.className = 'champion-banner';
+      champBanner.innerHTML = `
+        <div class="champion-banner-inner">
+          <div class="champion-icon">🏆</div>
+          <div class="champion-info">
+            <div class="champion-title">Чемпион ${escHtml(champ.league_name || '')} · Сезон ${escHtml(String(champ.season || ''))}</div>
+            <div class="champion-team">
+              ${champ.logo_url ? `<img src="${escHtml(champ.logo_url)}" class="champion-logo" onerror="this.style.display='none'">` : ''}
+              <span class="champion-name">${escHtml(champ.team_name)}</span>
+              ${champ.points ? `<span class="champion-pts">${champ.points} очков</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+      app.insertBefore(champBanner, app.firstChild);
+    }
+
+    // Poll hero match every 5s when a live match is displayed
     if (_homeLivePollTimer) clearInterval(_homeLivePollTimer);
-    _homeLivePollTimer = setInterval(async () => {
-      const sec = document.getElementById('home-live-section');
-      if (!sec) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; return; }
-      const live = await GET('/matches?status=in_progress').catch(() => []);
-      sec.innerHTML = renderHomeLiveMatches(live);
-    }, 4000);
+    if (heroMatch) {
+      _homeLivePollTimer = setInterval(async () => {
+        const card = document.getElementById('hero-match-card');
+        if (!card) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; return; }
+        const live = await GET('/matches?status=in_progress').catch(() => []);
+        const updated = live.find(m => m.id === heroMatch.id);
+        if (updated) {
+          const newCard = document.createElement('div');
+          newCard.innerHTML = renderHeroMatch(updated);
+          const newHero = newCard.firstElementChild;
+          if (newHero) card.replaceWith(newHero);
+        }
+      }, 5000);
+    }
 
   } catch (err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
 }
@@ -997,19 +1190,12 @@ function renderHomeLiveMatches(matches) {
     <div class="home-live-grid">
       ${matches.map(m => `
         <div class="home-live-card" onclick="navigate('/matches/${m.id}')">
-          <div class="hlc-team">
-            ${teamLogoEl(m.home_logo, m.home_team_name)}
-            <span class="hlc-name">${escHtml(m.home_team_name)}</span>
+          <div style="flex:1">
+            <div class="home-live-team">${escHtml(m.home_team_name)}</div>
+            <div class="home-live-team" style="color:var(--text-muted)">${escHtml(m.away_team_name)}</div>
+            ${m.minute ? `<div class="home-live-min">${m.minute}'</div>` : ''}
           </div>
-          <div class="hlc-score">
-            <span class="hlc-score-val">${m.home_score ?? '–'} : ${m.away_score ?? '–'}</span>
-            <span class="hlc-live-badge">🔴 LIVE</span>
-            ${m.league_name ? `<span class="hlc-league">${escHtml(m.league_name)}</span>` : m.tournament_name ? `<span class="hlc-league">🏆 ${escHtml(m.tournament_name)}</span>` : m.is_friendly ? `<span class="hlc-league">⚑ Товарищеский</span>` : ''}
-          </div>
-          <div class="hlc-team hlc-team-right">
-            ${teamLogoEl(m.away_logo, m.away_team_name)}
-            <span class="hlc-name">${escHtml(m.away_team_name)}</span>
-          </div>
+          <div class="home-live-score">${m.home_score ?? 0}<br>${m.away_score ?? 0}</div>
         </div>`).join('')}
     </div>`;
 }
