@@ -882,9 +882,16 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .home-grid-3 > * { margin-bottom: 0; }
 .home-mv-card { display: flex; flex-direction: column; }
 .home-mv-card .table-wrap { flex: 1; }
-/* Equal row heights so MVP (player avatars) and MVT (team logos) rows line up */
-.home-mv-card tbody tr { height: 52px; }
+/* Equal row heights so MVP (player avatars) and MVT (team logos) rows line up.
+   Normalize avatar/logo to the same 34px box so padding+content match exactly. */
+.home-mv-card tbody tr { height: 54px; }
 .home-mv-card tbody td { vertical-align: middle; }
+.home-mv-card .avatar,
+.home-mv-card .avatar-placeholder,
+.home-mv-card .team-logo,
+.home-mv-card .team-logo-placeholder {
+  width: 34px; height: 34px; flex-shrink: 0;
+}
 @media (max-width: 1300px) {
   .home-grid-3 { grid-template-columns: 1fr 1fr; }
   .home-grid-3 > :first-child { grid-column: 1 / -1; }
