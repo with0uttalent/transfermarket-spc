@@ -10,11 +10,16 @@ const BASE_QUERY = `
     t.name as team_name, t.id as team_id,
     t.logo_url as team_logo_url,
     comp.name as competition_name,
-    comp.logo_url as competition_logo_url
+    comp.logo_url as competition_logo_url,
+    CASE WHEN ln.id IS NOT NULL THEN 1 ELSE 0 END AS on_loan,
+    ln.from_team_id AS loan_from_team_id,
+    ft.name AS loan_from_team_name
   FROM players p
   LEFT JOIN countries co ON p.nationality_id = co.id
   LEFT JOIN teams t ON p.team_id = t.id
   LEFT JOIN competitions comp ON t.competition_id = comp.id
+  LEFT JOIN loans ln ON ln.player_id = p.id AND ln.status = 'active' AND ln.to_team_id = p.team_id
+  LEFT JOIN teams ft ON ft.id = ln.from_team_id
 `;
 
 const LIST_QUERY = `
@@ -24,12 +29,17 @@ const LIST_QUERY = `
     t.logo_url as team_logo_url,
     comp.name as competition_name,
     comp.logo_url as competition_logo_url,
-    ps.pace, ps.shooting, ps.passing, ps.defending, ps.physical
+    ps.pace, ps.shooting, ps.passing, ps.defending, ps.physical,
+    CASE WHEN ln.id IS NOT NULL THEN 1 ELSE 0 END AS on_loan,
+    ln.from_team_id AS loan_from_team_id,
+    ft.name AS loan_from_team_name
   FROM players p
   LEFT JOIN countries co ON p.nationality_id = co.id
   LEFT JOIN teams t ON p.team_id = t.id
   LEFT JOIN competitions comp ON t.competition_id = comp.id
   LEFT JOIN player_skills ps ON ps.player_id = p.id
+  LEFT JOIN loans ln ON ln.player_id = p.id AND ln.status = 'active' AND ln.to_team_id = p.team_id
+  LEFT JOIN teams ft ON ft.id = ln.from_team_id
 `;
 
 router.get('/', (req, res) => {

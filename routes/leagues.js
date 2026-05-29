@@ -528,6 +528,37 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     }
   }
 
+  // Return all active loans for teams in this league before new season starts
+  const loanTeamIds = teamIds.join(',');
+  if (loanTeamIds) {
+    const activeLoans = db.prepare(`
+      SELECT * FROM loans WHERE status='active'
+        AND (from_team_id IN (${loanTeamIds}) OR to_team_id IN (${loanTeamIds}))
+    `).all();
+    const today = new Date().toISOString().slice(0, 10);
+    for (const loan of activeLoans) {
+      db.prepare(`UPDATE players SET team_id=? WHERE id=?`).run(loan.from_team_id, loan.player_id);
+      db.prepare(`UPDATE loans SET status='ended' WHERE id=?`).run(loan.id);
+      db.prepare(`INSERT INTO transfers (player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type, notes) VALUES (?,?,?,0,?,'loan','Возврат из аренды (конец сезона)')`).run(loan.player_id, loan.to_team_id, loan.from_team_id, today);
+      // Notify the lending coach that their player returned
+      const lendCoach = db.prepare('SELECT id FROM coaches WHERE team_id=?').get(loan.from_team_id);
+      const loanPlayer = db.prepare('SELECT name FROM players WHERE id=?').get(loan.player_id);
+      if (lendCoach && loanPlayer) {
+        db.prepare(`INSERT INTO coach_notifications (coach_id, title, body, type) VALUES (?,?,?,?)`).run(
+          lendCoach.id, 'Игрок вернулся из аренды',
+          `${loanPlayer.name} вернулся в вашу команду после окончания сезона`,
+          'loan_returned'
+        );
+      }
+    }
+    // Recalculate squad values for affected teams
+    const affectedTeams = new Set(activeLoans.flatMap(l => [l.from_team_id, l.to_team_id]));
+    for (const tid of affectedTeams) {
+      const tot = db.prepare(`SELECT COALESCE(SUM(market_value),0) AS t FROM players WHERE team_id=?`).get(tid);
+      db.prepare(`UPDATE teams SET market_value=? WHERE id=?`).run(tot.t, tid);
+    }
+  }
+
   // Increment season number
   const newSeason = league.season + 1;
 

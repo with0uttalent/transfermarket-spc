@@ -127,6 +127,14 @@ router.post('/', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Cannot make an offer for your own player' });
   }
 
+  // Block buy/swap offers for players currently on loan — only admin can override
+  if (!isAdmin && (offerType === 'buy' || offerType === 'swap')) {
+    const activeLoan = db.prepare(`SELECT id FROM loans WHERE player_id=? AND status='active' AND to_team_id=?`).get(player_id, player.team_id);
+    if (activeLoan) {
+      return res.status(400).json({ error: 'Этот игрок находится в аренде и не может быть продан или обменян' });
+    }
+  }
+
   // Player must not already have a pending offer
   const pendingOffer = db.prepare(`
     SELECT id FROM transfer_offers WHERE player_id=? AND status='pending'

@@ -146,6 +146,12 @@ router.post('/offers', requireAuth, (req, res) => {
   const player = db.prepare('SELECT * FROM players WHERE id=?').get(player_id);
   if (!player) return res.status(404).json({ error: 'Player not found' });
 
+  // Block if player is already on an active loan
+  const existingLoan = db.prepare(`SELECT id FROM loans WHERE player_id=? AND status='active'`).get(player_id);
+  if (existingLoan) {
+    return res.status(400).json({ error: 'Этот игрок уже находится в аренде' });
+  }
+
   let from_team_id, to_team_id;
   if (offer_type === 'loan_in') {
     // Coach wants to borrow player FROM target_team

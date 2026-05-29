@@ -1493,7 +1493,7 @@ function _buildSquadInner() {
             return `
             <tr class="clickable-row" onclick="navigate('/players/${p.id}')">
               <td class="text-muted">${p.shirt_number||'–'}</td>
-              <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><span class="font-bold">${escHtml(p.name)}</span>${banned?` <span class="badge" style="background:rgba(231,76,60,.18);color:#e74c3c;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle" title="Торговый бан — нельзя продать в этом сезоне">🔒 Бан</span>`:''}</div></div></td>
+              <td><div class="flex-center gap-2">${avatarEl(p.image_url,p.name)}<div><span class="font-bold">${escHtml(p.name)}</span>${banned?` <span class="badge" style="background:rgba(231,76,60,.18);color:#e74c3c;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle" title="Торговый бан — нельзя продать в этом сезоне">🔒 Бан</span>`:''}${p.on_loan?` <span class="badge" style="background:rgba(52,152,219,.18);color:#3498db;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle" title="Игрок арендован${p.loan_from_team_name?' из '+p.loan_from_team_name:''}">🤝 Аренда</span>`:''}</div></div></td>
               <td>${p.flag_emoji||'–'}</td>
               <td>${posBadge(p.position)}</td>
               <td class="text-muted">${calcAge(p.date_of_birth)||'–'}</td>
@@ -1832,14 +1832,18 @@ async function renderPlayerDetail(app, id) {
         </div>`
       : isOwnTeamPlayer
         ? `<div class="pp-actions">
-            ${playerTradeBanned(player)
-              ? `<button class="btn btn-outline" style="color:#888;border-color:#555;cursor:not-allowed" disabled title="Торговый бан: игрок должен отыграть минимум один сезон в вашей команде">🔒 Торговый бан</button>`
-              : `<button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="sellPlayer(${player.id},${player.market_value||0})">💸 Продать (60%)</button>`
+            ${player.on_loan
+              ? `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;background:rgba(52,152,219,.12);border:1px solid rgba(52,152,219,.35);color:#3498db;font-size:13px;font-weight:600">🤝 Аренда${player.loan_from_team_name?' из '+escHtml(player.loan_from_team_name):''}</span>`
+              : playerTradeBanned(player)
+                ? `<button class="btn btn-outline" style="color:#888;border-color:#555;cursor:not-allowed" disabled title="Торговый бан: игрок должен отыграть минимум один сезон в вашей команде">🔒 Торговый бан</button>`
+                : `<button class="btn btn-outline" style="color:#e74c3c;border-color:#e74c3c" onclick="sellPlayer(${player.id},${player.market_value||0})">💸 Продать (60%)</button>`
             }
             <button class="btn btn-outline" style="color:#3498db;border-color:#3498db" onclick="openCropUpload(1,1,url=>uploadPlayerPhoto(${player.id},url))">📷 Фото</button>
-            ${playerTradeBanned(player)
-              ? `<button class="btn btn-outline" style="color:#888;border-color:#555;cursor:not-allowed" disabled title="Торговый бан">↗ Аренда</button>`
-              : `<button class="btn btn-outline" onclick="showLoanOutForm(${playerJson})">↗ Аренда</button>`
+            ${player.on_loan
+              ? ''
+              : playerTradeBanned(player)
+                ? `<button class="btn btn-outline" style="color:#888;border-color:#555;cursor:not-allowed" disabled title="Торговый бан">↗ Аренда</button>`
+                : `<button class="btn btn-outline" onclick="showLoanOutForm(${playerJson})">↗ Аренда</button>`
             }
           </div>`
         : isOtherTeamPlayer
