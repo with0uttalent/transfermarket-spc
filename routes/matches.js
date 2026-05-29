@@ -37,11 +37,20 @@ router.get('/', (req, res) => {
   const now = Date.now();
   const rows = db.prepare(q).all(...p).map(m => {
     if (m.status === 'in_progress') {
-      // If started_at is in the future, display as scheduled with no score
-      if (m.started_at && new Date(m.started_at).getTime() > now) {
-        return { ...m, status: 'scheduled', home_score: null, away_score: null };
+      if (!m.started_at) return { ...m, home_score: null, away_score: null };
+      const startedAt = new Date(m.started_at).getTime();
+      const elapsed = (now - startedAt) / 1000;
+      // Not started yet — show as scheduled
+      if (elapsed < 0) return { ...m, status: 'scheduled', home_score: null, away_score: null };
+      // Match has elapsed 90+ seconds — auto-finish it so it leaves the live list
+      if (elapsed >= 90) {
+        const nextStatus = (m.tournament_id && m.home_score === m.away_score) ? 'overtime' : 'finished';
+        db.prepare(`UPDATE matches SET status=? WHERE id=? AND status='in_progress'`).run(nextStatus, m.id);
+        return { ...m, status: nextStatus };
       }
-      return { ...m, home_score: null, away_score: null };
+      // Live: return live minute but keep actual scores hidden
+      const liveMin = Math.floor(elapsed);
+      return { ...m, live_minute: liveMin, home_score: null, away_score: null };
     }
     return m;
   });

@@ -985,7 +985,14 @@ function router() {
   app.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>Page not found</p></div>`;
 }
 window.addEventListener('hashchange', router);
-window.addEventListener('load', async () => { updateAuthUI(); await Promise.all([loadCoachProfile(), loadCurrentSeason()]); loadBanners(); startNotifPolling(); router(); });
+window.addEventListener('load', async () => {
+  updateAuthUI();
+  await Promise.all([loadCoachProfile(), loadCurrentSeason()]);
+  loadBanners();
+  setInterval(loadBanners, 30000); // refresh right panel every 30s
+  startNotifPolling();
+  router();
+});
 // Re-sync notifications immediately when user switches back to this tab
 document.addEventListener('visibilitychange', () => { if (!document.hidden && isLoggedIn()) loadNotifications(); });
 
@@ -1021,9 +1028,12 @@ async function renderHome(app) {
         ? `<img src="${escHtml(m.away_logo)}" class="hero-team-logo" onerror="this.outerHTML='<div class=hero-team-logo-ph>${escHtml((m.away_team_name||'?').substring(0,3).toUpperCase())}</div>'">`
         : `<div class="hero-team-logo-ph">${escHtml((m.away_team_name||'?').substring(0,3).toUpperCase())}</div>`;
       const competition = m.league_name || m.tournament_name || (m.is_friendly ? 'Товарищеский матч' : '');
+      const stadiumBgStyle = m.home_stadium_url
+        ? `style="background-image:url('${escHtml(m.home_stadium_url)}');opacity:.35"`
+        : '';
       return `
         <div class="hero-match-card" id="hero-match-card">
-          <div class="hero-match-bg"></div>
+          <div class="hero-match-bg" ${stadiumBgStyle}></div>
           <div class="hero-match-content">
             <div class="hero-match-label">ГЛАВНЫЙ МАТЧ ${badge}</div>
             <div class="hero-match-teams">
