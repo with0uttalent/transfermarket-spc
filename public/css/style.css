@@ -330,24 +330,11 @@ img { max-width: 100%; display: block; }
   flex: 1;
   min-width: 0;
   padding: 24px 20px;
-  max-width: 1000px;
+  max-width: 1200px;
 }
 
 /* ─── Right Panel ────────────────────────────────────────────── */
-#right-panel {
-  width: var(--right-panel-w);
-  min-width: var(--right-panel-w);
-  background: var(--bg-sidebar);
-  border-left: 1px solid var(--border);
-  position: sticky;
-  top: var(--topbar-h);
-  max-height: calc(100vh - var(--topbar-h));
-  overflow-y: auto;
-  align-self: flex-start;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,.1) transparent;
-  flex-shrink: 0;
-}
+#right-panel { display: none; }
 .rp-section {
   padding: 16px;
   border-bottom: 1px solid var(--border);
@@ -1332,7 +1319,6 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 
 /* ─── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 1100px) {
-  #right-panel { display: none; }
   #app { max-width: none; }
 }
 @media (max-width: 700px) {
@@ -1522,6 +1508,12 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .crop-controls { padding: 14px 18px; background: rgba(255,255,255,.03); border-top: 1px solid var(--border); }
 
 /* ── Notification extras ──────────────────────────────────── */
+/* ── Upcoming match chip (home page inline) ───────────────── */
+.upcoming-match-chip { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg-darker); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; flex: 1; min-width: 0; transition: border-color .15s; }
+.upcoming-match-chip:hover { border-color: var(--accent); }
+.home-top-value-row { display: flex; align-items: center; gap: 12px; cursor: pointer; transition: opacity .15s; }
+.home-top-value-row:hover { opacity: .85; }
+
 .notif-show-more { text-align: center; padding: 8px 12px; font-size: 12px; color: var(--accent); cursor: pointer; border-top: 1px solid var(--border); }
 .notif-show-more:hover { background: var(--bg-hover); }
 .notif-clear-row { padding: 6px 12px; border-top: 1px solid var(--border); display: flex; justify-content: center; }

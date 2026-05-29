@@ -1004,10 +1004,12 @@ let _homeLivePollTimer = null;
 async function renderHome(app) {
   app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
   try {
-    const [stats, newsData, liveMatches, pubSettings] = await Promise.all([
+    const [stats, newsData, liveMatches, upcomingMatches, featured, pubSettings] = await Promise.all([
       GET('/stats'),
       GET('/news?limit=3'),
       GET('/matches?status=in_progress').catch(() => []),
+      GET('/matches?status=scheduled&limit=3').catch(() => []),
+      GET('/stats/featured').catch(() => ({})),
       GET('/admin/settings/public').catch(() => ({})),
     ]);
 
@@ -1015,6 +1017,8 @@ async function renderHome(app) {
 
     // Hero match: pick live match or first upcoming
     const heroMatch = liveMatches[0] || null;
+    // Other live matches (not the hero)
+    const otherLive = liveMatches.slice(1);
 
     function renderHeroMatch(m) {
       if (!m) return '';
@@ -1104,8 +1108,45 @@ async function renderHome(app) {
         </div>`;
     }
 
+    // Upcoming events section
+    function renderUpcomingStrip(matches) {
+      if (!matches || !matches.length) return '';
+      return `
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">Ближайшие матчи
+            <a href="#/matches" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все матчи →</a>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0">
+            ${matches.slice(0,3).map(m => `
+              <div class="upcoming-match-chip" onclick="navigate('/matches/${m.id}')">
+                <span style="font-size:11px;color:var(--text-muted)">⚽</span>
+                <span class="font-bold" style="font-size:12px">${escHtml(m.home_team_name||'?')} vs ${escHtml(m.away_team_name||'?')}</span>
+                <span style="font-size:11px;color:var(--text-muted)">${m.match_date||''} ${m.match_time||''}</span>
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    // Top value player mini card
+    function renderTopValueCard(p) {
+      if (!p) return '';
+      const ini = (p.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+      return `
+        <div class="home-top-value-row" onclick="navigate('/players/${p.id}')">
+          ${p.image_url
+            ? `<img src="${escHtml(p.image_url)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`
+            : `<div class="avatar-placeholder" style="width:40px;height:40px;font-size:14px;flex-shrink:0">${ini}</div>`}
+          <div style="flex:1;min-width:0">
+            <div class="font-bold" style="font-size:13px">${escHtml(p.name)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${escHtml(p.position||'')} · ${escHtml(p.team_name||'Free Agent')}</div>
+          </div>
+          <div style="font-size:14px;font-weight:800;color:var(--mv-color);white-space:nowrap">${fmtValue(p.market_value)}</div>
+        </div>`;
+    }
+
     app.innerHTML = `
       ${heroMatch ? renderHeroMatch(heroMatch) : ''}
+      ${otherLive.length ? `<div class="card" style="margin-bottom:20px;padding:14px 16px">${renderHomeLiveMatches(otherLive)}</div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
         ${renderHomeNews(newsData.rows)}
         <div>
@@ -1114,6 +1155,7 @@ async function renderHome(app) {
               Most Valuable Players
               <a href="#/players" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все игроки →</a>
             </div>
+            ${featured?.topValue ? `<div style="padding:10px 16px;border-bottom:1px solid var(--border)">${renderTopValueCard(featured.topValue)}</div>` : ''}
             <div class="table-wrap"><table>
               <thead><tr><th>#</th><th>Игрок</th><th>Поз</th><th class="text-right">Ценность</th></tr></thead>
               <tbody>
@@ -1127,7 +1169,7 @@ async function renderHome(app) {
               </tbody>
             </table></div>
           </div>
-          <div class="card">
+          <div class="card" style="margin-bottom:20px">
             <div class="card-header">
               Most Valuable Teams
               <a href="#/teams" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все команды →</a>
@@ -1145,6 +1187,7 @@ async function renderHome(app) {
               </tbody>
             </table></div>
           </div>
+          ${renderUpcomingStrip(upcomingMatches)}
         </div>
       </div>
       ${renderPopularClubs(stats.top_teams.slice(0, 10))}
