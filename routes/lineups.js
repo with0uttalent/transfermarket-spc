@@ -164,11 +164,67 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
       if (['Centre-Forward','Striker'].includes(position)) return 'FWD';
       return 'MID';
     }
-    let slot = 1;
-    for (const player of players) {
-      const zone = slot <= 11 ? posToZone(player.position) : null;
-      insert.run(teamId, player.id, slot, zone);
-      slot++;
+
+    // Build zone buckets sorted by market_value desc
+    const buckets = { GK: [], DEF: [], DMF: [], MID: [], AMF: [], FWD: [] };
+    for (const p of players) {
+      const z = posToZone(p.position);
+      buckets[z].push(p);
+    }
+
+    // Slot capacity per zone on the pitch (5×5 grid + 1 GK)
+    const zoneSlots = { GK: 1, DEF: 5, DMF: 5, MID: 5, AMF: 5, FWD: 5 };
+    const zoneOrder = ['GK', 'DEF', 'DMF', 'MID', 'AMF', 'FWD'];
+
+    // Greedily fill 11 starters: pick best available from natural zone,
+    // then fill remaining slots from any leftover players
+    const starters = [];
+    const usedIds = new Set();
+
+    // First pass: pick from natural zones respecting pitch limits
+    const startersByZone = { GK: [], DEF: [], DMF: [], MID: [], AMF: [], FWD: [] };
+    let totalStarters = 0;
+    for (const zone of zoneOrder) {
+      const cap = zone === 'GK' ? 1 : Math.min(zoneSlots[zone], buckets[zone].length);
+      const picked = buckets[zone].slice(0, cap);
+      for (const p of picked) {
+        if (totalStarters < 11) {
+          startersByZone[zone].push(p);
+          usedIds.add(p.id);
+          totalStarters++;
+        }
+      }
+    }
+
+    // If fewer than 11 starters, pull from remaining players (any zone)
+    if (totalStarters < 11) {
+      for (const p of players) {
+        if (usedIds.has(p.id)) continue;
+        if (totalStarters >= 11) break;
+        const z = posToZone(p.position);
+        startersByZone[z].push(p);
+        usedIds.add(p.id);
+        totalStarters++;
+      }
+    }
+
+    // Assign specific pitch slot IDs (GK-1, DEF-1..5, etc.)
+    let slotNum = 1;
+    for (const zone of zoneOrder) {
+      const zonePlayers = startersByZone[zone];
+      zonePlayers.forEach((p, i) => {
+        const pitchSlotId = zone === 'GK' ? 'GK-1' : `${zone}-${i + 1}`;
+        insert.run(teamId, p.id, slotNum, pitchSlotId);
+        slotNum++;
+      });
+    }
+
+    // Remaining players go to bench (slots 12+)
+    let benchSlot = 12;
+    for (const p of players) {
+      if (usedIds.has(p.id)) continue;
+      insert.run(teamId, p.id, benchSlot, null);
+      benchSlot++;
     }
   });
 
