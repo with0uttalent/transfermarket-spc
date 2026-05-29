@@ -57,6 +57,34 @@ function teamStrength(players) {
   };
 }
 
+// ─── OVR-based strength ───────────────────────────────────────────────────────
+// Uses ovr_fixed directly — the most reliable rating for pack players
+function teamStrengthFromOVR(players) {
+  if (!players.length) return { attack: 0.7, defense: 0.7, midfield: 0.7 };
+  let atkSum = 0, midSum = 0, defSum = 0, gkSum = 0;
+  let na = 0, nm = 0, nd = 0, ng = 0;
+  for (const p of players) {
+    const ovr = Math.min(99, Math.max(40, p.ovr_fixed || 65)) / 99;
+    const pos = p.position || '';
+    if (ATTACK_POSITIONS.has(pos)) { atkSum += ovr; na++; }
+    else if (MID_POSITIONS.has(pos)) { midSum += ovr; nm++; }
+    else if (DEF_POSITIONS.has(pos)) { defSum += ovr; nd++; }
+    else if (GK_POSITIONS.has(pos)) { gkSum += ovr; ng++; }
+    else { midSum += ovr; nm++; }
+  }
+  const total = (na + nm + nd + ng) || 1;
+  const avgOvr = (atkSum + midSum + defSum + gkSum) / total;
+  const A = na > 0 ? atkSum / na : avgOvr;
+  const M = nm > 0 ? midSum / nm : avgOvr;
+  const D = nd > 0 ? defSum / nd : avgOvr;
+  const G = ng > 0 ? gkSum  / ng : avgOvr;
+  return {
+    attack:   A * 0.55 + M * 0.30 + D * 0.10 + G * 0.05,
+    defense:  G * 0.30 + D * 0.40 + M * 0.20 + A * 0.05,
+    midfield: M,
+  };
+}
+
 // ─── Skill-based strength ─────────────────────────────────────────────────────
 // players: array of player objects (with .id and .position)
 // skillsMap: { player_id: { pace, shooting, passing, defending, physical } }
@@ -157,8 +185,8 @@ function calcAvgStamina(players, staminaMap) {
 
 function staminaFactor(avgStamina) {
   if (avgStamina >= 70) return 1.0;
-  // Below 70: up to 15% strength debuff at stamina = 0
-  return 0.85 + (avgStamina / 70) * 0.15;
+  // Below 70: up to 25% strength debuff at stamina = 0 (significant fatigue penalty)
+  return 0.75 + (avgStamina / 70) * 0.25;
 }
 
 function applyStaminaDebuff(str, factor) {
@@ -355,8 +383,10 @@ function simulateMatchCore(
     }
   }
 
-  const RATE   = useSkillRate ? 0.018  : 0.013;
-  const OFFSET = useSkillRate ? 0.5    : 4.5;
+  // useSkillRate path: near-zero OFFSET so ratio dominates; EXPONENT amplifies class gap sharply
+  const RATE     = useSkillRate ? 0.016  : 0.013;
+  const OFFSET   = useSkillRate ? 0.02   : 4.5;
+  const EXPONENT = useSkillRate ? 1.6    : 1.0;
 
   function tryPenalty(minute, isHome) {
     const attackers = isHome ? activeHome : activeAway;
@@ -492,8 +522,8 @@ function simulateMatchCore(
     const aAtkEff = awayStr.attack  * Math.pow(0.88, awayRed);
     const aDefEff = awayStr.defense * Math.pow(0.85, awayRed);
 
-    if (rand() < RATE * (hAtkEff / (aDefEff + OFFSET))) tryGoal(m, true);
-    if (rand() < RATE * (aAtkEff / (hDefEff + OFFSET))) tryGoal(m, false);
+    if (rand() < RATE * Math.pow(hAtkEff / (aDefEff + OFFSET), EXPONENT)) tryGoal(m, true);
+    if (rand() < RATE * Math.pow(aAtkEff / (hDefEff + OFFSET), EXPONENT)) tryGoal(m, false);
     if (rand() < 0.008) tryPenalty(m, rand() < 0.5);
     if (rand() < 0.028) tryCard(m, rand() < 0.5);
     if (rand() < 0.0012) tryDirectRed(m, rand() < 0.5);
@@ -664,12 +694,41 @@ function simulateMatchWithLineup(
   const homeAll = [...homeStarters, ...homeReserves];
   const awayAll = [...awayStarters, ...awayReserves];
 
-  let homeStr = homeStarters.length
-    ? teamStrengthFromSkills(homeStarters, skillsMap)
-    : { attack: 0.6, defense: 0.6, midfield: 0.6 };
-  let awayStr = awayStarters.length
-    ? teamStrengthFromSkills(awayStarters, skillsMap)
-    : { attack: 0.6, defense: 0.6, midfield: 0.6 };
+  // Use OVR as primary strength, apply skill multiplier per player if skills are available
+  function buildStr(starters) {
+    if (!starters.length) return { attack: 0.6, defense: 0.6, midfield: 0.6 };
+    const ovrStr = teamStrengthFromOVR(starters);
+    // Compute skill modifier: for each player with skills, compare weighted skill score to their OVR
+    // Players with no skills in skillsMap keep OVR as-is
+    let skillMod = 0, countWithSkills = 0;
+    for (const p of starters) {
+      const sk = skillsMap[p.id];
+      if (!sk) continue;
+      const ovr = Math.min(99, Math.max(40, p.ovr_fixed || 65));
+      const pos = p.position || '';
+      let weighted;
+      if (ATTACK_POSITIONS.has(pos))
+        weighted = sk.shooting*0.4 + sk.pace*0.3 + sk.passing*0.15 + sk.physical*0.15;
+      else if (MID_POSITIONS.has(pos))
+        weighted = sk.passing*0.35 + sk.defending*0.25 + sk.shooting*0.2 + sk.physical*0.2;
+      else if (DEF_POSITIONS.has(pos))
+        weighted = sk.defending*0.5 + sk.physical*0.25 + sk.pace*0.15 + sk.passing*0.1;
+      else
+        weighted = sk.defending*0.55 + sk.physical*0.3 + sk.passing*0.15;
+      // modifier: how much skill deviates from OVR (positive = above-average skills for rating)
+      skillMod += (weighted - ovr) / 99;
+      countWithSkills++;
+    }
+    // Apply a small skill adjustment (±5% max) on top of OVR-based strength
+    const mod = countWithSkills > 0 ? 1 + (skillMod / countWithSkills) * 0.5 : 1;
+    return {
+      attack:   ovrStr.attack   * mod,
+      defense:  ovrStr.defense  * mod,
+      midfield: ovrStr.midfield * mod,
+    };
+  }
+  let homeStr = buildStr(homeStarters);
+  let awayStr = buildStr(awayStarters);
 
   if (Object.keys(staminaMap).length) {
     homeStr = applyStaminaDebuff(homeStr, staminaFactor(calcAvgStamina(homeStarters, staminaMap)));
@@ -714,6 +773,7 @@ module.exports = {
   generateBracketRound1,
   roundName,
   generateMatchFullStats,
+  teamStrengthFromOVR,
   teamStrengthFromSkills,
   teamStrengthWithZones,
   calcAvgStamina,
