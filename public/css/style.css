@@ -882,6 +882,9 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .home-grid-3 > * { margin-bottom: 0; }
 .home-mv-card { display: flex; flex-direction: column; }
 .home-mv-card .table-wrap { flex: 1; }
+/* Equal row heights so MVP (player avatars) and MVT (team logos) rows line up */
+.home-mv-card tbody tr { height: 52px; }
+.home-mv-card tbody td { vertical-align: middle; }
 @media (max-width: 1300px) {
   .home-grid-3 { grid-template-columns: 1fr 1fr; }
   .home-grid-3 > :first-child { grid-column: 1 / -1; }
