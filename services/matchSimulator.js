@@ -205,29 +205,41 @@ function getPositionGroup(pos) {
 }
 
 function pickPositionSub(field, bench) {
-  // Only consider players explicitly marked as priority substitutes
   const priorityBench = bench.filter(p => p.priority_sub);
   if (!priorityBench.length) return null;
 
-  const nonGK = field.filter(p => !GK_POSITIONS.has(p.position || ''));
-  const off = nonGK.length ? pick(nonGK) : null;
-  if (!off) return null;
+  // Strict position matching: bench player comes on only for a field player
+  // of the exact same position. Shuffle bench to randomise which sub fires first.
+  const shuffled = [...priorityBench].sort(() => Math.random() - 0.5);
+  for (const subIn of shuffled) {
+    if (GK_POSITIONS.has(subIn.position || '')) continue; // GK subs handled separately
+    const candidates = field.filter(p => p.position === subIn.position);
+    if (candidates.length) return { on: subIn, off: pick(candidates) };
+  }
+  return null;
+}
 
-  const offGroup = getPositionGroup(off.position || '');
-  const sameGroup = priorityBench.filter(p => getPositionGroup(p.position || '') === offGroup);
-  const on = sameGroup.length
-    ? pick(sameGroup)
-    : (priorityBench.find(p => !GK_POSITIONS.has(p.position || '')) || null);
-  return on ? { on, off } : null;
+function pickGKSub(field, bench) {
+  // Dedicated: GK bench player replaces GK on field only
+  const priorityBench = bench.filter(p => p.priority_sub && GK_POSITIONS.has(p.position || ''));
+  if (!priorityBench.length) return null;
+  const fieldGK = field.find(p => GK_POSITIONS.has(p.position || ''));
+  if (!fieldGK) return null;
+  return { on: pick(priorityBench), off: fieldGK };
 }
 
 function pickInjurySub(injuredPlayer, availableBench) {
-  // For injury: pick best positional match from priority bench, ignoring GK restriction
   const priorityBench = availableBench.filter(p => p.priority_sub);
   if (!priorityBench.length) return null;
+
+  // Strict: exact position match first
+  const exact = priorityBench.filter(p => p.position === injuredPlayer.position);
+  if (exact.length) return pick(exact);
+
+  // Fallback for injuries only: same broad group (e.g. CB replaces LB)
   const injGroup = getPositionGroup(injuredPlayer.position || '');
   const sameGroup = priorityBench.filter(p => getPositionGroup(p.position || '') === injGroup);
-  return sameGroup.length ? pick(sameGroup) : pick(priorityBench);
+  return sameGroup.length ? pick(sameGroup) : null;
 }
 
 // ─── Match simulation core ────────────────────────────────────────────────────
@@ -539,7 +551,7 @@ function simulateMatchCore(
     if (m >= 55 && m <= 82) {
       if (subsDone.home < 3 && rand() < 0.055 && activeHome.length > 8) {
         const bench = homeReserves.filter(p => !activeHome.find(f => f.id === p.id));
-        const sub = pickPositionSub(activeHome, bench);
+        const sub = pickPositionSub(activeHome, bench) || (rand() < 0.15 ? pickGKSub(activeHome, bench) : null);
         if (sub) {
           addEvent(m, 'substitution', homeTeamId, sub.on.id, sub.off.id,
             `🔄 Замена: ${commentarySub(sub.on.name, sub.off.name)}`);
@@ -548,7 +560,7 @@ function simulateMatchCore(
       }
       if (subsDone.away < 3 && rand() < 0.055 && activeAway.length > 8) {
         const bench = awayReserves.filter(p => !activeAway.find(f => f.id === p.id));
-        const sub = pickPositionSub(activeAway, bench);
+        const sub = pickPositionSub(activeAway, bench) || (rand() < 0.15 ? pickGKSub(activeAway, bench) : null);
         if (sub) {
           addEvent(m, 'substitution', awayTeamId, sub.on.id, sub.off.id,
             `🔄 Замена: ${commentarySub(sub.on.name, sub.off.name)}`);
