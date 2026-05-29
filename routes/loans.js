@@ -3,6 +3,16 @@ const { getDb, getCurrentSeason, isTradeBanned } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 
+function getActiveBudget(db, teamId) {
+  return db.prepare(`
+    SELECT sb.* FROM season_budgets sb
+    JOIN leagues l ON sb.league_id = l.id
+    WHERE sb.team_id = ? AND l.status IN ('active','transfer_window')
+    ORDER BY l.created_at DESC
+    LIMIT 1
+  `).get(teamId);
+}
+
 const BASE = `
   SELECT l.*,
     p.name as player_name, p.position, p.image_url,
@@ -216,6 +226,22 @@ router.post('/offers/:id/accept', requireAuth, (req, res) => {
 
     // Move player to to_team_id
     db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.to_team_id, offer.player_id);
+
+    // Transfer loan fee: deduct from borrowing team (to_team), credit to lending team (from_team)
+    if (offer.loan_fee > 0) {
+      db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?')
+        .run(offer.loan_fee, offer.to_team_id);
+      const borrowBudget = getActiveBudget(db, offer.to_team_id);
+      if (borrowBudget) {
+        db.prepare('UPDATE season_budgets SET spent = spent + ? WHERE id=?')
+          .run(offer.loan_fee, borrowBudget.id);
+      }
+      const lendBudget = getActiveBudget(db, offer.from_team_id);
+      if (lendBudget) {
+        db.prepare('UPDATE season_budgets SET income = income + ? WHERE id=?')
+          .run(offer.loan_fee, lendBudget.id);
+      }
+    }
 
     // Update offer status
     db.prepare(`UPDATE loan_offers SET status='accepted' WHERE id=?`).run(offer.id);
