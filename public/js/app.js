@@ -2765,7 +2765,8 @@ function matchCardHtml(m) {
       <span class="mc-team-name">${escHtml(m.home_team_name)}</span>
     </div>
     <div class="mc-score">
-      ${m.tournament_name?`<div style="margin-bottom:4px"><span class="badge badge-gold">${escHtml(m.tournament_name)}</span></div>`:''}
+      ${m.tournament_name?`<div style="margin-bottom:4px"><span class="badge badge-gold">🏆 ${escHtml(m.tournament_name)}</span></div>`:''}
+      ${m.league_name?`<div style="margin-bottom:4px"><span class="badge badge-blue" style="display:inline-flex;align-items:center;gap:5px">${m.league_logo_url?`<img src="${escHtml(m.league_logo_url)}" style="height:13px;width:auto;object-fit:contain">`:''}${escHtml(m.league_name)}</span></div>`:''}
       ${m.is_friendly?`<div style="margin-bottom:4px"><span class="badge badge-gray">⚑ Товарищеский</span></div>`:''}
       <div class="mc-score-val">${scoreStr}</div>
       <div><span class="match-status-badge ${statusCls}">${m.status}</span></div>
