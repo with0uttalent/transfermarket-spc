@@ -324,7 +324,7 @@ img { max-width: 100%; display: block; }
   display: flex;
   flex: 1;
   min-height: 0;
-  align-items: flex-start;
+  align-items: stretch;
 }
 #app {
   flex: 1;
@@ -339,11 +339,11 @@ img { max-width: 100%; display: block; }
   min-width: var(--right-panel-w);
   background: var(--bg-sidebar);
   border-left: 1px solid var(--border);
-  min-height: calc(100vh - var(--topbar-h));
   position: sticky;
   top: var(--topbar-h);
-  height: calc(100vh - var(--topbar-h));
+  max-height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
+  align-self: flex-start;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,.1) transparent;
   flex-shrink: 0;
