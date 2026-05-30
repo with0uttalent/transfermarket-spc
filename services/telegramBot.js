@@ -15,10 +15,12 @@ let _enabled = true; // master switch
 
 // Per-type notification flags
 const _notif = {
-  channel_events:    true, // live events (goals, cards…) → channel
-  channel_results:   true, // match result banner → channel
-  channel_standings: true, // standings table after matchday → channel
-  group_results:     true, // match result banner → group
+  channel_events:    true,  // live events (goals, cards…) → channel
+  channel_results:   true,  // match result banner → channel
+  channel_standings: true,  // standings table after matchday → channel
+  group_results:     true,  // match result banner → group
+  group_coach_news:  true,  // coach statements → group
+  channel_coach_news: false, // coach statements → channel (off by default)
 };
 
 function setEnabled(val)          { _enabled = !!val; }
@@ -451,10 +453,16 @@ async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awaySco
 
 async function sendCoachNews({ coachName, teamName, title, body }) {
   if (!agent || !_enabled) return;
+  if (!_notif.group_coach_news && !_notif.channel_coach_news) return;
   try {
     const text = `📢 <b>Тренер ${escTg(teamName)}</b> — <i>${escTg(coachName)}</i> — заявил:\n\n<b>${escTg(title)}</b>\n\n${escTg(body)}`;
-    const result = await tgSendMessage(text);
-    if (!result.ok) console.warn('[TelegramBot] sendMessage failed:', result.description);
+    if (_notif.group_coach_news) {
+      const result = await tgSendMessage(text);
+      if (!result.ok) console.warn('[TelegramBot] sendCoachNews group failed:', result.description);
+    }
+    if (_notif.channel_coach_news) {
+      await tgSendMessageToLive(text);
+    }
   } catch (err) {
     console.warn('[TelegramBot] sendCoachNews error:', err.message);
   }

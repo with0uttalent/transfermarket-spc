@@ -7,16 +7,28 @@ const telegramBot = require('../services/telegramBot');
 
 const router = express.Router();
 
-const NOTIF_KEYS = ['tg_channel_events','tg_channel_results','tg_channel_standings','tg_group_results'];
+const NOTIF_KEYS = ['tg_channel_events','tg_channel_results','tg_channel_standings','tg_group_results','tg_group_coach_news','tg_channel_coach_news'];
+
+// Default values per key (used when the key hasn't been saved to DB yet)
+const NOTIF_DEFAULTS = {
+  tg_channel_events:    '1',
+  tg_channel_results:   '1',
+  tg_channel_standings: '1',
+  tg_group_results:     '1',
+  tg_group_coach_news:  '1',
+  tg_channel_coach_news: '0', // off by default — admin must opt-in
+};
 
 function syncNotifSettings(db) {
   const rows = db.prepare('SELECT key, value FROM app_settings').all();
   const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
   telegramBot.setNotifSettings({
-    channel_events:    map.tg_channel_events    !== '0',
-    channel_results:   map.tg_channel_results   !== '0',
-    channel_standings: map.tg_channel_standings !== '0',
-    group_results:     map.tg_group_results     !== '0',
+    channel_events:    map.tg_channel_events     !== '0',
+    channel_results:   map.tg_channel_results    !== '0',
+    channel_standings: map.tg_channel_standings  !== '0',
+    group_results:     map.tg_group_results      !== '0',
+    group_coach_news:  map.tg_group_coach_news   !== '0',
+    channel_coach_news: map.tg_channel_coach_news === '1', // explicit opt-in
   });
 }
 
@@ -38,8 +50,10 @@ router.get('/settings', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT key, value FROM app_settings').all();
   const settings = Object.fromEntries(rows.map(r => [r.key, r.value]));
   settings.telegram_enabled = telegramBot.isEnabled() ? '1' : '0';
-  // Default notif flags to '1' if not yet set
-  for (const k of NOTIF_KEYS) if (settings[k] === undefined) settings[k] = '1';
+  // Apply per-key defaults for any flag not yet persisted in DB
+  for (const [k, def] of Object.entries(NOTIF_DEFAULTS)) {
+    if (settings[k] === undefined) settings[k] = def;
+  }
   res.json(settings);
 });
 
