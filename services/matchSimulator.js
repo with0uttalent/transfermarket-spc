@@ -210,17 +210,19 @@ function pickPositionSub(field, bench) {
   const outfield = bench.filter(p => !GK_POSITIONS.has(p.position || ''));
   if (!outfield.length) return null;
   const shuffled = [...outfield].sort(() => Math.random() - 0.5);
+  // Pick the most fatigued player from a candidate list (lowest stamina goes off)
+  const mostTired = arr => [...arr].sort((a, b) => (a.stamina ?? 100) - (b.stamina ?? 100))[0];
   // 1. Exact position match
   for (const subIn of shuffled) {
     const candidates = field.filter(p => p.position === subIn.position && !GK_POSITIONS.has(p.position || ''));
-    if (candidates.length) return { on: subIn, off: pick(candidates) };
+    if (candidates.length) return { on: subIn, off: mostTired(candidates) };
   }
   // 2. Same broad position group (ATK/MID/DEF)
   for (const subIn of shuffled) {
     const subGroup = getPositionGroup(subIn.position || '');
     if (subGroup === 'GK') continue;
     const candidates = field.filter(p => getPositionGroup(p.position || '') === subGroup && !GK_POSITIONS.has(p.position || ''));
-    if (candidates.length) return { on: subIn, off: pick(candidates) };
+    if (candidates.length) return { on: subIn, off: mostTired(candidates) };
   }
   return null;
 }
@@ -703,11 +705,16 @@ function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, homeZon
     awayStr = applyStaminaDebuff(awayStr, staminaFactor(calcAvgStamina(awayPlayers, staminaMap)));
   }
 
+  // Attach stamina to player objects so substitution logic can see individual fatigue levels
+  const attachStamina = arr => arr.map(p => ({ ...p, stamina: staminaMap[p.id] ?? p.stamina ?? 100 }));
+  const homePl = attachStamina(homePlayers);
+  const awayPl = attachStamina(awayPlayers);
+
   return simulateMatchCore(
     homeTeamId, awayTeamId,
-    [...homePlayers], [...awayPlayers],
+    [...homePl], [...awayPl],
     homeStr, awayStr,
-    homePlayers, awayPlayers,
+    homePl, awayPl,
     false
   );
 }
@@ -769,11 +776,16 @@ function simulateMatchWithLineup(
     awayStr = applyStaminaDebuff(awayStr, staminaFactor(calcAvgStamina(awayStarters, staminaMap)));
   }
 
+  // Attach stamina to player objects so substitution logic can see individual fatigue levels
+  const attachStamina = arr => arr.map(p => ({ ...p, stamina: staminaMap[p.id] ?? p.stamina ?? 100 }));
+  const homeAllS = [...attachStamina(homeStarters), ...attachStamina(homeReserves)];
+  const awayAllS = [...attachStamina(awayStarters), ...attachStamina(awayReserves)];
+
   return simulateMatchCore(
     homeTeamId, awayTeamId,
-    [...homeStarters], [...awayStarters],
+    attachStamina([...homeStarters]), attachStamina([...awayStarters]),
     homeStr, awayStr,
-    homeAll, awayAll,
+    homeAllS, awayAllS,
     true // use skill rate
   );
 }
