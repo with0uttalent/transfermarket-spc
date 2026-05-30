@@ -2,7 +2,7 @@
 const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
-const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner } = require('./telegramBot');
+const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews } = require('./telegramBot');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -363,6 +363,7 @@ function generateRandomPlayerNews() {
   for (let i = 0; i < count && i < players.length; i++) {
     const item = pickItem(players[i]);
     db.prepare(`INSERT INTO news (title, body, type, player_id) VALUES (?,?,?,?)`).run(item.title, item.body, item.type, players[i].id);
+    sendPlayerNews({ title: item.title, body: item.body, type: item.type }).catch(() => {});
   }
 }
 

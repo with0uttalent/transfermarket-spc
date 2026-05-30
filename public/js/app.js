@@ -3530,10 +3530,11 @@ async function renderAdmin(app) {
           <div>
             <div style="font-weight:700;margin-bottom:10px;color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px">📢 Telegram Канал (лайв)</div>
             ${[
-              ['tg_channel_events',     '⚽ Живые события матча',   'Голы, карточки, замены в реальном времени'],
-              ['tg_channel_results',    '🏁 Результаты матчей',     'Баннер с итоговым счётом'],
-              ['tg_channel_standings',  '📊 Таблица после тура',    'Таблица лиги по завершении тура'],
-              ['tg_channel_coach_news', '🗣️ Высказывания тренеров', 'Слова тренеров публикуются в канал'],
+              ['tg_channel_events',      '⚽ Живые события матча',    'Голы, карточки, замены в реальном времени'],
+              ['tg_channel_results',    '🏁 Результаты матчей',      'Баннер с итоговым счётом'],
+              ['tg_channel_standings',  '📊 Таблица после тура',     'Таблица лиги по завершении тура'],
+              ['tg_channel_coach_news', '🗣️ Высказывания тренеров',  'Слова тренеров публикуются в канал'],
+              ['tg_channel_player_news','📰 Слухи и новости игроков','Трансферные слухи, скандалы, контракты'],
             ].map(([key, label, hint]) => `
               <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
                 <label class="toggle-switch"><input type="checkbox" id="tg-${key}" onchange="saveTgNotif('${key}',this.checked)"><span class="toggle-slider"></span></label>
@@ -3600,7 +3601,7 @@ async function renderAdmin(app) {
     txt.textContent = on ? 'Включено' : 'Выключено — все уведомления отключены';
     for (const [key, def] of [
       ['tg_channel_events', '1'], ['tg_channel_results', '1'], ['tg_channel_standings', '1'],
-      ['tg_channel_coach_news', '0'],
+      ['tg_channel_coach_news', '0'], ['tg_channel_player_news', '0'],
       ['tg_group_results', '1'], ['tg_group_coach_news', '1'],
     ]) {
       const el = document.getElementById(`tg-${key}`);

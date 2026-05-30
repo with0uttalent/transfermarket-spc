@@ -7,7 +7,7 @@ const telegramBot = require('../services/telegramBot');
 
 const router = express.Router();
 
-const NOTIF_KEYS = ['tg_channel_events','tg_channel_results','tg_channel_standings','tg_group_results','tg_group_coach_news','tg_channel_coach_news'];
+const NOTIF_KEYS = ['tg_channel_events','tg_channel_results','tg_channel_standings','tg_group_results','tg_group_coach_news','tg_channel_coach_news','tg_channel_player_news'];
 
 // Default values per key (used when the key hasn't been saved to DB yet)
 const NOTIF_DEFAULTS = {
@@ -16,19 +16,21 @@ const NOTIF_DEFAULTS = {
   tg_channel_standings: '1',
   tg_group_results:     '1',
   tg_group_coach_news:  '1',
-  tg_channel_coach_news: '0', // off by default — admin must opt-in
+  tg_channel_coach_news:  '0', // off by default — admin must opt-in
+  tg_channel_player_news: '0', // off by default — admin must opt-in
 };
 
 function syncNotifSettings(db) {
   const rows = db.prepare('SELECT key, value FROM app_settings').all();
   const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
   telegramBot.setNotifSettings({
-    channel_events:    map.tg_channel_events     !== '0',
-    channel_results:   map.tg_channel_results    !== '0',
-    channel_standings: map.tg_channel_standings  !== '0',
-    group_results:     map.tg_group_results      !== '0',
-    group_coach_news:  map.tg_group_coach_news   !== '0',
-    channel_coach_news: map.tg_channel_coach_news === '1', // explicit opt-in
+    channel_events:    map.tg_channel_events      !== '0',
+    channel_results:   map.tg_channel_results     !== '0',
+    channel_standings: map.tg_channel_standings   !== '0',
+    group_results:     map.tg_group_results       !== '0',
+    group_coach_news:  map.tg_group_coach_news    !== '0',
+    channel_coach_news:  map.tg_channel_coach_news  === '1',
+    channel_player_news: map.tg_channel_player_news === '1',
   });
 }
 

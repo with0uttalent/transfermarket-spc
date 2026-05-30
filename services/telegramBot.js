@@ -21,6 +21,7 @@ const _notif = {
   group_results:     true,  // match result banner → group
   group_coach_news:  true,  // coach statements → group
   channel_coach_news: false, // coach statements → channel (off by default)
+  channel_player_news: false, // transfer rumors / player news → channel (off by default)
 };
 
 function setEnabled(val)          { _enabled = !!val; }
@@ -691,4 +692,15 @@ async function sendStandingsBanner({ leagueName, leagueLogoUrl, matchday, standi
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, setEnabled, isEnabled, setNotifSettings, getNotifSettings, generateMatchBanner };
+async function sendPlayerNews({ title, body, type }) {
+  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_player_news) return;
+  try {
+    const icon = type === 'scandal' ? '🔥' : '📰';
+    const text = `${icon} <b>${escTg(title)}</b>\n\n${escTg(body)}`;
+    await tgSendMessageToLive(text);
+  } catch (err) {
+    console.warn('[TelegramBot] sendPlayerNews error:', err.message);
+  }
+}
+
+module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews, setEnabled, isEnabled, setNotifSettings, getNotifSettings, generateMatchBanner };
