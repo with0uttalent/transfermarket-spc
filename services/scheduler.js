@@ -1036,8 +1036,8 @@ function finalizeExpiredMatchesSafe() {
 }
 
 function startScheduler() {
-  // Every 15 minutes – generate player/team news
-  cron.schedule('*/15 * * * *', () => {
+  // Every 4 hours – generate player/team news
+  cron.schedule('0 */4 * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
@@ -1106,7 +1106,7 @@ function startScheduler() {
     } catch(e) { console.warn('[Scheduler] Pack delivery error:', e.message); }
   });
 
-  console.log('[Scheduler] Started: news/15min, league-sim/1min, live-broadcast/5s, auctions/5s.');
+  console.log('[Scheduler] Started: news/4h, league-sim/1min, live-broadcast/5s, auctions/5s.');
 }
 
 module.exports = { startScheduler, simulateScheduledMatches, applyMatchResults, generateMatchNews, simulateLeagueMatchday };
