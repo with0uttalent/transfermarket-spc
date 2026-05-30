@@ -45,7 +45,11 @@ router.get('/', (req, res) => {
       // Match has elapsed 90+ seconds — auto-finish it so it leaves the live list
       if (elapsed >= 90) {
         const nextStatus = (m.tournament_id && m.home_score === m.away_score) ? 'overtime' : 'finished';
-        db.prepare(`UPDATE matches SET status=? WHERE id=? AND status='in_progress'`).run(nextStatus, m.id);
+        const r = db.prepare(`UPDATE matches SET status=? WHERE id=? AND status='in_progress'`).run(nextStatus, m.id);
+        if (r.changes > 0 && nextStatus === 'finished' && !m.is_friendly) {
+          const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
+          generateMatchNews(m.id, m.home_team_name, m.away_team_name, m.home_score, m.away_score, evRows);
+        }
         return { ...m, status: nextStatus };
       }
       // Live: compute current score from goal events up to the live minute

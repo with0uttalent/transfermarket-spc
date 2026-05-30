@@ -205,27 +205,32 @@ function getPositionGroup(pos) {
 }
 
 function pickPositionSub(field, bench) {
-  const priorityBench = bench.filter(p => p.priority_sub);
-  if (!priorityBench.length) return null;
-
-  // Strict position matching: bench player comes on only for a field player
-  // of the exact same position. Shuffle bench to randomise which sub fires first.
-  const shuffled = [...priorityBench].sort(() => Math.random() - 0.5);
+  if (!bench.length) return null;
+  // Only outfield players (GK subs handled by pickGKSub)
+  const outfield = bench.filter(p => !GK_POSITIONS.has(p.position || ''));
+  if (!outfield.length) return null;
+  const shuffled = [...outfield].sort(() => Math.random() - 0.5);
+  // 1. Exact position match
   for (const subIn of shuffled) {
-    if (GK_POSITIONS.has(subIn.position || '')) continue; // GK subs handled separately
-    const candidates = field.filter(p => p.position === subIn.position);
+    const candidates = field.filter(p => p.position === subIn.position && !GK_POSITIONS.has(p.position || ''));
+    if (candidates.length) return { on: subIn, off: pick(candidates) };
+  }
+  // 2. Same broad position group (ATK/MID/DEF)
+  for (const subIn of shuffled) {
+    const subGroup = getPositionGroup(subIn.position || '');
+    if (subGroup === 'GK') continue;
+    const candidates = field.filter(p => getPositionGroup(p.position || '') === subGroup && !GK_POSITIONS.has(p.position || ''));
     if (candidates.length) return { on: subIn, off: pick(candidates) };
   }
   return null;
 }
 
 function pickGKSub(field, bench) {
-  // Dedicated: GK bench player replaces GK on field only
-  const priorityBench = bench.filter(p => p.priority_sub && GK_POSITIONS.has(p.position || ''));
-  if (!priorityBench.length) return null;
+  const gkBench = bench.filter(p => GK_POSITIONS.has(p.position || ''));
+  if (!gkBench.length) return null;
   const fieldGK = field.find(p => GK_POSITIONS.has(p.position || ''));
   if (!fieldGK) return null;
-  return { on: pick(priorityBench), off: fieldGK };
+  return { on: pick(gkBench), off: fieldGK };
 }
 
 function pickInjurySub(injuredPlayer, availableBench) {
@@ -556,7 +561,7 @@ function simulateMatchCore(
     if (rand() < 0.008) tryPenalty(m, rand() < 0.5);
     if (rand() < 0.028) tryCard(m, rand() < 0.5);
     if (rand() < 0.0012) tryDirectRed(m, rand() < 0.5);
-    if (m % 45 === 0 && rand() < 0.12) tryInjury(m, rand() < 0.5);
+    if (rand() < 0.004) tryInjury(m, rand() < 0.5);
     if (rand() < 0.022) tryBigSave(m, rand() < 0.5);
     if (rand() < 0.018) tryNearMiss(m, rand() < 0.5);
     if (rand() < 0.015) addCorner(m, rand() < 0.5);
