@@ -258,7 +258,7 @@ function generateTeamMatchNews(matchId, homeTeamId, awayTeamId, homeTeamName, aw
 }
 
 function getLineupInfo(db, teamId) {
-  const rows = db.prepare(`
+  const players = db.prepare(`
     SELECT p.*
     FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
@@ -266,12 +266,6 @@ function getLineupInfo(db, teamId) {
       AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
     ORDER BY tl.slot ASC
     LIMIT 11
-  `).all(teamId);
-  if (rows.length > 0) return { players: rows };
-  const players = db.prepare(`
-    SELECT p.* FROM players p
-    WHERE p.team_id = ? AND p.status = 'active'
-      AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
   `).all(teamId);
   return { players };
 }
@@ -419,21 +413,8 @@ function simulateLeagueMatchday(leagueId) {
     const awayReserves = awayLineup.filter(p => p.slot >= 12)
       .map(p => ({ ...p, position: p.position_override || p.position }));
 
-    // If lineup not set, fall back to all active non-injured players
-    const homeFallback = homeStarters.length < 7
-      ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.home_team_id)
-      : null;
-    const awayFallback = awayStarters.length < 7
-      ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.away_team_id)
-      : null;
-
-    const finalHomeStarters = homeFallback ? homeFallback.slice(0, 11) : homeStarters;
-    const finalHomeReserves = homeFallback ? homeFallback.slice(11) : homeReserves;
-    const finalAwayStarters = awayFallback ? awayFallback.slice(0, 11) : awayStarters;
-    const finalAwayReserves = awayFallback ? awayFallback.slice(11) : awayReserves;
-
     // Build skills map and stamina map
-    const allPlayerIds = [...finalHomeStarters, ...finalHomeReserves, ...finalAwayStarters, ...finalAwayReserves]
+    const allPlayerIds = [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves]
       .map(p => p.player_id || p.id);
 
     const skillsMap = {};
@@ -452,8 +433,8 @@ function simulateLeagueMatchday(leagueId) {
 
     const result = simulateMatchWithLineup(
       srow.home_team_id, srow.away_team_id,
-      finalHomeStarters, finalHomeReserves,
-      finalAwayStarters, finalAwayReserves,
+      homeStarters, homeReserves,
+      awayStarters, awayReserves,
       skillsMap, staminaMap
     );
 
@@ -915,20 +896,7 @@ function simulateSingleLeagueMatch(db, league, srow) {
   const awayReserves = awayLineup.filter(p => p.slot >= 12)
     .map(p => ({ ...p, position: p.position_override || p.position }));
 
-  // If lineup not set, fall back to all active non-injured players as starters
-  const homeFallback = homeStarters.length < 7
-    ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.home_team_id)
-    : null;
-  const awayFallback = awayStarters.length < 7
-    ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.away_team_id)
-    : null;
-
-  const finalHomeStarters = homeFallback ? homeFallback.slice(0, 11) : homeStarters;
-  const finalHomeReserves = homeFallback ? homeFallback.slice(11) : homeReserves;
-  const finalAwayStarters = awayFallback ? awayFallback.slice(0, 11) : awayStarters;
-  const finalAwayReserves = awayFallback ? awayFallback.slice(11) : awayReserves;
-
-  const allPlayerIds = [...finalHomeStarters, ...finalHomeReserves, ...finalAwayStarters, ...finalAwayReserves].map(p => p.player_id || p.id);
+  const allPlayerIds = [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves].map(p => p.player_id || p.id);
   const skillsMap = {};
   const staminaMap2 = {};
   if (allPlayerIds.length) {
@@ -941,8 +909,8 @@ function simulateSingleLeagueMatch(db, league, srow) {
 
   const result = simulateMatchWithLineup(
     srow.home_team_id, srow.away_team_id,
-    finalHomeStarters, finalHomeReserves,
-    finalAwayStarters, finalAwayReserves,
+    homeStarters, homeReserves,
+    awayStarters, awayReserves,
     skillsMap, staminaMap2
   );
 

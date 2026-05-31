@@ -218,7 +218,7 @@ router.post('/', requireAuth, (req, res) => {
 });
 
 function getLineupInfo(db, teamId) {
-  const rows = db.prepare(`
+  const players = db.prepare(`
     SELECT p.*
     FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
@@ -226,12 +226,6 @@ function getLineupInfo(db, teamId) {
       AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
     ORDER BY tl.slot ASC
     LIMIT 11
-  `).all(teamId);
-  if (rows.length > 0) return { players: rows };
-  const players = db.prepare(`
-    SELECT p.* FROM players p
-    WHERE p.team_id = ? AND p.status = 'active'
-      AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
   `).all(teamId);
   return { players };
 }
