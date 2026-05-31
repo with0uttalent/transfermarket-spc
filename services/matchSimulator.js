@@ -204,6 +204,12 @@ function getPositionGroup(pos) {
   return 'MID';
 }
 
+// Returns arr filtered to non-GK players; falls back to the original array only if all are GK (edge case)
+function outfield(arr) {
+  const o = arr.filter(p => !GK_POSITIONS.has(p.position || ''));
+  return o.length ? o : arr;
+}
+
 function pickPositionSub(field, bench) {
   if (!bench.length) return null;
   // Only outfield players (GK subs handled by pickGKSub)
@@ -317,7 +323,7 @@ function simulateMatchCore(
     const teamId    = isHome ? homeTeamId : awayTeamId;
     if (!attackers.length) return;
     const fwd = attackers.filter(p => ATTACK_POSITIONS.has(p.position || ''));
-    const scorer = fwd.length ? pick(fwd) : pick(attackers);
+    const scorer = fwd.length ? pick(fwd) : pick(outfield(attackers));
     const mids = attackers.filter(p => p.id !== scorer.id && (MID_POSITIONS.has(p.position||'') || ATTACK_POSITIONS.has(p.position||'')));
     const assister = mids.length ? (rand() < 0.7 ? pick(mids) : null) : null;
     const isOwnGoal = rand() < 0.04;
@@ -429,7 +435,7 @@ function simulateMatchCore(
     const teamId    = isHome ? homeTeamId : awayTeamId;
     if (!attackers.length) return;
     const fwd = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
-    const taker = fwd.length ? pick(fwd) : pick(attackers);
+    const taker = fwd.length ? pick(fwd) : pick(outfield(attackers));
     track(taker.id);
     const scored = rand() < 0.76;
     if (scored) {
@@ -460,7 +466,7 @@ function simulateMatchCore(
     const teamId    = isHome ? homeTeamId : awayTeamId;
     if (!attackers.length) return;
     const fwd = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
-    const shooter = fwd.length ? pick(fwd) : pick(attackers);
+    const shooter = fwd.length ? pick(fwd) : pick(outfield(attackers));
     if (rand() < 0.6) addBuildupSequence(minute, attackers, teamId, shooter.id, 2);
     track(shooter.id);
     addEvent(minute, 'near_miss', teamId, shooter.id, null,
@@ -478,7 +484,7 @@ function simulateMatchCore(
     const defTeamId = opponentIsHome ? awayTeamId : homeTeamId;
     if (!attackers.length) return;
     const fwd = attackers.filter(p => MID_POSITIONS.has(p.position||'') || ATTACK_POSITIONS.has(p.position||''));
-    const taker = fwd.length ? pick(fwd) : pick(attackers);
+    const taker = fwd.length ? pick(fwd) : pick(outfield(attackers));
     track(taker.id);
     addEvent(minute, 'free_kick', teamId, taker.id, null,
       `🟡 Штрафной: ${taker.name} готовится к удару`);
@@ -506,7 +512,7 @@ function simulateMatchCore(
     const attackers = isHome ? activeHome : activeAway;
     const taker = attackers.filter(p => ATTACK_POSITIONS.has(p.position||'')).length
       ? pick(attackers.filter(p => ATTACK_POSITIONS.has(p.position||'')))
-      : pick(attackers);
+      : pick(outfield(attackers));
     const takerStr = taker ? ` ${taker.name} идёт к точке` : '';
     addEvent(minute, 'penalty_awarded', teamId, taker?.id || null, null,
       `🚨 Судья назначает пенальти!${takerStr}`);
@@ -527,7 +533,7 @@ function simulateMatchCore(
     const r = rand();
     if (r < 0.08) {
       const headers = attackers.filter(p => DEF_POSITIONS.has(p.position||'') || ATTACK_POSITIONS.has(p.position||''));
-      const scorer = headers.length ? pick(headers) : pick(attackers);
+      const scorer = headers.length ? pick(headers) : pick(outfield(attackers));
       track(scorer.id); stats[scorer.id].goals++; stats[scorer.id].rating += 1.3;
       track(taker.id); stats[taker.id].assists++; stats[taker.id].rating += 0.6;
       isHome ? homeScore++ : awayScore++;
@@ -535,7 +541,7 @@ function simulateMatchCore(
         `⚽ ГОЛ с углового! ${scorer.name} замыкает подачу! (Ассист: ${taker.name})`);
     } else if (r < 0.20) {
       const headers = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
-      const shooter = headers.length ? pick(headers) : pick(attackers);
+      const shooter = headers.length ? pick(headers) : pick(outfield(attackers));
       track(shooter.id);
       addEvent(minute, 'near_miss', teamId, shooter.id, null,
         `🎯 Угловой: удар головой — мимо! ${shooter.name} — неточно`);
