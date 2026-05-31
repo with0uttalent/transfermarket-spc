@@ -32,7 +32,7 @@ router.get('/', (req, res) => {
 
   const recentTransfers = db.prepare(`
     SELECT tr.*,
-      p.name as player_name, p.position,
+      p.name as player_name, p.position, p.image_url as player_image,
       ft.name as from_team_name,
       tt.name as to_team_name
     FROM transfers tr
@@ -81,7 +81,21 @@ router.get('/featured', (req, res) => {
     LIMIT 1
   `).get();
 
-  res.json({ topRated: topRated || null, topValue: topValue || null });
+  const topTransfer = db.prepare(`
+    SELECT tr.id, tr.transfer_fee, tr.transfer_date, tr.transfer_type,
+      p.id as player_id, p.name as player_name, p.position, p.image_url as player_image,
+      ft.name as from_team_name,
+      tt.name as to_team_name, tt.id as to_team_id
+    FROM transfers tr
+    JOIN players p ON tr.player_id = p.id
+    LEFT JOIN teams ft ON tr.from_team_id = ft.id
+    LEFT JOIN teams tt ON tr.to_team_id = tt.id
+    WHERE tr.transfer_fee > 0 AND tr.transfer_type = 'permanent'
+    ORDER BY tr.transfer_fee DESC
+    LIMIT 1
+  `).get();
+
+  res.json({ topRated: topRated || null, topValue: topValue || null, topTransfer: topTransfer || null });
 });
 
 module.exports = router;

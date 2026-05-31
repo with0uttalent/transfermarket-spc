@@ -915,6 +915,29 @@ function renderRightPanel(liveMatches, featured, upcomingMatches) {
       </div>
     `;
   }
+
+  // Top value transfer
+  const topTransferEl = document.getElementById('right-top-transfer');
+  if (topTransferEl && featured?.topTransfer) {
+    const tr = featured.topTransfer;
+    const initials = (tr.player_name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    topTransferEl.innerHTML = `
+      <div class="rp-header">
+        <span class="rp-title">Top Transfer</span>
+      </div>
+      <div class="rp-top-value" onclick="navigate('/players/${tr.player_id}')">
+        ${tr.player_image
+          ? `<img src="${escHtml(tr.player_image)}" style="border-radius:50%;object-fit:cover;width:50px;height:50px;flex-shrink:0" onerror="this.style.display='none'">`
+          : `<div class="avatar-placeholder" style="width:50px;height:50px;font-size:18px;flex-shrink:0">${initials}</div>`}
+        <div class="rp-top-value-info">
+          <div class="rp-top-value-name">${escHtml(tr.player_name)}</div>
+          <div class="rp-top-value-pos">${escHtml(tr.position||'')}</div>
+          <div class="rp-top-value-team">${escHtml(tr.from_team_name||'?')} → ${escHtml(tr.to_team_name||'?')}</div>
+          <div class="rp-top-value-mv">${fmtValue(tr.transfer_fee)}</div>
+        </div>
+      </div>
+    `;
+  }
 }
 function renderBannerCol(containerId, banners, featuredPlayer, featuredLabel) {
   const el = document.getElementById(containerId);
@@ -1087,6 +1110,29 @@ async function renderHome(app) {
         </div>`;
     }
 
+    function renderHomeRecentTransfers(transfers) {
+      if (!transfers.length) return '';
+      return `
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">
+            Последние трансферы
+            <a href="#/transfers" style="font-size:11px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0">Все трансферы →</a>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Игрок</th><th>Откуда</th><th>Куда</th><th class="text-right">Сумма</th></tr></thead>
+            <tbody>
+              ${transfers.map(tr => `
+                <tr class="clickable-row" onclick="navigate('/players/${tr.player_id}')">
+                  <td><div class="flex-center gap-2">${avatarEl(tr.player_image, tr.player_name)}<div><div class="font-bold" style="font-size:12px">${escHtml(tr.player_name)}</div><div style="font-size:11px;color:var(--text-muted)">${escHtml(tr.position||'')}</div></div></div></td>
+                  <td style="font-size:12px;color:var(--text-muted)">${escHtml(tr.from_team_name||'–')}</td>
+                  <td style="font-size:12px">${escHtml(tr.to_team_name||'–')}</td>
+                  <td class="text-right" style="font-size:12px;font-weight:700;color:var(--mv-color);white-space:nowrap">${tr.transfer_fee ? fmtValue(tr.transfer_fee) : '<span style="color:var(--text-muted)">Free</span>'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>`;
+    }
+
     function renderPopularClubs(teams) {
       if (!teams.length) return '';
       return `
@@ -1154,6 +1200,7 @@ async function renderHome(app) {
           </table></div>
         </div>
       </div>
+      ${renderHomeRecentTransfers(stats.recent_transfers ? stats.recent_transfers.slice(0,5) : [])}
       ${renderPopularClubs(stats.top_teams.slice(0, 10))}
     `;
 
