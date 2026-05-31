@@ -31,7 +31,7 @@ const GK_POSITIONS     = new Set(['Goalkeeper']);
 // ─── OVR-based strength ───────────────────────────────────────────────────────
 // Uses ovr_fixed directly — the most reliable rating for pack players
 function teamStrengthFromOVR(players) {
-  if (!players.length) return { attack: 0.7, defense: 0.7, midfield: 0.7 };
+  if (!players.length) return { attack: 0.1, defense: 0.1, midfield: 0.1 };
   let atkSum = 0, midSum = 0, defSum = 0, gkSum = 0;
   let na = 0, nm = 0, nd = 0, ng = 0;
   for (const p of players) {
@@ -52,10 +52,14 @@ function teamStrengthFromOVR(players) {
   const M = nm > 0 ? midSum / nm : avgOvr;
   const D = nd > 0 ? defSum / nd : avgOvr;
   const G = ng > 0 ? gkSum  / ng : avgOvr;
+
+  // Linear penalty for playing with fewer than 11 players
+  const countFactor = Math.min(1, players.length / 11);
+
   return {
-    attack:   A * 0.55 + M * 0.30 + D * 0.10 + G * 0.05,
-    defense:  G * 0.30 + D * 0.40 + M * 0.20 + A * 0.05,
-    midfield: M,
+    attack:   (A * 0.55 + M * 0.30 + D * 0.10 + G * 0.05) * countFactor,
+    defense:  (G * 0.30 + D * 0.40 + M * 0.20 + A * 0.05) * countFactor,
+    midfield: M * countFactor,
   };
 }
 
