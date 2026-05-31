@@ -259,7 +259,7 @@ function generateTeamMatchNews(matchId, homeTeamId, awayTeamId, homeTeamName, aw
 
 function getLineupInfo(db, teamId) {
   const rows = db.prepare(`
-    SELECT p.*, tl.position_override as zone
+    SELECT p.*
     FROM team_lineups tl
     JOIN players p ON tl.player_id = p.id
     WHERE tl.team_id = ? AND tl.slot <= 11 AND p.status = 'active'
@@ -267,17 +267,13 @@ function getLineupInfo(db, teamId) {
     ORDER BY tl.slot ASC
     LIMIT 11
   `).all(teamId);
-  if (rows.length > 0) {
-    const zoneMap = {};
-    for (const r of rows) if (r.zone) zoneMap[r.id] = r.zone;
-    return { players: rows, zoneMap };
-  }
+  if (rows.length > 0) return { players: rows };
   const players = db.prepare(`
     SELECT p.* FROM players p
     WHERE p.team_id = ? AND p.status = 'active'
       AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0)
   `).all(teamId);
-  return { players, zoneMap: {} };
+  return { players };
 }
 
 function simulateScheduledMatches() {
@@ -294,7 +290,7 @@ function simulateScheduledMatches() {
   for (const match of scheduled) {
     const home = getLineupInfo(db, match.home_team_id);
     const away = getLineupInfo(db, match.away_team_id);
-    const result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players, home.zoneMap, away.zoneMap);
+    const result = simulateMatch(match.home_team_id, match.away_team_id, home.players, away.players);
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
     db.prepare(`UPDATE matches SET status='finished' WHERE id=?`).run(match.id);
     const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
@@ -327,7 +323,7 @@ function generateRandomMatch() {
   const home = getLineupInfo(db, homeTeam.id);
   const away = getLineupInfo(db, awayTeam.id);
 
-  const result = simulateMatch(homeTeam.id, awayTeam.id, home.players, away.players, home.zoneMap, away.zoneMap);
+  const result = simulateMatch(homeTeam.id, awayTeam.id, home.players, away.players);
   applyMatchResults(matchId, homeTeam.id, awayTeam.id, result);
   db.prepare(`UPDATE matches SET status='finished' WHERE id=?`).run(matchId);
   const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(matchId);
@@ -423,27 +419,22 @@ function simulateLeagueMatchday(leagueId) {
     const awayReserves = awayLineup.filter(p => p.slot >= 12)
       .map(p => ({ ...p, position: p.position_override || p.position }));
 
-    // If no lineup set, fall back to all active non-injured players
-    let homePlayers, awayPlayers, useLineup = false;
-    if (homeStarters.length >= 7 && awayStarters.length >= 7) {
-      useLineup = true;
-    } else {
-      homePlayers = db.prepare(`
-        SELECT p.* FROM players p
-        WHERE p.team_id=? AND p.status='active'
-          AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
-      `).all(srow.home_team_id);
-      awayPlayers = db.prepare(`
-        SELECT p.* FROM players p
-        WHERE p.team_id=? AND p.status='active'
-          AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)
-      `).all(srow.away_team_id);
-    }
+    // If lineup not set, fall back to all active non-injured players
+    const homeFallback = homeStarters.length < 7
+      ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.home_team_id)
+      : null;
+    const awayFallback = awayStarters.length < 7
+      ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.away_team_id)
+      : null;
+
+    const finalHomeStarters = homeFallback ? homeFallback.slice(0, 11) : homeStarters;
+    const finalHomeReserves = homeFallback ? homeFallback.slice(11) : homeReserves;
+    const finalAwayStarters = awayFallback ? awayFallback.slice(0, 11) : awayStarters;
+    const finalAwayReserves = awayFallback ? awayFallback.slice(11) : awayReserves;
 
     // Build skills map and stamina map
-    const allPlayerIds = useLineup
-      ? [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves].map(p => p.player_id)
-      : [...(homePlayers||[]), ...(awayPlayers||[])].map(p => p.id);
+    const allPlayerIds = [...finalHomeStarters, ...finalHomeReserves, ...finalAwayStarters, ...finalAwayReserves]
+      .map(p => p.player_id || p.id);
 
     const skillsMap = {};
     const staminaMap = {};
@@ -459,19 +450,12 @@ function simulateLeagueMatchday(leagueId) {
       for (const sr of staminaRows) staminaMap[sr.id] = sr.stamina;
     }
 
-    // Simulate first so we have the result for the INSERT
-    let result;
-    if (useLineup) {
-      result = simulateMatchWithLineup(
-        srow.home_team_id, srow.away_team_id,
-        homeStarters, homeReserves,
-        awayStarters, awayReserves,
-        skillsMap,
-        staminaMap
-      );
-    } else {
-      result = simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers, null, null, staminaMap);
-    }
+    const result = simulateMatchWithLineup(
+      srow.home_team_id, srow.away_team_id,
+      finalHomeStarters, finalHomeReserves,
+      finalAwayStarters, finalAwayReserves,
+      skillsMap, staminaMap
+    );
 
     // Create match record with staggered kick-off using league settings
     const _startTime = league.match_start_time || '16:00';
@@ -931,17 +915,20 @@ function simulateSingleLeagueMatch(db, league, srow) {
   const awayReserves = awayLineup.filter(p => p.slot >= 12)
     .map(p => ({ ...p, position: p.position_override || p.position }));
 
-  let homePlayers, awayPlayers, useLineup = false;
-  if (homeStarters.length >= 7 && awayStarters.length >= 7) {
-    useLineup = true;
-  } else {
-    homePlayers = db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.home_team_id);
-    awayPlayers = db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.away_team_id);
-  }
+  // If lineup not set, fall back to all active non-injured players as starters
+  const homeFallback = homeStarters.length < 7
+    ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.home_team_id)
+    : null;
+  const awayFallback = awayStarters.length < 7
+    ? db.prepare(`SELECT p.* FROM players p WHERE p.team_id=? AND p.status='active' AND NOT EXISTS (SELECT 1 FROM player_injuries i WHERE i.player_id=p.id AND i.matches_remaining>0)`).all(srow.away_team_id)
+    : null;
 
-  const allPlayerIds = useLineup
-    ? [...homeStarters, ...homeReserves, ...awayStarters, ...awayReserves].map(p => p.player_id)
-    : [...(homePlayers||[]), ...(awayPlayers||[])].map(p => p.id);
+  const finalHomeStarters = homeFallback ? homeFallback.slice(0, 11) : homeStarters;
+  const finalHomeReserves = homeFallback ? homeFallback.slice(11) : homeReserves;
+  const finalAwayStarters = awayFallback ? awayFallback.slice(0, 11) : awayStarters;
+  const finalAwayReserves = awayFallback ? awayFallback.slice(11) : awayReserves;
+
+  const allPlayerIds = [...finalHomeStarters, ...finalHomeReserves, ...finalAwayStarters, ...finalAwayReserves].map(p => p.player_id || p.id);
   const skillsMap = {};
   const staminaMap2 = {};
   if (allPlayerIds.length) {
@@ -952,9 +939,12 @@ function simulateSingleLeagueMatch(db, league, srow) {
     for (const sr of staminaRows2) staminaMap2[sr.id] = sr.stamina;
   }
 
-  const result = useLineup
-    ? simulateMatchWithLineup(srow.home_team_id, srow.away_team_id, homeStarters, homeReserves, awayStarters, awayReserves, skillsMap, staminaMap2)
-    : simulateMatch(srow.home_team_id, srow.away_team_id, homePlayers, awayPlayers, null, null, staminaMap2);
+  const result = simulateMatchWithLineup(
+    srow.home_team_id, srow.away_team_id,
+    finalHomeStarters, finalHomeReserves,
+    finalAwayStarters, finalAwayReserves,
+    skillsMap, staminaMap2
+  );
 
   const now = new Date();
   const pad2 = n => String(n).padStart(2, '0');

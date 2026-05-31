@@ -27,35 +27,6 @@ const MID_POSITIONS    = new Set(['Central Midfield','Defensive Midfield']);
 const DEF_POSITIONS    = new Set(['Centre-Back','Left-Back','Right-Back']);
 const GK_POSITIONS     = new Set(['Goalkeeper']);
 
-// ─── Market-value based strength ─────────────────────────────────────────────
-function playerBase(mv) {
-  return Math.log10(Math.max(mv || 500000, 100000));
-}
-
-function teamStrength(players) {
-  let atk = 0, mid = 0, def = 0, gk = 0;
-  let na = 0, nm = 0, nd = 0, ng = 0;
-  for (const p of players) {
-    const b = playerBase(p.market_value);
-    const pos = p.position || '';
-    if (ATTACK_POSITIONS.has(pos)) { atk += b; na++; }
-    else if (MID_POSITIONS.has(pos)) { mid += b; nm++; }
-    else if (DEF_POSITIONS.has(pos)) { def += b; nd++; }
-    else if (GK_POSITIONS.has(pos)) { gk += b; ng++; }
-    else { mid += b; nm++; }
-  }
-  const n = players.length || 1;
-  const avg = (atk + mid + def + gk) / n;
-  const A = na > 0 ? atk / na : avg;
-  const M = nm > 0 ? mid / nm : avg;
-  const D = nd > 0 ? def / nd : avg;
-  const G = ng > 0 ? gk  / ng : avg;
-  return {
-    attack:   A * 0.55 + M * 0.30 + D * 0.10 + G * 0.05,
-    defense:  D * 0.45 + G * 0.30 + M * 0.20 + A * 0.05,
-    midfield: M,
-  };
-}
 
 // ─── OVR-based strength ───────────────────────────────────────────────────────
 // Uses ovr_fixed directly — the most reliable rating for pack players
@@ -88,92 +59,6 @@ function teamStrengthFromOVR(players) {
   };
 }
 
-// ─── Skill-based strength ─────────────────────────────────────────────────────
-// players: array of player objects (with .id and .position)
-// skillsMap: { player_id: { pace, shooting, passing, defending, physical } }
-// Returns {attack, defense, midfield} in 0-1 normalized range
-function teamStrengthFromSkills(players, skillsMap) {
-  let atkSum = 0, midSum = 0, defSum = 0, gkSum = 0;
-  let na = 0, nm = 0, nd = 0, ng = 0;
-
-  for (const p of players) {
-    const sk = skillsMap[p.id] || { pace:60, shooting:60, passing:60, defending:60, physical:60 };
-    // Normalize skills to 0-1
-    const pace = sk.pace / 100;
-    const shooting = sk.shooting / 100;
-    const passing = sk.passing / 100;
-    const defending = sk.defending / 100;
-    const physical = sk.physical / 100;
-
-    const pos = p.position || '';
-    if (ATTACK_POSITIONS.has(pos)) {
-      atkSum += shooting * 0.4 + pace * 0.3 + passing * 0.15 + physical * 0.15;
-      na++;
-    } else if (MID_POSITIONS.has(pos)) {
-      midSum += passing * 0.35 + defending * 0.25 + shooting * 0.2 + physical * 0.2;
-      nm++;
-    } else if (DEF_POSITIONS.has(pos)) {
-      defSum += defending * 0.5 + physical * 0.25 + pace * 0.15 + passing * 0.1;
-      nd++;
-    } else if (GK_POSITIONS.has(pos)) {
-      gkSum += defending * 0.55 + physical * 0.3 + passing * 0.15;
-      ng++;
-    } else {
-      // Default to mid
-      midSum += passing * 0.35 + defending * 0.25 + shooting * 0.2 + physical * 0.2;
-      nm++;
-    }
-  }
-
-  const total = (na + nm + nd + ng) || 1;
-  const avgVal = (atkSum + midSum + defSum + gkSum) / total;
-
-  const A = na > 0 ? atkSum / na : avgVal;
-  const M = nm > 0 ? midSum / nm : avgVal;
-  const D = nd > 0 ? defSum / nd : avgVal;
-  const G = ng > 0 ? gkSum  / ng : avgVal;
-
-  return {
-    attack:   A * 0.55 + M * 0.30 + D * 0.10 + G * 0.05,
-    defense:  D * 0.45 + G * 0.30 + M * 0.20 + A * 0.05,
-    midfield: M,
-  };
-}
-
-// ─── Zone-aware strength (uses lineup zone assignments + market value) ─────────
-function teamStrengthWithZones(players, zoneMap) {
-  if (!players.length) return { attack: 6, defense: 6, midfield: 6 };
-
-  const b = p => Math.log10(Math.max(p.market_value || 500000, 100000));
-  const groups = { GK:[], DEF:[], DMF:[], MID:[], AMF:[], FWD:[] };
-  for (const p of players) {
-    const z = zoneMap[p.id] || 'MID';
-    (groups[z] = groups[z] || []).push(p);
-  }
-
-  const avgOf = arr => arr.length ? arr.reduce((s, p) => s + b(p), 0) / arr.length : null;
-  const overall = players.reduce((s, p) => s + b(p), 0) / players.length;
-
-  const G  = avgOf(groups.GK)  ?? overall * 0.70;
-  const D  = avgOf(groups.DEF) ?? overall * 0.65;
-  const DM = avgOf(groups.DMF) ?? overall * 0.85;
-  const M  = avgOf(groups.MID) ?? overall;
-  const AM = avgOf(groups.AMF) ?? overall * 0.85;
-  const F  = avgOf(groups.FWD) ?? overall * 0.65;
-
-  // Penalties for missing key zones
-  const hasGK  = groups.GK.length  > 0 ? 1.0 : 0.60;
-  const hasDef = (groups.DEF.length + groups.DMF.length) >= 2 ? 1.0
-               : (groups.DEF.length + groups.DMF.length) === 1 ? 0.80 : 0.55;
-  const hasFwd = (groups.FWD.length + groups.AMF.length) > 0 ? 1.0 : 0.50;
-  const hasMid = (groups.MID.length + groups.DMF.length + groups.AMF.length) >= 2 ? 1.0 : 0.80;
-
-  return {
-    attack:   (F*0.45 + AM*0.30 + M*0.15 + DM*0.05 + D*0.03 + G*0.02) * hasFwd * hasMid,
-    defense:  (G*0.30 + D*0.40 + DM*0.20 + M*0.10) * hasGK * hasDef,
-    midfield: DM*0.30 + M*0.40 + AM*0.30,
-  };
-}
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function rand() { return Math.random(); }
@@ -697,21 +582,16 @@ function generateMatchFullStats(homeStr, awayStr, homeScore, awayScore) {
   };
 }
 
-// ─── simulateMatch — market-value based, optional zone maps ──────────────────
-function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, homeZoneMap, awayZoneMap, staminaMap = {}) {
-  let homeStr = homeZoneMap && Object.keys(homeZoneMap).length
-    ? teamStrengthWithZones(homePlayers, homeZoneMap)
-    : homePlayers.length ? teamStrength(homePlayers) : { attack: 6, defense: 6, midfield: 6 };
-  let awayStr = awayZoneMap && Object.keys(awayZoneMap).length
-    ? teamStrengthWithZones(awayPlayers, awayZoneMap)
-    : awayPlayers.length ? teamStrength(awayPlayers) : { attack: 6, defense: 6, midfield: 6 };
+// ─── simulateMatch — OVR-based ────────────────────────────────────────────────
+function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, staminaMap = {}) {
+  let homeStr = homePlayers.length ? teamStrengthFromOVR(homePlayers) : { attack: 0.7, defense: 0.7, midfield: 0.7 };
+  let awayStr = awayPlayers.length ? teamStrengthFromOVR(awayPlayers) : { attack: 0.7, defense: 0.7, midfield: 0.7 };
 
   if (Object.keys(staminaMap).length) {
     homeStr = applyStaminaDebuff(homeStr, staminaFactor(calcAvgStamina(homePlayers, staminaMap)));
     awayStr = applyStaminaDebuff(awayStr, staminaFactor(calcAvgStamina(awayPlayers, staminaMap)));
   }
 
-  // Attach stamina to player objects so substitution logic can see individual fatigue levels
   const attachStamina = arr => arr.map(p => ({ ...p, stamina: staminaMap[p.id] ?? p.stamina ?? 100 }));
   const homePl = attachStamina(homePlayers);
   const awayPl = attachStamina(awayPlayers);
@@ -721,7 +601,7 @@ function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, homeZon
     [...homePl], [...awayPl],
     homeStr, awayStr,
     homePl, awayPl,
-    false
+    true
   );
 }
 
@@ -826,8 +706,6 @@ module.exports = {
   roundName,
   generateMatchFullStats,
   teamStrengthFromOVR,
-  teamStrengthFromSkills,
-  teamStrengthWithZones,
   calcAvgStamina,
   staminaFactor,
 };
