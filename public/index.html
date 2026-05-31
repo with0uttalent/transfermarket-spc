@@ -74,6 +74,10 @@
   </div>
 
   <div class="sidebar-footer">
+    <button id="btn-theme-toggle" class="theme-toggle-btn" title="Сменить тему">
+      <span class="theme-toggle-icon" id="theme-toggle-icon">☀️</span>
+      <span id="theme-toggle-label">Светлая тема</span>
+    </button>
     <button id="btn-logout" class="sidebar-footer-link hidden">
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       <span>Выйти</span>
@@ -157,6 +161,13 @@
   </div>
 </div>
 
+<script>
+  // Apply saved theme before paint to avoid flash
+  (function() {
+    const saved = localStorage.getItem('tm-theme');
+    if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  })();
+</script>
 <script src="/js/app.js"></script>
 </body>
 </html>

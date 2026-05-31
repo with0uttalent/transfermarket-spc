@@ -813,6 +813,30 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   State.token = null; State.role = null; State.coachProfile = null; localStorage.removeItem('tm_token'); if(_notifPollTimer){clearInterval(_notifPollTimer);_notifPollTimer=null;} updateNotifBadge([]); renderNotifList([]); updateAuthUI(); toast('Выход выполнен','info'); navigate('/');
 });
 
+// ─── Theme Toggle ────────────────────────────────────────────
+(function initThemeToggle() {
+  const btn = document.getElementById('btn-theme-toggle');
+  const icon = document.getElementById('theme-toggle-icon');
+  const label = document.getElementById('theme-toggle-label');
+  function syncUI() {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    icon.textContent = isLight ? '🌙' : '☀️';
+    label.textContent = isLight ? 'Тёмная тема' : 'Светлая тема';
+  }
+  syncUI();
+  btn.addEventListener('click', () => {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('tm-theme', 'dark');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      localStorage.setItem('tm-theme', 'light');
+    }
+    syncUI();
+  });
+})();
+
 // ─── Global Search ────────────────────────────────────────────
 let searchTimeout;
 document.getElementById('search-global').addEventListener('input', e => {
