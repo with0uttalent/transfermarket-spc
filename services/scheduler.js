@@ -348,8 +348,8 @@ function generateRandomPlayerNews() {
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
-  // Generate at least 2 items
-  const count = 2 + Math.floor(Math.random() * 2);
+  // Generate exactly 1 news item per 4-hour tick
+  const count = 1;
   for (let i = 0; i < count && i < players.length; i++) {
     const item = pickItem(players[i]);
     db.prepare(`INSERT INTO news (title, body, type, player_id) VALUES (?,?,?,?)`).run(item.title, item.body, item.type, players[i].id);
