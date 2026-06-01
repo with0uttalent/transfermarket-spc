@@ -3,6 +3,7 @@ const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
 const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews } = require('./telegramBot');
+const { settleBetsForMatch } = require('./betting');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -861,6 +862,12 @@ function finalizeExpiredMatches() {
 
       if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
 
+      // Settle any betting on this league match (no-op if there were no bets)
+      if (m.league_id) {
+        try { settleBetsForMatch(db, m); }
+        catch(e) { console.warn('[Finalizer] bet settlement error:', e.message); }
+      }
+
       if (m.tournament_id) {
         try {
           const { advanceTournamentWinner } = require('../routes/matches');
@@ -919,12 +926,29 @@ function simulateSingleLeagueMatch(db, league, srow) {
   const matchTimeStr = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
   const today = now.toISOString().slice(0, 10);
 
-  const matchR = db.prepare(`
-    INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score)
-    VALUES (?,?,?,?,'in_progress',?,?,?,?,?)
-  `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, srow.matchday,
-         now.toISOString(), result.homeScore, result.awayScore);
-  const matchId = matchR.lastInsertRowid;
+  // Reuse the match row pre-created for betting (status 'scheduled'), if present,
+  // so existing bets stay attached. Otherwise create the match row now (legacy).
+  const pre = db.prepare(`
+    SELECT id FROM matches
+    WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND status='scheduled'
+    ORDER BY id LIMIT 1
+  `).get(league.id, srow.matchday, srow.home_team_id, srow.away_team_id);
+
+  let matchId;
+  if (pre) {
+    db.prepare(`
+      UPDATE matches SET status='in_progress', started_at=?, home_score=?, away_score=?
+      WHERE id=?
+    `).run(now.toISOString(), result.homeScore, result.awayScore, pre.id);
+    matchId = pre.id;
+  } else {
+    const matchR = db.prepare(`
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score)
+      VALUES (?,?,?,?,'in_progress',?,?,?,?,?)
+    `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, srow.matchday,
+           now.toISOString(), result.homeScore, result.awayScore);
+    matchId = matchR.lastInsertRowid;
+  }
 
   applyMatchResults(matchId, srow.home_team_id, srow.away_team_id, result);
   db.prepare('UPDATE league_schedule SET match_id=? WHERE id=?').run(matchId, srow.id);
@@ -946,6 +970,42 @@ function simulateSingleLeagueMatch(db, league, srow) {
   }
 
   console.log(`[Scheduler] League ${league.id} MD${srow.matchday}: ${srow.home_name} ${homeScore}-${awayScore} ${srow.away_name} (started_at=${now.toISOString()})`);
+}
+
+// Pre-create league match rows (status 'scheduled') up to a day before kickoff
+// so coaches can place bets on them. The league_schedule.match_id is left NULL
+// until the match is actually simulated, preserving the "unplayed" invariant.
+function precreateUpcomingLeagueMatches() {
+  try {
+    const db = getDb();
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+    const slots = db.prepare(`
+      SELECT ls.*
+      FROM league_schedule ls
+      JOIN leagues l ON ls.league_id = l.id
+      WHERE l.status = 'active'
+        AND ls.match_id IS NULL
+        AND ls.scheduled_date <= ?
+        AND ls.scheduled_time IS NOT NULL
+    `).all(tomorrow);
+
+    const findExisting = db.prepare(`
+      SELECT id FROM matches
+      WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND status='scheduled'
+    `);
+    const insertMatch = db.prepare(`
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
+      VALUES (?,?,?,?,'scheduled',?,?)
+    `);
+
+    for (const s of slots) {
+      if (findExisting.get(s.league_id, s.matchday, s.home_team_id, s.away_team_id)) continue;
+      insertMatch.run(s.home_team_id, s.away_team_id, s.scheduled_date, s.scheduled_time, s.league_id, s.matchday);
+    }
+  } catch(e) {
+    console.warn('[Scheduler] precreateUpcomingLeagueMatches error:', e.message);
+  }
 }
 
 function checkAndRunLeagueMatchdays() {
@@ -994,13 +1054,17 @@ function finalizeExpiredMatchesSafe() {
 }
 
 function startScheduler() {
+  // Populate scheduled match rows immediately so betting is available on boot
+  precreateUpcomingLeagueMatches();
+
   // Every 4 hours – generate player/team news
   cron.schedule('0 */4 * * *', () => {
     try { generateRandomPlayerNews(); } catch(e) { console.warn('[Scheduler] Auto-news error:', e.message); }
   });
 
-  // Every minute – league matchday auto-sim + previews
+  // Every minute – pre-create upcoming matches (for betting), auto-sim + previews
   cron.schedule('* * * * *', () => {
+    precreateUpcomingLeagueMatches();
     checkAndRunLeagueMatchdays();
     checkUpcomingMatches();
   });

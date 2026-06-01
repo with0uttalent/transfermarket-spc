@@ -1020,7 +1020,7 @@ const PAGE_TITLES = {
   home:'Главная', teams:'Команды', players:'Игроки', competitions:'Соревнования',
   transfers:'Трансферы', matches:'Матчи', tournaments:'Турниры', leagues:'Лиги',
   'free-agents':'Свободные агенты', coach:'Мой клуб', admin:'Администратор',
-  news:'Новости', search:'Поиск',
+  news:'Новости', search:'Поиск', betting:'Ставки',
 };
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
@@ -1050,6 +1050,7 @@ function router() {
   if (parts[0]==='competitions'&&parts[1]) return renderCompetitionDetail(app, parts[1]);
   if (rawPath==='/transfers') return renderTransfers(app, params);
   if (rawPath==='/matches') return renderMatches(app, params);
+  if (rawPath==='/betting') return renderBettingPage(app);
   if (parts[0]==='matches'&&parts[1]) return renderMatchDetail(app, parts[1]);
   if (rawPath==='/tournaments') return renderTournaments(app);
   if (parts[0]==='tournaments'&&parts[1]) return renderTournamentDetail(app, parts[1]);
@@ -6079,6 +6080,171 @@ async function showLoanOutForm(player) {
 // ═══════════════════════════════════════════════════════════
 //  MODAL HELPER
 // ═══════════════════════════════════════════════════════════
+// ─── Betting ──────────────────────────────────────────────────────────────────
+let _betMatches = {};
+let _betMinBet = 50000;
+let _betFree = 0;
+
+function betOutcomeLabel(o) { return o==='home' ? 'П1 — победа хозяев' : o==='draw' ? 'Ничья (X)' : 'П2 — победа гостей'; }
+function betOutcomeShort(o) { return o==='home' ? 'П1' : o==='draw' ? 'X' : 'П2'; }
+
+async function renderBettingPage(app) {
+  app.innerHTML = '<div class="empty-state"><p>Загрузка…</p></div>';
+  try {
+    const data = await GET('/bets');
+    _betMatches = {};
+    for (const m of (data.matches||[])) _betMatches[m.id] = m;
+    _betMinBet = data.min_bet || 50000;
+    _betFree = data.free_budget || 0;
+
+    let mine = null;
+    if (data.is_coach) mine = await GET('/bets/mine').catch(() => null);
+
+    const budgetBanner = data.is_coach
+      ? `<div class="bet-budget-banner">
+           <span class="bet-budget-label">💰 Доступно для ставок</span>
+           <span class="bet-budget-value">${fmtValue(_betFree)}</span>
+         </div>`
+      : `<div class="bet-login-note">🔒 Войдите как тренер, чтобы делать ставки. Коэффициенты строятся из сумм ставок других тренеров.</div>`;
+
+    const matches = data.matches || [];
+    const matchesHtml = matches.length
+      ? matches.map(m => renderBetMatchCard(m, data.is_coach)).join('')
+      : `<div class="empty-state"><div class="empty-icon">🎲</div><p>Нет матчей для ставок</p>
+         <p style="font-size:13px;color:var(--text-muted)">Матчи лиги открываются для ставок за день до игры</p></div>`;
+
+    app.innerHTML = `
+      <div class="bet-page">
+        <div class="bet-header">
+          <h2 class="bet-title">⚽ Ставки на матчи лиги</h2>
+          ${budgetBanner}
+        </div>
+        <div class="bet-rules">Коэффициент фиксируется в момент ставки. Деньги берутся из свободного трансферного бюджета. Победителям выплачивается ставка × коэффициент.</div>
+        <div class="bet-matches">${matchesHtml}</div>
+        ${mine && mine.bets?.length ? renderMyBets(mine.bets) : ''}
+      </div>`;
+  } catch(err) {
+    app.innerHTML = `<div class="empty-state"><p>Ошибка: ${err.message}</p></div>`;
+  }
+}
+
+function renderBetMatchCard(m, isCoach) {
+  const o = m.odds;
+  const dateStr = m.match_date ? new Date(m.match_date).toLocaleDateString('ru-RU',{day:'numeric',month:'short'}) : '';
+  const timeStr = m.match_time ? m.match_time.substring(0,5) : '';
+  const totalPool = o.total_pool || 0;
+  const myBetsTxt = (m.my_bets||[]).map(b => `${betOutcomeShort(b.outcome)} ${fmtValue(b.amount)} @${b.odds}`).join(', ');
+
+  const oddBtn = (outcome, label, odd) => `
+    <button class="bet-odd-btn${isCoach?'':' disabled'}" ${isCoach?`onclick="openBetSlip(${m.id},'${outcome}')"`:''}>
+      <span class="bet-odd-label">${label}</span>
+      <span class="bet-odd-value">${odd.toFixed(2)}</span>
+    </button>`;
+
+  return `
+    <div class="bet-card">
+      <div class="bet-card-head">
+        <span class="bet-card-league">${escHtml(m.league_name||'Лига')}${m.matchday?` · Тур ${m.matchday}`:''}</span>
+        <span class="bet-card-date">${dateStr} ${timeStr}</span>
+      </div>
+      <div class="bet-card-teams">
+        <div class="bet-team">${teamLogoEl(m.home_logo,m.home_team_name)}<span>${escHtml(m.home_team_name)}</span></div>
+        <span class="bet-vs">vs</span>
+        <div class="bet-team away">${teamLogoEl(m.away_logo,m.away_team_name)}<span>${escHtml(m.away_team_name)}</span></div>
+      </div>
+      <div class="bet-odds-row">
+        ${oddBtn('home','П1',o.home)}
+        ${oddBtn('draw','X',o.draw)}
+        ${oddBtn('away','П2',o.away)}
+      </div>
+      ${totalPool>0 ? `<div class="bet-pool">Банк: <strong>${fmtValue(totalPool)}</strong> · П1 ${fmtValue(o.pools.home)} / X ${fmtValue(o.pools.draw)} / П2 ${fmtValue(o.pools.away)}</div>` : ''}
+      ${myBetsTxt ? `<div class="bet-my">🎟 Ваши ставки: ${myBetsTxt}</div>` : ''}
+    </div>`;
+}
+
+function renderMyBets(bets) {
+  const statusCell = b => {
+    if (b.status==='won')  return `<span class="bet-badge won">+${fmtValue(b.payout)}</span>`;
+    if (b.status==='lost') return `<span class="bet-badge lost">−${fmtValue(b.amount)}</span>`;
+    return `<span class="bet-badge open">в игре</span>`;
+  };
+  return `
+    <div class="bet-mybets">
+      <h3 class="bet-section-title">Мои ставки</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Матч</th><th>Исход</th><th class="text-right">Кэф</th><th class="text-right">Ставка</th><th class="text-right">Итог</th></tr></thead>
+        <tbody>
+          ${bets.map(b => {
+            const score = b.match_status==='finished' ? `<strong>${b.home_score}:${b.away_score}</strong>` : '<span class="text-muted">—</span>';
+            return `<tr>
+              <td>${escHtml(b.home_team_name)} ${score} ${escHtml(b.away_team_name)}</td>
+              <td>${betOutcomeShort(b.outcome)}</td>
+              <td class="text-right">${b.odds.toFixed(2)}</td>
+              <td class="text-right">${fmtValue(b.amount)}</td>
+              <td class="text-right">${statusCell(b)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+function openBetSlip(matchId, outcome) {
+  const m = _betMatches[matchId];
+  if (!m) return;
+  const odd = m.odds[outcome];
+  const minBet = _betMinBet || 50000;
+  const free = _betFree || 0;
+  if (free < minBet) { toast('Недостаточно средств для ставки', 'error'); return; }
+  const defAmt = Math.min(Math.max(minBet, 1000000), free);
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header"><h3>Сделать ставку</h3><button class="modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="bet-slip">
+          <div class="bet-slip-match">${escHtml(m.home_team_name)} — ${escHtml(m.away_team_name)}</div>
+          <div class="bet-slip-pick">${betOutcomeLabel(outcome)} · кэф <strong>${odd.toFixed(2)}</strong></div>
+          <label class="bet-slip-label">Сумма ставки (€)</label>
+          <input type="number" id="bet-amount" class="bet-slip-input" min="${minBet}" step="100000" value="${defAmt}"/>
+          <div class="bet-slip-free">Доступно: ${fmtValue(free)}</div>
+          <div class="bet-slip-payout">Возможный выигрыш: <span id="bet-payout">${fmtValue(Math.round(defAmt*odd))}</span></div>
+          <div class="bet-slip-note">Коэффициент фиксируется при ставке и может слегка измениться с учётом вашей суммы.</div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-outline modal-cancel">Отмена</button>
+          <button class="btn btn-green bet-confirm">Поставить</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').onclick = close;
+  modal.querySelector('.modal-cancel').onclick = close;
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+  const amtInput = modal.querySelector('#bet-amount');
+  const payoutEl = modal.querySelector('#bet-payout');
+  amtInput.addEventListener('input', () => {
+    const a = parseFloat(amtInput.value) || 0;
+    payoutEl.textContent = a > 0 ? fmtValue(Math.round(a * odd)) : '—';
+  });
+
+  modal.querySelector('.bet-confirm').addEventListener('click', async () => {
+    const amount = Math.round(parseFloat(amtInput.value) || 0);
+    if (amount < minBet) { toast('Минимальная ставка ' + fmtValue(minBet), 'error'); return; }
+    if (amount > free)   { toast('Недостаточно средств', 'error'); return; }
+    try {
+      const r = await POST('/bets', { match_id: matchId, outcome, amount });
+      toast(`Ставка принята! Кэф ${r.odds}, возможный выигрыш ${fmtValue(r.potential_payout)}`, 'success');
+      close();
+      renderBettingPage(document.getElementById('app'));
+    } catch(e) { toast(e.message, 'error'); }
+  });
+}
+
 function mkModal(title, bodyHtml, onSave, opts = {}) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';

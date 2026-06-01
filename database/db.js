@@ -511,6 +511,22 @@ function initSchema() {
       priority_sub INTEGER DEFAULT 0,
       FOREIGN KEY (preset_id) REFERENCES lineup_presets(id) ON DELETE CASCADE
     )`,
+    `CREATE TABLE IF NOT EXISTS bets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER NOT NULL,
+      coach_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      outcome TEXT NOT NULL,
+      amount REAL NOT NULL,
+      odds REAL NOT NULL,
+      status TEXT DEFAULT 'open',
+      payout REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      settled_at DATETIME,
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+      FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

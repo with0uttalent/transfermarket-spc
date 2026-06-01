@@ -5,6 +5,7 @@ const { getDb } = require('../database/db');
 const { requireAdmin } = require('../middleware/auth');
 const { simulateMatch } = require('../services/matchSimulator');
 const { applyMatchResults, generateMatchNews } = require('../services/scheduler');
+const { settleBetsForMatch } = require('../services/betting');
 
 const router = express.Router();
 
@@ -387,18 +388,37 @@ router.post('/:id/simulate-matchday', requireAdmin, (req, res) => {
     const matchTimeStr = `${pad2(Math.floor(totalMin/60)%24)}:${pad2(totalMin%60)}`;
     matchIndex++;
 
-    const matchR = db.prepare(`
-      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
-      VALUES (?,?,?,?,'scheduled',?,?)
-    `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, matchday);
-    const matchId = matchR.lastInsertRowid;
+    // Reuse a pre-created scheduled match (for betting) if one exists, else create
+    const pre = db.prepare(`
+      SELECT id FROM matches
+      WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND status='scheduled'
+      ORDER BY id LIMIT 1
+    `).get(league.id, matchday, srow.home_team_id, srow.away_team_id);
+    let matchId;
+    if (pre) {
+      matchId = pre.id;
+    } else {
+      const matchR = db.prepare(`
+        INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
+        VALUES (?,?,?,?,'scheduled',?,?)
+      `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, matchday);
+      matchId = matchR.lastInsertRowid;
+    }
 
     // Simulate
     const result = simulateMatch(srow.home_team_id, srow.away_team_id, homePl, awayPl);
     applyMatchResults(matchId, srow.home_team_id, srow.away_team_id, result);
 
+    // Mark finished so the result is final and bets can be settled
+    db.prepare(`UPDATE matches SET status='finished', started_at=? WHERE id=?`).run(new Date().toISOString(), matchId);
+
     const evRows = db.prepare('SELECT * FROM match_events WHERE match_id=?').all(matchId);
     generateMatchNews(matchId, srow.home_name, srow.away_name, result.homeScore, result.awayScore, evRows);
+
+    // Settle any bets placed on this match
+    try {
+      settleBetsForMatch(db, { id: matchId, home_team_id: srow.home_team_id, away_team_id: srow.away_team_id, home_score: result.homeScore, away_score: result.awayScore });
+    } catch(e) { /* betting optional */ }
 
     // Update league_schedule with match_id
     db.prepare('UPDATE league_schedule SET match_id=? WHERE id=?').run(matchId, srow.id);

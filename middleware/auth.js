@@ -46,4 +46,11 @@ function requireCoach(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireAdmin, requireCoach };
+// Populates req.user if a valid token is present, but never rejects.
+function optionalAuth(req, res, next) {
+  const payload = extractUser(req);
+  if (payload) req.user = payload;
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, requireCoach, optionalAuth };
