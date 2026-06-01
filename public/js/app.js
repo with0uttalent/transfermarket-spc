@@ -892,25 +892,35 @@ function renderRightPanel(liveMatches, featured, upcomingMatches) {
     }
   }
 
-  // Upcoming matches
+  // Top upcoming matches (strongest teams)
   const eventsEl = document.getElementById('right-events');
   if (eventsEl) {
-    const upcoming = (upcomingMatches || []).slice(0, 3);
-    if (upcoming.length) {
+    const topMatches = featured?.topMatches || [];
+    if (topMatches.length) {
       eventsEl.innerHTML = `
         <div class="rp-header">
-          <span class="rp-title">Ближайшие события</span>
+          <span class="rp-title">Топ-матчи</span>
+          <a href="#/matches" class="rp-link">Все матчи</a>
         </div>
-        ${upcoming.map(m => `
-          <div class="rp-event-row" onclick="navigate('/matches/${m.id}')" style="cursor:pointer">
-            <div class="rp-event-icon">⚽</div>
-            <div class="rp-event-info">
-              <div class="rp-event-type">Матч дня</div>
-              <div class="rp-event-name">${escHtml(m.home_team_name||'?')} vs ${escHtml(m.away_team_name||'?')}</div>
-              <div class="rp-event-date">${m.match_date||''} ${m.match_time||''}</div>
+        ${topMatches.map(m => {
+          const dateStr = m.match_date ? new Date(m.match_date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : '';
+          const timeStr = m.match_time ? m.match_time.substring(0,5) : '';
+          return `
+          <div class="rp-topmatch-row" onclick="navigate('/matches/${m.id}')">
+            <div class="rp-topmatch-teams">
+              <div class="rp-topmatch-team">
+                ${m.home_logo ? `<img src="${escHtml(m.home_logo)}" class="rp-topmatch-logo" onerror="this.style.display='none'">` : '<div class="rp-topmatch-logo-ph"></div>'}
+                <span>${escHtml(m.home_team_name||'?')}</span>
+              </div>
+              <div class="rp-topmatch-vs">VS</div>
+              <div class="rp-topmatch-team">
+                ${m.away_logo ? `<img src="${escHtml(m.away_logo)}" class="rp-topmatch-logo" onerror="this.style.display='none'">` : '<div class="rp-topmatch-logo-ph"></div>'}
+                <span>${escHtml(m.away_team_name||'?')}</span>
+              </div>
             </div>
-          </div>
-        `).join('')}
+            <div class="rp-topmatch-date">${dateStr}${dateStr && timeStr ? ' · ' : ''}${timeStr}</div>
+          </div>`;
+        }).join('')}
       `;
     } else {
       eventsEl.innerHTML = '';
@@ -935,6 +945,24 @@ function renderRightPanel(liveMatches, featured, upcomingMatches) {
           <div class="rp-top-value-pos">${escHtml(p.position||'')}</div>
           <div class="rp-top-value-team">${escHtml(p.team_name||'Free Agent')}</div>
           <div class="rp-top-value-mv">${fmtValue(p.market_value)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Counts: total players & teams
+  const countsEl = document.getElementById('right-counts');
+  if (countsEl && (featured?.totalPlayers != null || featured?.totalTeams != null)) {
+    countsEl.innerHTML = `
+      <div class="rp-header"><span class="rp-title">Статистика лиги</span></div>
+      <div class="rp-counts-grid">
+        <div class="rp-count-item">
+          <div class="rp-count-val">${featured.totalTeams ?? '—'}</div>
+          <div class="rp-count-label">Команд</div>
+        </div>
+        <div class="rp-count-item">
+          <div class="rp-count-val">${featured.totalPlayers ?? '—'}</div>
+          <div class="rp-count-label">Игроков</div>
         </div>
       </div>
     `;

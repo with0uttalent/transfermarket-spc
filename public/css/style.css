@@ -502,6 +502,26 @@ img { max-width: 100%; display: block; }
 .rp-event-name { font-size: 12px; font-weight: 600; color: var(--text); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rp-event-date { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 
+/* Top matches block */
+.rp-topmatch-row { padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; border-radius: 6px; padding: 8px 6px; }
+.rp-topmatch-row:last-child { border-bottom: none; }
+.rp-topmatch-row:hover { background: var(--bg-hover); }
+.rp-topmatch-teams { display: flex; align-items: center; gap: 6px; }
+.rp-topmatch-team { display: flex; align-items: center; gap: 5px; flex: 1; font-size: 12px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; }
+.rp-topmatch-team span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-topmatch-team:last-child { flex-direction: row-reverse; text-align: right; }
+.rp-topmatch-team:last-child span { text-align: right; }
+.rp-topmatch-logo { width: 20px; height: 20px; object-fit: contain; flex-shrink: 0; }
+.rp-topmatch-logo-ph { width: 20px; height: 20px; background: var(--border); border-radius: 50%; flex-shrink: 0; }
+.rp-topmatch-vs { font-size: 10px; font-weight: 700; color: var(--text-muted); flex-shrink: 0; padding: 0 4px; }
+.rp-topmatch-date { font-size: 11px; color: var(--accent); margin-top: 4px; text-align: center; }
+
+/* Counts grid */
+.rp-counts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.rp-count-item { background: var(--bg-darker); border-radius: 8px; padding: 10px 8px; text-align: center; }
+.rp-count-val { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1; }
+.rp-count-label { font-size: 11px; color: var(--text-muted); margin-top: 3px; text-transform: uppercase; letter-spacing: .4px; }
+
 /* Top value in right panel */
 .rp-top-value {
   display: flex; align-items: center; gap: 10px;

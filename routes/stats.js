@@ -95,7 +95,35 @@ router.get('/featured', (req, res) => {
     LIMIT 1
   `).get();
 
-  res.json({ topRated: topRated || null, topValue: topValue || null, topTransfer: topTransfer || null });
+  // Top upcoming matches: future scheduled league matches ranked by combined team market value
+  const topMatches = db.prepare(`
+    SELECT m.id, m.match_date, m.match_time,
+      ht.id as home_team_id, ht.name as home_team_name, ht.logo_url as home_logo,
+      ht.market_value as home_mv,
+      at.id as away_team_id, at.name as away_team_name, at.logo_url as away_logo,
+      at.market_value as away_mv,
+      (COALESCE(ht.market_value,0) + COALESCE(at.market_value,0)) as combined_value
+    FROM matches m
+    JOIN teams ht ON m.home_team_id = ht.id
+    JOIN teams at ON m.away_team_id = at.id
+    WHERE m.status = 'scheduled'
+      AND m.league_id IS NOT NULL
+      AND m.match_date >= date('now')
+    ORDER BY combined_value DESC, m.match_date ASC, m.match_time ASC
+    LIMIT 2
+  `).all();
+
+  const totalPlayers = db.prepare("SELECT COUNT(*) as c FROM players WHERE status='active'").get().c;
+  const totalTeams   = db.prepare('SELECT COUNT(*) as c FROM teams').get().c;
+
+  res.json({
+    topRated: topRated || null,
+    topValue: topValue || null,
+    topTransfer: topTransfer || null,
+    topMatches,
+    totalPlayers,
+    totalTeams,
+  });
 });
 
 module.exports = router;
