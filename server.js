@@ -75,17 +75,27 @@ app.listen(PORT, () => {
   try {
     const { initBot, setEnabled, setNotifSettings } = require('./services/telegramBot');
     initBot();
-    // Restore saved settings
+    // Restore saved settings (seed defaults for any missing keys)
     const { getDb } = require('./database/db');
     const db = getDb();
+    const NOTIF_DEFAULTS = [
+      ['tg_channel_events', '1'], ['tg_channel_results', '1'], ['tg_channel_standings', '1'],
+      ['tg_group_results', '1'],  ['tg_group_coach_news', '1'], ['tg_channel_coach_news', '0'],
+      ['tg_channel_player_news', '1'],
+    ];
+    const seed = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?,?)');
+    for (const [k, v] of NOTIF_DEFAULTS) seed.run(k, v);
     const rows = db.prepare('SELECT key, value FROM app_settings').all();
     const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
     if (map.telegram_enabled !== undefined) setEnabled(map.telegram_enabled === '1');
     setNotifSettings({
-      channel_events:    map.tg_channel_events    !== '0',
-      channel_results:   map.tg_channel_results   !== '0',
-      channel_standings: map.tg_channel_standings !== '0',
-      group_results:     map.tg_group_results     !== '0',
+      channel_events:    map.tg_channel_events      !== '0',
+      channel_results:   map.tg_channel_results     !== '0',
+      channel_standings: map.tg_channel_standings   !== '0',
+      group_results:     map.tg_group_results       !== '0',
+      group_coach_news:  map.tg_group_coach_news    !== '0',
+      channel_coach_news:  map.tg_channel_coach_news  === '1',
+      channel_player_news: map.tg_channel_player_news === '1',
     });
   } catch (e) {
     console.warn('TelegramBot failed to start:', e.message);
