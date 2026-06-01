@@ -495,6 +495,22 @@ function initSchema() {
     `ALTER TABLE players ADD COLUMN acquired_season INTEGER DEFAULT 0`,
     `INSERT OR IGNORE INTO app_settings (key, value) VALUES ('current_season', '1')`,
     `ALTER TABLE players ADD COLUMN stamina INTEGER DEFAULT 100`,
+    `CREATE TABLE IF NOT EXISTS lineup_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS lineup_preset_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      preset_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      slot INTEGER NOT NULL,
+      position_override TEXT,
+      priority_sub INTEGER DEFAULT 0,
+      FOREIGN KEY (preset_id) REFERENCES lineup_presets(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

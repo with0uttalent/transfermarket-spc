@@ -4263,6 +4263,7 @@ async function renderCoachDashboard(app) {
 
     // Render lineup tab
     document.getElementById('tab-lineup').innerHTML = renderLineupEditor(team, lineup);
+    loadLineupPresets(team.id);
 
     // Render offers tab
     document.getElementById('tab-offers').innerHTML = renderTransferOffersTab(offers, coach.team_id);
@@ -4335,6 +4336,10 @@ function renderLineupEditor(team, lineup) {
         <span id="pb-starter-count" style="font-size:12px;color:var(--text-muted)">${starterCount}/11 основных</span>
         <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Авто-подбор</button>
       </div>
+      <div class="lineup-presets-bar">
+        <button class="btn btn-sm" style="background:#2980b9;color:#fff;white-space:nowrap" onclick="saveLineupPreset(${team.id})">💾 Сохранить пресет</button>
+        <div class="lineup-presets-list" id="pb-presets-list"><span class="preset-empty">Загрузка...</span></div>
+      </div>
       <div class="pb-layout">
         <div class="pb-pitch-wrap" id="pb-pitch">${renderPitchZones(slots)}</div>
         <div class="pb-sidebar">
@@ -4347,6 +4352,64 @@ function renderLineupEditor(team, lineup) {
       </div>
       <div id="pb-bench-section" style="margin-top:16px">${renderBenchSection(slots, allPlayers, team.id)}</div>
     </div>`;
+}
+
+function renderPresetsBar(presets) {
+  if (!presets.length) return '<span class="preset-empty">Нет сохранённых пресетов</span>';
+  return presets.map(p => `
+    <div class="preset-card" title="Создан: ${fmtDate(p.created_at)}">
+      <span class="preset-card-name" title="${escHtml(p.name)}">${escHtml(p.name)}</span>
+      <span style="font-size:11px;color:var(--text-muted)">${p.starter_count}/11</span>
+      <button class="btn-xs btn-apply" onclick="applyLineupPreset(${p.id},'${escHtml(p.name)}')">✓ Применить</button>
+      <button class="btn-xs btn-rename" onclick="renameLineupPreset(${p.id},'${escHtml(p.name)}')">✏</button>
+      <button class="btn-xs btn-del" onclick="deleteLineupPreset(${p.id},'${escHtml(p.name)}')">✕</button>
+    </div>`).join('');
+}
+
+async function loadLineupPresets(teamId) {
+  try {
+    const presets = await GET('/lineups/' + teamId + '/presets');
+    const el = document.getElementById('pb-presets-list');
+    if (el) el.innerHTML = renderPresetsBar(presets);
+  } catch(e) { /* silently skip if not available */ }
+}
+
+async function saveLineupPreset(teamId) {
+  const name = prompt('Название пресета:');
+  if (!name || !name.trim()) return;
+  try {
+    await POST('/lineups/' + teamId + '/presets', { name: name.trim() });
+    toast('Пресет «' + name.trim() + '» сохранён');
+    await loadLineupPresets(teamId);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function applyLineupPreset(presetId, name) {
+  if (!confirm('Применить пресет «' + name + '»? Текущая расстановка будет заменена.')) return;
+  try {
+    await POST('/lineups/' + _pitchState.teamId + '/presets/' + presetId + '/apply', {});
+    toast('Пресет «' + name + '» применён');
+    await refreshPitchEditor();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function renameLineupPreset(presetId, currentName) {
+  const name = prompt('Новое название:', currentName);
+  if (!name || !name.trim() || name.trim() === currentName) return;
+  try {
+    await PUT('/lineups/' + _pitchState.teamId + '/presets/' + presetId, { name: name.trim() });
+    toast('Пресет переименован');
+    await loadLineupPresets(_pitchState.teamId);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function deleteLineupPreset(presetId, name) {
+  if (!confirm('Удалить пресет «' + name + '»?')) return;
+  try {
+    await DEL('/lineups/' + _pitchState.teamId + '/presets/' + presetId);
+    toast('Пресет удалён');
+    await loadLineupPresets(_pitchState.teamId);
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 function renderPitchZones(lineupSlots) {

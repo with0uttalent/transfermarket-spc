@@ -246,4 +246,108 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
   res.json({ team_id: parseInt(teamId), lineup: updatedLineup, auto: true });
 });
 
+// ─── GET /:teamId/presets — list presets ──────────────────────────────────────
+router.get('/:teamId/presets', requireAuth, (req, res) => {
+  const db = getDb();
+  const teamId = req.params.teamId;
+  if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'Forbidden' });
+  const presets = db.prepare(`
+    SELECT lp.id, lp.name, lp.created_at,
+           COUNT(lps.id) AS slot_count,
+           SUM(CASE WHEN lps.slot <= 11 THEN 1 ELSE 0 END) AS starter_count
+    FROM lineup_presets lp
+    LEFT JOIN lineup_preset_slots lps ON lps.preset_id = lp.id
+    WHERE lp.team_id = ?
+    GROUP BY lp.id ORDER BY lp.created_at DESC
+  `).all(teamId);
+  res.json(presets);
+});
+
+// ─── POST /:teamId/presets — save current lineup as preset ───────────────────
+router.post('/:teamId/presets', requireAuth, (req, res) => {
+  const db = getDb();
+  const teamId = req.params.teamId;
+  if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'Forbidden' });
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Preset name is required' });
+
+  const currentLineup = db.prepare('SELECT * FROM team_lineups WHERE team_id=?').all(teamId);
+  if (!currentLineup.length) return res.status(400).json({ error: 'Lineup is empty' });
+
+  const save = db.transaction(() => {
+    const preset = db.prepare('INSERT INTO lineup_presets (team_id, name) VALUES (?,?)').run(teamId, name);
+    const pid = preset.lastInsertRowid;
+    const ins = db.prepare('INSERT INTO lineup_preset_slots (preset_id, player_id, slot, position_override, priority_sub) VALUES (?,?,?,?,?)');
+    for (const s of currentLineup) ins.run(pid, s.player_id, s.slot, s.position_override || null, s.priority_sub || 0);
+    return pid;
+  });
+
+  const presetId = save();
+  res.json({ id: presetId, name, ok: true });
+});
+
+// ─── PUT /:teamId/presets/:presetId — rename preset ──────────────────────────
+router.put('/:teamId/presets/:presetId', requireAuth, (req, res) => {
+  const db = getDb();
+  const { teamId, presetId } = req.params;
+  if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'Forbidden' });
+  const preset = db.prepare('SELECT id FROM lineup_presets WHERE id=? AND team_id=?').get(presetId, teamId);
+  if (!preset) return res.status(404).json({ error: 'Preset not found' });
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  db.prepare('UPDATE lineup_presets SET name=? WHERE id=?').run(name, presetId);
+  res.json({ ok: true });
+});
+
+// ─── DELETE /:teamId/presets/:presetId — delete preset ───────────────────────
+router.delete('/:teamId/presets/:presetId', requireAuth, (req, res) => {
+  const db = getDb();
+  const { teamId, presetId } = req.params;
+  if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'Forbidden' });
+  const preset = db.prepare('SELECT id FROM lineup_presets WHERE id=? AND team_id=?').get(presetId, teamId);
+  if (!preset) return res.status(404).json({ error: 'Preset not found' });
+  db.prepare('DELETE FROM lineup_presets WHERE id=?').run(presetId);
+  res.json({ ok: true });
+});
+
+// ─── POST /:teamId/presets/:presetId/apply — apply preset to lineup ──────────
+router.post('/:teamId/presets/:presetId/apply', requireAuth, (req, res) => {
+  const db = getDb();
+  const { teamId, presetId } = req.params;
+  if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'Forbidden' });
+  const preset = db.prepare('SELECT id FROM lineup_presets WHERE id=? AND team_id=?').get(presetId, teamId);
+  if (!preset) return res.status(404).json({ error: 'Preset not found' });
+
+  const slots = db.prepare('SELECT * FROM lineup_preset_slots WHERE preset_id=?').all(presetId);
+
+  // Only keep entries for players still on this team and active
+  const teamPlayerIds = new Set(
+    db.prepare("SELECT id FROM players WHERE team_id=? AND status='active'").all(teamId).map(p => p.id)
+  );
+
+  const apply = db.transaction(() => {
+    db.prepare('DELETE FROM team_lineups WHERE team_id=?').run(teamId);
+    const ins = db.prepare('INSERT INTO team_lineups (team_id, player_id, slot, position_override, priority_sub) VALUES (?,?,?,?,?)');
+    for (const s of slots) {
+      if (!teamPlayerIds.has(s.player_id)) continue;
+      ins.run(teamId, s.player_id, s.slot, s.position_override || null, s.priority_sub || 0);
+    }
+  });
+  apply();
+
+  const updatedLineup = db.prepare(`
+    SELECT tl.slot, tl.player_id, tl.position_override, tl.priority_sub,
+           p.name AS player_name, p.position, p.shirt_number, p.market_value,
+           p.status AS player_status, p.image_url,
+           COALESCE(p.stamina, 100) AS stamina,
+           pi.matches_remaining AS injury_matches_remaining, pi.injury_type
+    FROM team_lineups tl
+    JOIN players p ON tl.player_id = p.id
+    LEFT JOIN player_injuries pi ON pi.player_id = p.id AND pi.matches_remaining > 0
+    WHERE tl.team_id = ? ORDER BY tl.slot ASC
+  `).all(teamId);
+
+  res.json({ team_id: parseInt(teamId), lineup: updatedLineup });
+});
+
 module.exports = router;

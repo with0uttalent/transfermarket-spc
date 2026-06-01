@@ -1237,6 +1237,16 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .lineup-save-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .lineup-save-bar span { flex: 1; font-size: 14px; color: var(--text-muted); }
 .lineup-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.lineup-presets-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.lineup-presets-list { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.preset-card { display: flex; align-items: center; gap: 6px; background: var(--bg-darker); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 13px; white-space: nowrap; }
+.preset-card-name { font-weight: 600; color: var(--text-primary); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.preset-card .btn-xs { padding: 2px 7px; font-size: 11px; border-radius: 5px; border: none; cursor: pointer; transition: opacity .15s; }
+.preset-card .btn-xs:hover { opacity: .8; }
+.preset-card .btn-apply { background: #27ae60; color: #fff; }
+.preset-card .btn-rename { background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border) !important; }
+.preset-card .btn-del { background: #c0392b; color: #fff; }
+.preset-empty { font-size: 13px; color: var(--text-muted); font-style: italic; }
 @media (max-width: 640px) { .lineup-columns { grid-template-columns: 1fr; } }
 .lineup-col-header { font-size: 12px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); letter-spacing: .5px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
 .lineup-col-header .badge { margin-left: auto; }
