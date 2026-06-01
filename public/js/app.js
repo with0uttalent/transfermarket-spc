@@ -1997,8 +1997,9 @@ async function showPlayerForm(player, defaultTeamId) {
       <div class="form-group"><label>Рост (см)</label><input type="number" id="pf-height" value="${player?.height||''}" min="140" max="220"/></div>
       <div class="form-group"><label>Статус</label><select id="pf-status"><option value="active"${(!player?.status||player.status==='active')?' selected':''}>Active</option><option value="retired"${player?.status==='retired'?' selected':''}>Retired</option><option value="free_agent"${player?.status==='free_agent'?' selected':''}>Free Agent</option></select></div>
     </div>
-    <div class="form-row">
+    <div class="form-row-3">
       <div class="form-group"><label>Рыночная стоимость (€)</label><input type="number" id="pf-mv" value="${player?.market_value||0}" min="0" step="100000"/></div>
+      <div class="form-group"><label>Рейтинг OVR (50–99)</label><input type="number" id="pf-ovr" value="${player?.ovr_fixed??''}" min="50" max="99" placeholder="авто"/></div>
       <div class="form-group"><label>URL фото</label><input type="text" id="pf-img" value="${escHtml(player?.image_url||'')}"/></div>
     </div>
     <div class="form-row">
@@ -2027,9 +2028,11 @@ async function showPlayerForm(player, defaultTeamId) {
       national_team:document.getElementById('pf-natteam').value.trim()||null,
       national_caps:parseInt(document.getElementById('pf-caps').value)||0,
       national_goals:parseInt(document.getElementById('pf-natgoals').value)||0,
+      ovr_fixed:document.getElementById('pf-ovr').value.trim()===''?null:(parseInt(document.getElementById('pf-ovr').value)||null),
     };
     if (!payload.name){toast('Имя обязательно','error');return false;}
     if (payload.shirt_number !== null && (payload.shirt_number < 1 || payload.shirt_number > 10000)){toast('Номер должен быть от 1 до 10000','error');return false;}
+    if (payload.ovr_fixed !== null && (payload.ovr_fixed < 50 || payload.ovr_fixed > 99)){toast('Рейтинг должен быть от 50 до 99','error');return false;}
     if (isEdit) await PUT('/players/'+player.id, payload); else await POST('/players', payload);
     toast(isEdit?'Игрок обновлён':'Игрок добавлен');
   });

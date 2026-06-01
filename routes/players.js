@@ -113,19 +113,24 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', requireAuth, (req, res) => {
-  const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status } = req.body;
+  const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status, ovr_fixed } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
     const sn = parseInt(shirt_number);
     if (isNaN(sn) || sn < 1 || sn > 10000) return res.status(400).json({ error: "Номер должен быть от 1 до 10000" });
   }
+  let ovrValue = null;
+  if (ovr_fixed !== undefined && ovr_fixed !== null && ovr_fixed !== '') {
+    ovrValue = parseInt(ovr_fixed);
+    if (isNaN(ovrValue) || ovrValue < 50 || ovrValue > 99) return res.status(400).json({ error: 'Рейтинг должен быть от 50 до 99' });
+  }
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO players (name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO players (name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status, ovr_fixed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(name, date_of_birth || null, nationality_id || null, position || null,
     sub_position || null, foot || null, height || null, team_id || null,
-    shirt_number || null, market_value || 0, image_url || null, status || 'active');
+    shirt_number || null, market_value || 0, image_url || null, status || 'active', ovrValue);
 
   if (market_value > 0) {
     db.prepare('INSERT INTO market_value_history (player_id, market_value) VALUES (?, ?)').run(result.lastInsertRowid, market_value);
@@ -136,11 +141,17 @@ router.post('/', requireAuth, (req, res) => {
 
 router.put('/:id', requireAuth, (req, res) => {
   const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status,
-          contract_until, birthplace, national_team, national_caps, national_goals } = req.body;
+          contract_until, birthplace, national_team, national_caps, national_goals, ovr_fixed } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
     const sn = parseInt(shirt_number);
     if (isNaN(sn) || sn < 1 || sn > 10000) return res.status(400).json({ error: "Номер должен быть от 1 до 10000" });
+  }
+  // OVR rating: null clears the fixed rating (falls back to skill-derived OVR), otherwise 50–99
+  let ovrValue = null;
+  if (ovr_fixed !== undefined && ovr_fixed !== null && ovr_fixed !== '') {
+    ovrValue = parseInt(ovr_fixed);
+    if (isNaN(ovrValue) || ovrValue < 50 || ovrValue > 99) return res.status(400).json({ error: 'Рейтинг должен быть от 50 до 99' });
   }
   const db = getDb();
 
@@ -149,13 +160,13 @@ router.put('/:id', requireAuth, (req, res) => {
 
   const result = db.prepare(`
     UPDATE players SET name=?, date_of_birth=?, nationality_id=?, position=?, sub_position=?, foot=?, height=?, team_id=?, shirt_number=?, market_value=?, image_url=?, status=?,
-      contract_until=?, birthplace=?, national_team=?, national_caps=?, national_goals=?
+      contract_until=?, birthplace=?, national_team=?, national_caps=?, national_goals=?, ovr_fixed=?
     WHERE id=?
   `).run(name, date_of_birth || null, nationality_id || null, position || null,
     sub_position || null, foot || null, height || null, team_id || null,
     shirt_number || null, market_value || 0, image_url || null, status || 'active',
     contract_until || null, birthplace || null, national_team || null,
-    national_caps || 0, national_goals || 0, req.params.id);
+    national_caps || 0, national_goals || 0, ovrValue, req.params.id);
 
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
 
