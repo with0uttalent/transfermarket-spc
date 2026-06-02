@@ -116,8 +116,9 @@ router.get('/:id', (req, res) => {
           COALESCE(s.rating,6.0) as rating
         FROM team_lineups tl JOIN players p ON tl.player_id=p.id
         LEFT JOIN player_match_stats s ON s.player_id=p.id AND s.match_id=?
-        WHERE tl.team_id IN (SELECT home_team_id FROM matches WHERE id=? UNION SELECT away_team_id FROM matches WHERE id=?) AND tl.slot<=11
-        ORDER BY COALESCE(s.rating,6.0) DESC
+        WHERE tl.team_id IN (SELECT home_team_id FROM matches WHERE id=? UNION SELECT away_team_id FROM matches WHERE id=?)
+          AND (tl.slot<=11 OR s.match_id IS NOT NULL)
+        ORDER BY tl.slot ASC, COALESCE(s.rating,6.0) DESC
       `).all(req.params.id, req.params.id, req.params.id);
       return res.json({
         ...match, status: 'scheduled', live_minute: 0,
@@ -159,8 +160,8 @@ router.get('/:id', (req, res) => {
         WHERE tl.team_id IN (
           SELECT home_team_id FROM matches WHERE id=?
           UNION SELECT away_team_id FROM matches WHERE id=?
-        ) AND tl.slot <= 11
-        ORDER BY COALESCE(s.rating, 6.0) DESC
+        ) AND (tl.slot <= 11 OR s.match_id IS NOT NULL)
+        ORDER BY tl.slot ASC, COALESCE(s.rating, 6.0) DESC
       `).all(req.params.id, req.params.id, req.params.id);
       const fullStats = db.prepare(`SELECT * FROM match_stats WHERE match_id=?`).get(req.params.id) || null;
       return res.json({
@@ -191,8 +192,8 @@ router.get('/:id', (req, res) => {
     WHERE tl.team_id IN (
       SELECT home_team_id FROM matches WHERE id=?
       UNION SELECT away_team_id FROM matches WHERE id=?
-    ) AND tl.slot <= 11
-    ORDER BY COALESCE(s.rating, 6.0) DESC
+    ) AND (tl.slot <= 11 OR s.match_id IS NOT NULL)
+    ORDER BY tl.slot ASC, COALESCE(s.rating, 6.0) DESC
   `).all(req.params.id, req.params.id, req.params.id);
   const fullStats = db.prepare(`SELECT * FROM match_stats WHERE match_id=?`).get(req.params.id) || null;
   let challengeMessage = null;
