@@ -126,7 +126,7 @@ router.post('/', requireCoach, (req, res) => {
     return res.status(400).json({ error: `Недостаточно средств. Доступно: ${Math.round(free).toLocaleString()} €` });
   }
 
-  const odds = betting.quoteOdd(db, match, outcome, amount);
+  const odds = betting.currentOdds(db, match)[outcome];
 
   const placed = db.transaction(() => {
     db.prepare(`INSERT INTO bets (match_id, coach_id, team_id, outcome, amount, odds) VALUES (?,?,?,?,?,?)`)
