@@ -586,23 +586,45 @@ function generateMatchFullStats(homeStr, awayStr, homeScore, awayScore) {
   };
 }
 
+// Pick a best starting XI (1 GK + 10 best outfield by OVR); rest go to the bench.
+// Without this, every squad member would be treated as having played and would
+// lose stamina, while bench players who never entered would never recover.
+function pickStartingXI(players) {
+  const ovr = p => (p.ovr_fixed || 65);
+  const gks = players.filter(p => GK_POSITIONS.has(p.position || '')).sort((a, b) => ovr(b) - ovr(a));
+  const outfield = players.filter(p => !GK_POSITIONS.has(p.position || '')).sort((a, b) => ovr(b) - ovr(a));
+  const starters = [];
+  if (gks.length) starters.push(gks[0]);
+  for (const p of outfield) { if (starters.length >= 11) break; starters.push(p); }
+  // Fallback: if still short (e.g. squad < 11 or no GK), top up from whatever's left.
+  if (starters.length < 11) {
+    const have = new Set(starters.map(p => p.id));
+    for (const p of players) { if (starters.length >= 11) break; if (!have.has(p.id)) starters.push(p); }
+  }
+  return starters;
+}
+
 // ─── simulateMatch — OVR-based ────────────────────────────────────────────────
 function simulateMatch(homeTeamId, awayTeamId, homePlayers, awayPlayers, staminaMap = {}) {
-  let homeStr = homePlayers.length ? teamStrengthFromOVR(homePlayers) : { attack: 0.7, defense: 0.7, midfield: 0.7 };
-  let awayStr = awayPlayers.length ? teamStrengthFromOVR(awayPlayers) : { attack: 0.7, defense: 0.7, midfield: 0.7 };
-
-  if (Object.keys(staminaMap).length) {
-    homeStr = applyStaminaDebuff(homeStr, staminaFactor(calcAvgStamina(homePlayers, staminaMap)));
-    awayStr = applyStaminaDebuff(awayStr, staminaFactor(calcAvgStamina(awayPlayers, staminaMap)));
-  }
-
   const attachStamina = arr => arr.map(p => ({ ...p, stamina: staminaMap[p.id] ?? p.stamina ?? 100 }));
   const homePl = attachStamina(homePlayers);
   const awayPl = attachStamina(awayPlayers);
 
+  // Only the starting XI takes the field; the rest are bench (recover stamina).
+  const homeStarters = pickStartingXI(homePl);
+  const awayStarters = pickStartingXI(awayPl);
+
+  let homeStr = homeStarters.length ? teamStrengthFromOVR(homeStarters) : { attack: 0.7, defense: 0.7, midfield: 0.7 };
+  let awayStr = awayStarters.length ? teamStrengthFromOVR(awayStarters) : { attack: 0.7, defense: 0.7, midfield: 0.7 };
+
+  if (Object.keys(staminaMap).length) {
+    homeStr = applyStaminaDebuff(homeStr, staminaFactor(calcAvgStamina(homeStarters, staminaMap)));
+    awayStr = applyStaminaDebuff(awayStr, staminaFactor(calcAvgStamina(awayStarters, staminaMap)));
+  }
+
   return simulateMatchCore(
     homeTeamId, awayTeamId,
-    [...homePl], [...awayPl],
+    homeStarters, awayStarters,
     homeStr, awayStr,
     homePl, awayPl,
     true

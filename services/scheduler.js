@@ -3,7 +3,7 @@ const cron = require('node-cron');
 const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
 const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews } = require('./telegramBot');
-const { settleBetsForMatch } = require('./betting');
+const { settleBetsForMatch, settleOrphanedBets } = require('./betting');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -1113,6 +1113,8 @@ function startScheduler() {
     broadcastLiveEvents().catch(e => console.warn('[Scheduler] broadcastLiveEvents error:', e.message));
     finalizeExpiredMatchesSafe();
     checkPendingMatchdayStandings();
+    try { settleOrphanedBets(getDb()); }
+    catch(e) { console.warn('[Scheduler] Orphaned-bet sweep error:', e.message); }
     try {
       const { finalizeExpiredAuctions } = require('../routes/auctions');
       finalizeExpiredAuctions(getDb());

@@ -193,7 +193,26 @@ function settleBetsForMatch(db, match) {
   })();
 }
 
+// Safety-net sweeper: settle any open bets whose match is already finished but
+// wasn't settled (e.g. finished via a path that skipped settlement, or before
+// the settlement hook existed). Idempotent — only touches status='open' bets.
+function settleOrphanedBets(db) {
+  const stuck = db.prepare(`
+    SELECT m.id, m.home_team_id, m.away_team_id, m.home_score, m.away_score
+    FROM matches m
+    WHERE m.status='finished'
+      AND EXISTS (SELECT 1 FROM bets b WHERE b.match_id=m.id AND b.status='open')
+  `).all();
+  let settled = 0;
+  for (const m of stuck) {
+    try { settleBetsForMatch(db, m); settled++; }
+    catch (e) { console.warn('[Betting] orphaned-bet settle error (match ' + m.id + '):', e.message); }
+  }
+  if (settled) console.log(`[Betting] Settled orphaned bets for ${settled} finished match(es)`);
+  return settled;
+}
+
 module.exports = {
-  currentOdds, quoteOdd, settleBetsForMatch, availableBudget, baseProbabilities,
+  currentOdds, quoteOdd, settleBetsForMatch, settleOrphanedBets, availableBudget, baseProbabilities,
   MIN_BET, MIN_ODD, MAX_ODD,
 };
