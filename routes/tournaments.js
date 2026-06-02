@@ -201,7 +201,23 @@ async function simulateRound(db, tour) {
      WHERE m.tournament_id=? AND m.tournament_round=? AND m.status='scheduled'`
   ).all(tour.id, tour.current_round);
 
-  if (!roundMatches.length) return { error: 'No scheduled matches in current round' };
+  if (!roundMatches.length) {
+    // No scheduled matches left. If every match of this round is already
+    // finished (e.g. they were force-simulated individually), the bracket
+    // just needs to be advanced. Otherwise there is genuinely nothing to do.
+    const unfinished = db.prepare(
+      `SELECT COUNT(*) as c FROM matches WHERE tournament_id=? AND tournament_round=? AND status NOT IN ('finished')`
+    ).get(tour.id, tour.current_round);
+    const total = db.prepare(
+      `SELECT COUNT(*) as c FROM matches WHERE tournament_id=? AND tournament_round=?`
+    ).get(tour.id, tour.current_round);
+
+    if (total.c > 0 && unfinished.c === 0) {
+      advanceRound(db, tour);
+      return { simulated: 0, results: [], advanced: true, message: 'Раунд завершён — сетка построена дальше' };
+    }
+    return { error: 'No scheduled matches in current round' };
+  }
 
   const results = [];
   let overtimeCount = 0;
