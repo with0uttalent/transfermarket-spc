@@ -1445,9 +1445,10 @@ async function renderTeamDetail(app, id) {
 
     // ── Stats calculations ────────────────────────────────────
     const players = team.players || [];
-    const starterIds = new Set(
-      (lineupData.lineup || []).filter(l => l.slot >= 1 && l.slot <= 11).map(l => l.player_id)
-    );
+    const starterRows = (lineupData.lineup || []).filter(l => l.slot >= 1 && l.slot <= 11);
+    const starterIds = new Set(starterRows.map(l => l.player_id));
+    const assignedByPlayer = {};   // player_id -> position_override (pitch-slot id)
+    for (const l of starterRows) assignedByPlayer[l.player_id] = l.position_override || null;
     const ages = players.map(p => calcAge(p.date_of_birth)).filter(Boolean);
     const avgAge = ages.length ? (ages.reduce((a,b)=>a+b,0)/ages.length).toFixed(1) : '–';
     const foreigners = players.filter(p => p.nationality_id && p.nationality_id !== team.country_id).length;
@@ -1461,14 +1462,56 @@ async function renderTeamDetail(app, id) {
     const MID_POS = new Set(['Central Midfield','Defensive Midfield']);
     const DEF_POS = new Set(['Centre-Back','Left-Back','Right-Back']);
     const GK_POS  = new Set(['Goalkeeper']);
-    const lineAvg = pls => { const v = pls.map(p=>calcOverall(p)).filter(x=>x!==null); return v.length ? Math.round(v.reduce((a,b)=>a+b,0)/v.length) : null; };
-    const ovrPlayers = starterIds.size >= 7 ? players.filter(p => starterIds.has(p.id)) : players;
+    const useStarters = starterIds.size >= 7;
+    // Effective OVR applies the positional penalty when a starter is fielded out
+    // of his natural zone — this is exactly what the betting model uses.
+    const slotIdOf = p => useStarters ? assignedByPlayer[p.id] : null;
+    const effOvrOf = p => calcOverall(p, slotIdOf(p));
+    const lineAvg = pls => { const v = pls.map(effOvrOf).filter(x=>x!==null); return v.length ? Math.round(v.reduce((a,b)=>a+b,0)/v.length) : null; };
+    const ovrPlayers = useStarters ? players.filter(p => starterIds.has(p.id)) : players;
     const atkPl = ovrPlayers.filter(p=>ATK_POS.has(p.position||'')), midPl = ovrPlayers.filter(p=>MID_POS.has(p.position||''));
     const defPl = ovrPlayers.filter(p=>DEF_POS.has(p.position||'')), gkPl  = ovrPlayers.filter(p=>GK_POS.has(p.position||''));
     const atkOvr = lineAvg(atkPl), midOvr = lineAvg(midPl), defOvr = lineAvg(defPl), gkOvr = lineAvg(gkPl);
-    const allOvrs = ovrPlayers.map(p=>calcOverall(p)).filter(x=>x!==null);
+    const allOvrs = ovrPlayers.map(effOvrOf).filter(x=>x!==null);
     const sqOvr = allOvrs.length ? Math.round(allOvrs.reduce((a,b)=>a+b,0)/allOvrs.length) : null;
-    const ovrLabel = starterIds.size >= 7 ? 'Старт. состав' : 'Средний OVR';
+    const ovrLabel = useStarters ? 'Старт. состав' : 'Средний OVR';
+
+    // ── Positional penalty report (starting XI only) ──────────────
+    let penaltyReport = '';
+    if (useStarters) {
+      const outOfPos = [];
+      for (const p of ovrPlayers) {
+        const slotId = assignedByPlayer[p.id];
+        const naturalZone = posToZone(p.position);
+        const assignedZone = slotId ? slotToZone(slotId) : naturalZone;
+        if (assignedZone && assignedZone !== naturalZone) {
+          const base = calcOverall(p);
+          const eff  = calcOverall(p, slotId);
+          if (base != null && eff != null) {
+            outOfPos.push({ name: p.name, naturalZone, assignedZone, base, eff, drop: base - eff });
+          }
+        }
+      }
+      if (outOfPos.length) {
+        const zname = { GK:'Вратарь', DEF:'Защита', DMF:'Опорная', MID:'Центр', AMF:'Атак.полуз.', FWD:'Нападение' };
+        const rows = outOfPos.map(o => `
+          <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0">
+            <span>⚠ ${escHtml(o.name)} <span style="color:var(--text-muted)">(${zname[o.naturalZone]||o.naturalZone}→${zname[o.assignedZone]||o.assignedZone})</span></span>
+            <span style="color:#e74c3c;font-weight:700">${o.base}→${o.eff} (−${o.drop})</span>
+          </div>`).join('');
+        penaltyReport = `
+          <div style="margin-top:10px;padding:8px 10px;background:rgba(231,76,60,.10);border:1px solid rgba(231,76,60,.3);border-radius:6px">
+            <div style="font-size:12px;font-weight:700;color:#e74c3c;margin-bottom:4px">⚠ Штрафы за позиции (${outOfPos.length})</div>
+            ${rows}
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Игроки не на своей позиции теряют OVR. Эти штрафы учитываются в коэффициентах ставок.</div>
+          </div>`;
+      } else {
+        penaltyReport = `
+          <div style="margin-top:10px;padding:6px 10px;background:rgba(46,204,113,.10);border:1px solid rgba(46,204,113,.3);border-radius:6px;font-size:12px;color:#27ae60;font-weight:600">
+            ✓ Все игроки на своих позициях — штрафов нет
+          </div>`;
+      }
+    }
     // Weighted attack/defense using simulator formula
     const A = atkOvr??sqOvr??60, M = midOvr??sqOvr??60, D = defOvr??sqOvr??60, G = gkOvr??sqOvr??60;
     const teamAtkStr = Math.round(A*0.55 + M*0.30 + D*0.10 + G*0.05);
@@ -1498,7 +1541,7 @@ async function renderTeamDetail(app, id) {
         <div><span style="display:inline-block;width:80px;color:var(--text-muted)">⚙ Полузащ.</span>${ovrBar(midOvr,'#8e44ad')}</div>
         <div><span style="display:inline-block;width:80px;color:var(--text-muted)">🛡 Защита</span>${ovrBar(defOvr,'#2980b9')}</div>
         <div><span style="display:inline-block;width:80px;color:var(--text-muted)">🧤 Вратарь</span>${ovrBar(gkOvr,'#27ae60')}</div>
-      </div>`;
+      </div>${penaltyReport}`;
     const expense = transfers.filter(t=>t.to_team_id===team.id).reduce((s,t)=>s+(t.transfer_fee||0),0);
     const balance = income - expense;
     const balSign = balance>=0?'+':'';

@@ -17,18 +17,60 @@ const MAX_ODD    = 15.0;
 const HOME_ADV   = 3;         // home advantage, in OVR points
 const MIN_BET    = 50000;     // €50k minimum stake
 
-// Average OVR of a team's STARTING XI — the same eleven the simulator fields.
-// Odds must reflect who actually starts, not the whole squad. We only fall back
-// to an auto-best-XI when the coach hasn't set a (near-)complete lineup at all.
+// ─── Positional model (mirrors the frontend / match engine) ───────────────────
+// A player fielded out of his natural zone is less effective. The penalty factor
+// scales his OVR; this is what makes the lineup's SHAPE matter for the odds, and
+// captures "missing position" gaps (an out-of-position filler is penalised).
+const ZONE_PENALTY = {
+  GK:  { GK:1.00, DEF:0.80, DMF:0.65, MID:0.55, AMF:0.50, FWD:0.45 },
+  DEF: { GK:0.80, DEF:1.00, DMF:0.88, MID:0.75, AMF:0.65, FWD:0.55 },
+  DMF: { GK:0.65, DEF:0.88, DMF:1.00, MID:0.90, AMF:0.80, FWD:0.68 },
+  MID: { GK:0.55, DEF:0.75, DMF:0.90, MID:1.00, AMF:0.90, FWD:0.75 },
+  AMF: { GK:0.50, DEF:0.65, DMF:0.80, MID:0.90, AMF:1.00, FWD:0.88 },
+  FWD: { GK:0.45, DEF:0.55, DMF:0.68, MID:0.75, AMF:0.88, FWD:1.00 },
+};
+const ALL_ZONES = ['GK', 'DEF', 'DMF', 'MID', 'AMF', 'FWD'];
+
+function posToZone(position) {
+  if (!position) return 'MID';
+  if (position === 'Goalkeeper') return 'GK';
+  if (['Centre-Back', 'Left-Back', 'Right-Back'].includes(position)) return 'DEF';
+  if (position === 'Defensive Midfield') return 'DMF';
+  if (position === 'Central Midfield') return 'MID';
+  if (['Attacking Midfield', 'Left Winger', 'Right Winger'].includes(position)) return 'AMF';
+  if (['Centre-Forward', 'Striker'].includes(position)) return 'FWD';
+  return 'MID';
+}
+
+// position_override stores a pitch-slot id like "FWD-1"; extract its zone.
+function overrideZone(override) {
+  if (!override) return null;
+  const z = String(override).split('-')[0];
+  return ALL_ZONES.includes(z) ? z : null;
+}
+
+function positionPenalty(naturalZone, assignedZone) {
+  if (!assignedZone || assignedZone === naturalZone) return 1.0;
+  return (ZONE_PENALTY[naturalZone] || {})[assignedZone] ?? 0.70;
+}
+
+// Average effective OVR of a team's STARTING XI — the same eleven the simulator
+// fields, scaled by positional penalties so the lineup's shape affects the odds.
+// Falls back to an auto-best-XI only when no real lineup is set.
 function teamOvr(db, teamId) {
   const starters = db.prepare(`
-    SELECT COALESCE(p.ovr_fixed, 65) AS ovr
+    SELECT COALESCE(p.ovr_fixed, 65) AS ovr, p.position, tl.position_override
     FROM team_lineups tl JOIN players p ON tl.player_id = p.id
     WHERE tl.team_id = ? AND tl.slot BETWEEN 1 AND 11 AND p.status = 'active'
   `).all(teamId);
   // Trust the set starting XI once it's mostly filled (≥7 of 11).
   if (starters.length >= 7) {
-    return starters.reduce((a, r) => a + r.ovr, 0) / starters.length;
+    const sum = starters.reduce((a, r) => {
+      const natural = posToZone(r.position);
+      const assigned = overrideZone(r.position_override) || natural;
+      return a + r.ovr * positionPenalty(natural, assigned);
+    }, 0);
+    return sum / starters.length;
   }
   // No real lineup set → estimate the XI the team would realistically field.
   const auto = db.prepare(`
