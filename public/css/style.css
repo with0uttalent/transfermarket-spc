@@ -902,6 +902,8 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
   font-size: 12px; font-weight: 700; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: .5px;
 }
+.halftime-divider.ot-divider  { background: rgba(234,179,8,.12); color: #eab308; }
+.halftime-divider.pen-divider { background: rgba(239,68,68,.12);  color: #ef4444; }
 
 /* ─── Match card (list) ──────────────────────────────────────── */
 .match-card {

@@ -832,9 +832,11 @@ function finalizeExpiredMatches() {
       } catch(e) { console.warn('[Finalizer] OT auto-resolve error:', e.message); }
     }
 
+    // Fetch all in_progress matches and check if their duration has elapsed.
+    // OT matches (ot_type set) have 30+ extra seconds before finalization.
     const expired = db.prepare(`
       SELECT m.id, m.home_score, m.away_score, m.home_team_id, m.away_team_id,
-             m.league_id, m.matchday, m.is_friendly, m.tournament_id
+             m.league_id, m.matchday, m.is_friendly, m.tournament_id, m.ot_type
       FROM matches m
       WHERE m.status = 'in_progress'
         AND m.started_at IS NOT NULL
@@ -842,23 +844,11 @@ function finalizeExpiredMatches() {
     `).all();
 
     for (const m of expired) {
-      // For tournament draw → auto-resolve overtime instead of manual
-      if (m.tournament_id && m.home_score === m.away_score) {
-        const r = db.prepare(`UPDATE matches SET status='overtime' WHERE id=? AND status='in_progress'`).run(m.id);
-        if (r.changes === 0) continue;
-        // Immediately auto-resolve
-        const result = autoResolveOvertime(db, m);
-        const ht = db.prepare(`SELECT name, logo_url, stadium_url FROM teams WHERE id=?`).get(m.home_team_id);
-        const at = db.prepare(`SELECT name, logo_url FROM teams WHERE id=?`).get(m.away_team_id);
-        const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
-        if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, result.newHome, result.newAway, evRows);
-        try {
-          const { advanceTournamentWinner } = require('../routes/matches');
-          const updatedMatch = db.prepare('SELECT * FROM matches WHERE id=?').get(m.id);
-          advanceTournamentWinner(updatedMatch, result.newHome, result.newAway);
-        } catch(e) { console.warn('[Finalizer] tournament advance error:', e.message); }
-        console.log(`[Finalizer] Tournament draw auto-resolved: match ${m.id} → ${result.ot_type}`);
-        continue;
+      // For tournament matches with pre-computed OT, wait extra seconds before finalizing
+      if (m.tournament_id && m.ot_type) {
+        const elapsed = (Date.now() - new Date(db.prepare('SELECT started_at FROM matches WHERE id=?').get(m.id).started_at).getTime()) / 1000;
+        const required = m.ot_type === 'penalties' ? 140 : 120;
+        if (elapsed < required) continue;
       }
 
       const r = db.prepare(`UPDATE matches SET status='finished' WHERE id=? AND status='in_progress'`).run(m.id);
@@ -870,7 +860,6 @@ function finalizeExpiredMatches() {
 
       if (!m.is_friendly) generateMatchNews(m.id, ht.name, at.name, m.home_score, m.away_score, evRows);
 
-      // Settle any betting on this league match (no-op if there were no bets)
       if (m.league_id) {
         try { settleBetsForMatch(db, m); }
         catch(e) { console.warn('[Finalizer] bet settlement error:', e.message); }

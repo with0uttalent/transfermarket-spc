@@ -2,7 +2,7 @@
 const express = require('express');
 const { getDb } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
-const { generateBracketRound1, roundName } = require('../services/matchSimulator');
+const { generateBracketRound1, roundName, simulateExtraTime } = require('../services/matchSimulator');
 const router = express.Router();
 
 router.get('/', (req, res) => {
@@ -220,7 +220,12 @@ async function simulateRound(db, tour) {
   }
 
   const results = [];
-  let overtimeCount = 0;
+  const now = new Date();
+  const startedAt = now.toISOString();
+  const insertEvent = db.prepare(
+    `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
+  );
+
   for (const match of roundMatches) {
     const homePl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.home_team_id);
     const awayPl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.away_team_id);
@@ -228,33 +233,26 @@ async function simulateRound(db, tour) {
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 
     if (result.homeScore === result.awayScore) {
-      db.prepare(`UPDATE matches SET status='overtime' WHERE id=?`).run(match.id);
-      overtimeCount++;
-      results.push({ match_id: match.id, home_score: result.homeScore, away_score: result.awayScore, overtime: true });
+      // Pre-compute extra time + penalties so they appear live at min 91-135
+      const ot = simulateExtraTime(match.home_team_id, match.away_team_id, homePl, awayPl);
+      for (const e of ot.events) insertEvent.run(match.id, e.minute, e.event_type, e.team_id, e.player_id, e.player2_id, e.description);
+      const finalHome = result.homeScore + ot.otHome;
+      const finalAway = result.awayScore + ot.otAway;
+      db.prepare(`UPDATE matches SET home_score=?, away_score=?, ot_home=?, ot_away=?, pen_home=?, pen_away=?, ot_type=?, status='in_progress', started_at=? WHERE id=?`)
+        .run(finalHome, finalAway, ot.otHome, ot.otAway, ot.penHome, ot.penAway, ot.ot_type, startedAt, match.id);
+      results.push({ match_id: match.id, home_score: finalHome, away_score: finalAway, ot_type: ot.ot_type, live: true });
       continue;
     }
 
+    // Non-draw: set in_progress so events appear live; finalization happens after 90s
+    db.prepare(`UPDATE matches SET status='in_progress', started_at=? WHERE id=?`).run(startedAt, match.id);
     const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
     generateMatchNews(match.id, match.home_name, match.away_name, result.homeScore, result.awayScore, evRows);
     const winnerId = result.homeScore > result.awayScore ? match.home_team_id : match.away_team_id;
-    results.push({ match_id: match.id, home_score: result.homeScore, away_score: result.awayScore, winner_id: winnerId });
+    results.push({ match_id: match.id, home_score: result.homeScore, away_score: result.awayScore, winner_id: winnerId, live: true });
   }
 
-  if (overtimeCount > 0) {
-    return { simulated: results.length, results, overtime_count: overtimeCount,
-             message: `${overtimeCount} матч(а) требуют дополнительного времени` };
-  }
-
-  // Check all round matches done
-  const pending = db.prepare(
-    `SELECT COUNT(*) as c FROM matches WHERE tournament_id=? AND tournament_round=? AND status NOT IN ('finished')`
-  ).get(tour.id, tour.current_round);
-
-  if (pending.c === 0) {
-    advanceRound(db, tour);
-  }
-
-  return { simulated: results.length, results };
+  return { simulated: results.length, results, message: 'Матчи идут — результаты раскрываются в прямом эфире' };
 }
 
 // Advance to next round after all current-round matches finish

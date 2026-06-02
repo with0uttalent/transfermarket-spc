@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDb } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
-const { simulateMatch, simulateMatchWithLineup } = require('../services/matchSimulator');
+const { simulateMatch, simulateMatchWithLineup, simulateExtraTime } = require('../services/matchSimulator');
 const { applyMatchResults, generateMatchNews } = require('../services/scheduler');
 const router = express.Router();
 
@@ -42,15 +42,17 @@ router.get('/', (req, res) => {
       const elapsed = (now - startedAt) / 1000;
       // Not started yet — show as scheduled
       if (elapsed < 0) return { ...m, status: 'scheduled', home_score: null, away_score: null };
-      // Match has elapsed 90+ seconds — auto-finish it so it leaves the live list
-      if (elapsed >= 90) {
-        const nextStatus = (m.tournament_id && m.home_score === m.away_score) ? 'overtime' : 'finished';
-        const r = db.prepare(`UPDATE matches SET status=? WHERE id=? AND status='in_progress'`).run(nextStatus, m.id);
-        if (r.changes > 0 && nextStatus === 'finished' && !m.is_friendly) {
+      // Determine match duration: OT adds 30 min, penalties add more
+      const otExtra = m.ot_type === 'penalties' ? 45 : (m.ot_type ? 30 : 0);
+      const matchDuration = 90 + otExtra;
+      // Match has elapsed — auto-finish it so it leaves the live list
+      if (elapsed >= matchDuration) {
+        const r = db.prepare(`UPDATE matches SET status='finished' WHERE id=? AND status='in_progress'`).run(m.id);
+        if (r.changes > 0 && !m.is_friendly) {
           const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(m.id);
           generateMatchNews(m.id, m.home_team_name, m.away_team_name, m.home_score, m.away_score, evRows);
         }
-        return { ...m, status: nextStatus };
+        return { ...m, status: 'finished' };
       }
       // Live: compute current score from goal events up to the live minute
       const liveMin = Math.floor(elapsed);
@@ -101,7 +103,9 @@ router.get('/:id', (req, res) => {
 
   if (match.status === 'in_progress' && match.started_at) {
     const elapsed = (Date.now() - new Date(match.started_at).getTime()) / 1000;
-    const liveMin = Math.min(90, Math.floor(elapsed));
+    const otExtra = match.ot_type === 'penalties' ? 45 : (match.ot_type ? 30 : 0);
+    const matchDuration = 90 + otExtra;
+    const liveMin = Math.min(matchDuration, Math.floor(elapsed));
 
     // Kick-off hasn't happened yet — show as scheduled (no score, no events)
     if (elapsed < 0) {
@@ -123,19 +127,16 @@ router.get('/:id', (req, res) => {
       });
     }
 
-    if (liveMin >= 90) {
+    if (liveMin >= matchDuration) {
       // Atomically finalize — only the first request to do this triggers side-effects
-      const nextStatus = (match.tournament_id && match.home_score === match.away_score) ? 'overtime' : 'finished';
-      const r = db.prepare(`UPDATE matches SET status=? WHERE id=? AND status='in_progress'`).run(nextStatus, match.id);
+      const r = db.prepare(`UPDATE matches SET status='finished' WHERE id=? AND status='in_progress'`).run(match.id);
       if (r.changes > 0) {
-        if (nextStatus === 'finished') {
-          const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.home_team_id);
-          const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.away_team_id);
-          generateMatchNews(match.id, ht.name, at.name, match.home_score, match.away_score, allEvents);
-          if (match.tournament_id) advanceTournamentWinner(match, match.home_score, match.away_score);
-        }
+        const ht = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.home_team_id);
+        const at = db.prepare(`SELECT name FROM teams WHERE id=?`).get(match.away_team_id);
+        generateMatchNews(match.id, ht.name, at.name, match.home_score, match.away_score, allEvents);
+        if (match.tournament_id) advanceTournamentWinner(match, match.home_score, match.away_score);
       }
-      match = { ...match, status: nextStatus };
+      match = { ...match, status: 'finished' };
     } else {
       // Return only events up to the live minute
       const liveEvents = allEvents.filter(e => e.minute <= liveMin);
@@ -291,13 +292,25 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
   // Non-friendly: applyMatchResults inserts events + applies all stats
   applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 
-  // Tournament draw → overtime — keep existing flow but delay reveal via in_progress
+  // Tournament draw → simulate extra time (+ penalties if needed) immediately,
+  // insert all OT events. The live system reveals them at seconds 91-120+ elapsed.
   if (match.tournament_id && result.homeScore === result.awayScore) {
-    db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='in_progress', started_at=? WHERE id=?`)
-      .run(result.homeScore, result.awayScore, startedAt, match.id);
-    // Mark overtime after 90s via the GET finalization path — skip for now, set overtime flag later
-    // For simplicity: overtime is set when finalized by GET handler
-    return res.json({ ok: true, started_at: startedAt, overtime_pending: true });
+    const allHomePl = [...home.players, ...homeReserves];
+    const allAwayPl = [...away.players, ...awayReserves];
+    const ot = simulateExtraTime(match.home_team_id, match.away_team_id, allHomePl, allAwayPl);
+    const insertEvent = db.prepare(
+      `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
+    );
+    for (const e of ot.events) insertEvent.run(match.id, e.minute, e.event_type, e.team_id, e.player_id, e.player2_id, e.description);
+    const finalHome = result.homeScore + ot.otHome;
+    const finalAway = result.awayScore + ot.otAway;
+    db.prepare(`UPDATE matches SET home_score=?, away_score=?, ot_home=?, ot_away=?, pen_home=?, pen_away=?, ot_type=?, status='in_progress', started_at=? WHERE id=?`)
+      .run(finalHome, finalAway, ot.otHome, ot.otAway, ot.penHome, ot.penAway, ot.ot_type, startedAt, match.id);
+    if (match.league_id) {
+      try { applyLeagueBookkeeping(db, { ...match, home_score: finalHome, away_score: finalAway }, { homeScore: finalHome, awayScore: finalAway }); }
+      catch (e) { console.warn('[matches/simulate] league bookkeeping error:', e.message); }
+    }
+    return res.json({ ok: true, started_at: startedAt, ot_type: ot.ot_type, match_duration: ot.matchDuration });
   }
 
   db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='in_progress', started_at=? WHERE id=?`)

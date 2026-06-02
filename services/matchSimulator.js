@@ -725,9 +725,108 @@ function roundName(totalRounds, roundIndex) {
   return `Round ${roundIndex + 1}`;
 }
 
+// ─── Tournament extra time + penalty shootout ─────────────────────────────────
+// Generates events for a 30-minute ET period (min 91-120) and, if needed,
+// a penalty shootout (min 121+). Returns everything needed to persist OT result.
+function simulateExtraTime(homeTeamId, awayTeamId, homePlayers, awayPlayers) {
+  const events = [];
+  let otHome = 0, otAway = 0;
+
+  // Pick representative players (attack/midfield) for event actors
+  const homeAttack = homePlayers.filter(p => ATTACK_POSITIONS.has(p.position || '') || MID_POSITIONS.has(p.position || ''));
+  const awayAttack = awayPlayers.filter(p => ATTACK_POSITIONS.has(p.position || '') || MID_POSITIONS.has(p.position || ''));
+  const homeAll = homePlayers.length ? homePlayers : [{ id: null, name: 'Игрок' }];
+  const awayAll = awayPlayers.length ? awayPlayers : [{ id: null, name: 'Игрок' }];
+
+  // Reduced goal rate in ET — both teams are tired and cautious (~40% of normal)
+  // Roughly 0.8 expected goals total in 30 min → each team ~1.3% per minute
+  const HOME_GOAL_CHANCE = 0.013;
+  const AWAY_GOAL_CHANCE = 0.013;
+
+  for (let min = 91; min <= 120; min++) {
+    if (rand() < HOME_GOAL_CHANCE) {
+      const scorer = pick(homeAttack.length ? homeAttack : homeAll);
+      otHome++;
+      events.push({ minute: min, event_type: 'goal', team_id: homeTeamId,
+        player_id: scorer?.id || null, player2_id: null,
+        description: `⚽ ГОЛ! ${scorer?.name || '?'} — в дополнительное время!` });
+    }
+    if (rand() < AWAY_GOAL_CHANCE) {
+      const scorer = pick(awayAttack.length ? awayAttack : awayAll);
+      otAway++;
+      events.push({ minute: min, event_type: 'goal', team_id: awayTeamId,
+        player_id: scorer?.id || null, player2_id: null,
+        description: `⚽ ГОЛ! ${scorer?.name || '?'} — гол в дополнительное время!` });
+    }
+  }
+
+  if (otHome !== otAway) {
+    return { events, otHome, otAway, penHome: null, penAway: null, ot_type: 'extra_time', matchDuration: 120 };
+  }
+
+  // Still level → penalty shootout (events at min 121-140)
+  const penEvents = [];
+  const HIT = 0.75;
+  const homeShooters = [...homeAll].sort(() => rand() - 0.5);
+  const awayShooters = [...awayAll].sort(() => rand() - 0.5);
+  let penHome = 0, penAway = 0;
+
+  for (let i = 0; i < 5; i++) {
+    const hk = homeShooters[i % homeShooters.length];
+    const ak = awayShooters[i % awayShooters.length];
+    const min = 121 + i * 2;
+    if (rand() < HIT) {
+      penHome++;
+      penEvents.push({ minute: min, event_type: 'goal', team_id: homeTeamId,
+        player_id: hk?.id || null, player2_id: null,
+        description: `⚽ ${hk?.name || '?'} — пенальти забит (${penHome}:${penAway})` });
+    } else {
+      penEvents.push({ minute: min, event_type: 'penalty_miss', team_id: homeTeamId,
+        player_id: hk?.id || null, player2_id: null,
+        description: `❌ ${hk?.name || '?'} — пенальти не реализован` });
+    }
+    if (rand() < HIT) {
+      penAway++;
+      penEvents.push({ minute: min + 1, event_type: 'goal', team_id: awayTeamId,
+        player_id: ak?.id || null, player2_id: null,
+        description: `⚽ ${ak?.name || '?'} — пенальти забит (${penHome}:${penAway})` });
+    } else {
+      penEvents.push({ minute: min + 1, event_type: 'penalty_miss', team_id: awayTeamId,
+        player_id: ak?.id || null, player2_id: null,
+        description: `❌ ${ak?.name || '?'} — пенальти не реализован` });
+    }
+  }
+
+  // Sudden death until winner
+  let sd = 0;
+  while (penHome === penAway && sd < 20) {
+    sd++;
+    const hk = homeShooters[sd % homeShooters.length];
+    const ak = awayShooters[sd % awayShooters.length];
+    const min = 131 + sd * 2;
+    const hScored = rand() < HIT;
+    penHome += hScored ? 1 : 0;
+    penEvents.push({ minute: min, event_type: hScored ? 'goal' : 'penalty_miss', team_id: homeTeamId,
+      player_id: hk?.id || null, player2_id: null,
+      description: hScored ? `⚽ ${hk?.name || '?'} — забивает в серии` : `❌ ${hk?.name || '?'} — промах` });
+    if (penHome !== penAway) break;
+    const aScored = rand() < HIT;
+    penAway += aScored ? 1 : 0;
+    penEvents.push({ minute: min + 1, event_type: aScored ? 'goal' : 'penalty_miss', team_id: awayTeamId,
+      player_id: ak?.id || null, player2_id: null,
+      description: aScored ? `⚽ ${ak?.name || '?'} — забивает в серии` : `❌ ${ak?.name || '?'} — промах` });
+  }
+
+  // matchDuration: end of OT (120) + 1 per 2 pen events + small buffer
+  const matchDuration = 120 + Math.ceil(penEvents.length / 2) * 2 + 4;
+
+  return { events: [...events, ...penEvents], otHome, otAway, penHome, penAway, ot_type: 'penalties', matchDuration };
+}
+
 module.exports = {
   simulateMatch,
   simulateMatchWithLineup,
+  simulateExtraTime,
   generateBracketRound1,
   roundName,
   generateMatchFullStats,

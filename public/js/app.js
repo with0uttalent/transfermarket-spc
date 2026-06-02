@@ -2953,7 +2953,8 @@ async function renderMatchDetail(app, id) {
 
     const initHome = isFinished ? match.home_score : (isLive ? match.home_score : '0');
     const initAway = isFinished ? match.away_score : (isLive ? match.away_score : '0');
-    const clockInit = isFinished ? `90'` : (isLive ? `${match.live_minute}'` : (match.match_date ? fmtDate(match.match_date) : '–'));
+    const finClock = isFinished && match.ot_type === 'penalties' ? `120' (пен.)` : isFinished && match.ot_type ? `120'` : isFinished ? `90'` : null;
+    const clockInit = finClock || (isLive ? `${match.live_minute}'` : (match.match_date ? fmtDate(match.match_date) : '–'));
     const badgeCls = isFinished ? 'match-status-finished' : (isLive ? 'match-status-live' : 'match-status-scheduled');
     const badgeTxt = isFinished ? 'FINISHED' : (isLive ? 'LIVE' : match.status);
 
@@ -3036,9 +3037,11 @@ async function renderMatchDetail(app, id) {
 function renderEventLog(events) {
   if (!events.length) return '<div style="padding:40px;text-align:center;color:var(--text-muted)">No events</div>';
   let html = '';
-  let htShown = false;
+  let htShown = false, otShown = false, penShown = false;
   for (const e of events) {
-    if (!htShown && e.minute > 45) { html += `<div class="halftime-divider">⏸ Перерыв</div>`; htShown = true; }
+    if (!htShown && e.minute > 45 && e.minute <= 90)  { html += `<div class="halftime-divider">⏸ Перерыв</div>`; htShown = true; }
+    if (!otShown  && e.minute > 90 && e.minute <= 120) { html += `<div class="halftime-divider ot-divider">⏱ Дополнительное время</div>`; otShown = true; }
+    if (!penShown && e.minute > 120) { html += `<div class="halftime-divider pen-divider">🎯 Серия пенальти</div>`; penShown = true; }
     const isBuild = e.event_type === 'buildup';
     html += `<div class="event-log-item event-${e.event_type}${isBuild?' ev-buildup':''}">
       <span class="ev-min">${e.minute}'</span>
@@ -3235,10 +3238,20 @@ function startLiveMatchPoll(matchId) {
 
         const logEl2 = document.getElementById('event-log');
         if (logEl2) {
-          if (ev.minute > 45 && !logEl2.querySelector('.halftime-divider')) {
+          if (ev.minute > 45 && ev.minute <= 90 && !logEl2.querySelector('.halftime-divider')) {
             const ht = document.createElement('div');
             ht.className = 'halftime-divider'; ht.textContent = '⏸ Перерыв';
             logEl2.insertBefore(ht, logEl2.firstChild);
+          }
+          if (ev.minute > 90 && ev.minute <= 120 && !logEl2.querySelector('.ot-divider')) {
+            const ot = document.createElement('div');
+            ot.className = 'halftime-divider ot-divider'; ot.textContent = '⏱ Дополнительное время';
+            logEl2.insertBefore(ot, logEl2.firstChild);
+          }
+          if (ev.minute > 120 && !logEl2.querySelector('.pen-divider')) {
+            const pd = document.createElement('div');
+            pd.className = 'halftime-divider pen-divider'; pd.textContent = '🎯 Серия пенальти';
+            logEl2.insertBefore(pd, logEl2.firstChild);
           }
           const isBuild = ev.event_type === 'buildup';
           const item = document.createElement('div');
