@@ -67,7 +67,7 @@ router.get('/:id', (req, res) => {
       comp.logo_url as competition_logo_url
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
-    WHERE ti.team_id = ?
+    WHERE ti.team_id = ? AND ti.player_id IS NULL
     ORDER BY ti.year DESC
   `).all(req.params.id);
 

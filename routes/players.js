@@ -88,6 +88,8 @@ router.get('/:id', (req, res) => {
     ORDER BY tr.transfer_date DESC
   `).all(req.params.id);
 
+  // Titles for this player: manually-added per-player rows OR team titles for tournaments
+  // where this player has a player_achievements record (i.e. they actually participated).
   const titles = db.prepare(`
     SELECT ti.*,
       comp.name as competition_name,
@@ -97,10 +99,15 @@ router.get('/:id', (req, res) => {
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
     LEFT JOIN teams t ON ti.team_id = t.id
-    WHERE ti.player_id = ? OR (ti.team_id IS NOT NULL AND ti.team_id = ?)
+    WHERE ti.player_id = ?
+       OR (ti.player_id IS NULL AND ti.tournament_id IS NOT NULL AND EXISTS (
+             SELECT 1 FROM player_achievements pa
+             WHERE pa.player_id = ? AND pa.tournament_id = ti.tournament_id
+           ))
+       OR (ti.player_id IS NULL AND ti.competition_id IS NOT NULL AND ti.team_id = ?)
     GROUP BY COALESCE(ti.competition_id, ti.tournament_id, 0), ti.title_name, ti.year
     ORDER BY ti.year DESC
-  `).all(req.params.id, player.team_id || 0);
+  `).all(req.params.id, req.params.id, player.team_id || 0);
 
   const marketHistory = db.prepare(`
     SELECT market_value, recorded_at

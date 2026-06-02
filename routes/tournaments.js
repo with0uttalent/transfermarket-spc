@@ -287,14 +287,16 @@ function advanceRound(db, tour) {
       `).all(tour.id).map(r => r.player_id)
     );
 
+    const tourYear = new Date().getFullYear();
+    // One team-level title for the champion team
+    db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,NULL,?,?,?,?,?)`)
+      .run(allWinners[0], tour.name, `Турнир ${tourYear}`, tourYear, tour.id, tour.trophy_url || null);
+
     const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(allWinners[0]);
     const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
-    const insertPT  = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?,?)`);
-    const tourYear = new Date().getFullYear();
     for (const cp of champPl) {
-      if (!participantIds.has(cp.id)) continue; // trophy only for participants
+      if (!participantIds.has(cp.id)) continue; // only participants get achievement + buff
       insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tour.name}`, tour.id);
-      insertPT.run(allWinners[0], cp.id, tour.name, `Турнир ${tourYear}`, tourYear, tour.id, tour.trophy_url || null);
       // OVR buff ~3.5% for tournament winners who participated
       db.prepare(`
         UPDATE player_skills SET
