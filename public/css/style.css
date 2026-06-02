@@ -1636,6 +1636,8 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .bench-priority { border-left: 3px solid #f1c40f; }
 .bench-injured-card { opacity: .7; cursor: default; border-left: 3px solid #e74c3c; }
 .bench-injured-card:hover { background: var(--bg-darker) !important; }
+.bench-rest-card { border-left: 3px solid #3498db; }
+.bench-rest-card:hover { background: var(--bg-darker) !important; }
 .bench-card-num { font-size: 11px; color: var(--text-muted); min-width: 18px; text-align: center; }
 .bench-card-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bench-card-pos { font-size: 10px; color: var(--text-muted); }

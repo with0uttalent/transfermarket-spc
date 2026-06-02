@@ -25,7 +25,7 @@ function nowDateTime() {
 // ─── GET / — bettable matches with live odds (+ my open bets if coach) ────────
 router.get('/', optionalAuth, (req, res) => {
   const db = getDb();
-  const { date } = nowDateTime();
+  const { date, time } = nowDateTime();
 
   const matches = db.prepare(`
     SELECT m.id, m.home_team_id, m.away_team_id, m.match_date, m.match_time, m.matchday, m.league_id,

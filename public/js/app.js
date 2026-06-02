@@ -4309,7 +4309,7 @@ async function renderCoachDashboard(app) {
       GET('/match-challenges').catch(()=>({incoming:[],outgoing:[]})),
       GET('/loans/offers').catch(()=>[]),
     ]);
-    const lineup = { slots: lineupData.lineup || [], lock: lineupData.lock || null };
+    const lineup = { slots: lineupData.lineup || [], lock: lineupData.lock || null, infirmary: lineupData.infirmary || [] };
     const offers = Array.isArray(offersData) ? offersData : [];
     const pendingCount = offers.filter(o=>o.status==='pending').length;
     const challenges = challengesData || { incoming: [], outgoing: [] };
@@ -4438,7 +4438,7 @@ function renderLineupEditor(team, lineup) {
   const slots = lineup.slots || [];
   const allPlayers = team.players || [];
   const starterCount = slots.filter(s=>s.slot>=1&&s.slot<=11).length;
-  _pitchState = { teamId: team.id, lineup: slots, players: allPlayers, selectedPlayerId: null };
+  _pitchState = { teamId: team.id, lineup: slots, players: allPlayers, selectedPlayerId: null, infirmary: lineup.infirmary || [] };
 
   const lock = lineup.lock;
   const locked = lock && lock.locked;
@@ -4623,11 +4623,18 @@ function _buildInjuredIds(lineupSlots, allPlayers) {
   return ids;
 }
 
+// IDs of players manually placed in the lazaret (resting).
+function _infirmaryIds() {
+  return new Set((_pitchState.infirmary || []).map(p => p.player_id));
+}
+
 function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
-  // Show only players not assigned to ANY slot (neither starters nor bench)
+  // Show only players not assigned to ANY slot (neither starters nor bench),
+  // excluding injured players and those resting in the lazaret.
   const inAnySlot = new Set(lineupSlots.map(s=>s.player_id));
   const injuredIds = _buildInjuredIds(lineupSlots, allPlayers);
-  const available = allPlayers.filter(p => !inAnySlot.has(p.id) && !injuredIds.has(p.id));
+  const restingIds = _infirmaryIds();
+  const available = allPlayers.filter(p => !inAnySlot.has(p.id) && !injuredIds.has(p.id) && !restingIds.has(p.id));
   if (!available.length) return '<div class="text-muted" style="padding:12px;font-size:13px">Все игроки распределены ✓</div>';
   return available.map(p => {
     const sel = p.id === selectedId;
@@ -4650,6 +4657,7 @@ function renderPitchSidebar(allPlayers, lineupSlots, selectedId) {
         <span style="font-size:12px;font-weight:700;color:${ovrColor};min-width:24px;text-align:right">${ovr??'?'}</span>
         ${staminaBar(p.stamina, true)}
       </div>
+      <button class="btn-icon" title="В лазарет (отдых)" onclick="event.stopPropagation();sendToInfirmary(${p.id},${_pitchState.teamId})">🚑</button>
       ${sel?`<span style="color:var(--blue);font-size:14px;font-weight:700;margin-left:4px">✓</span>`:''}
     </div>`;
   }).join('');
@@ -4670,6 +4678,8 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
   const regular  = benchSlots.filter(s => !s.priority_sub && !injuredIds.has(s.player_id));
   // Injured players from entire squad (not just bench)
   const allInjuredPlayers = allPlayers.filter(p => injuredIds.has(p.id));
+  // Manually-rested players in the lazaret (recoverable on demand)
+  const restingPlayers = _pitchState.infirmary || [];
 
   function benchCard(s, opts={}) {
     const p = allPlayers.find(pl=>pl.id===s.player_id);
@@ -4690,7 +4700,25 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
         ${staminaBar(p.stamina, true)}
         ${opts.showPriority?`<label class="priority-sub-label" title="Приоритетная замена" onclick="event.stopPropagation()"><input type="checkbox" ${s.priority_sub?'checked':''} onchange="togglePrioritySub(${p.id},${teamId},this.checked)"> ⭐</label>`:''}
         <button class="btn-icon" onclick="pitchReserveToStarter(${p.id},${teamId})" title="В основу">⚡</button>
+        <button class="btn-icon" onclick="sendToInfirmary(${p.id},${teamId})" title="В лазарет (отдых)">🚑</button>
         <button class="btn-icon danger" onclick="pitchRemoveFromLineup(${p.id},${teamId})" title="Убрать">✕</button>
+      </div>
+    </div>`;
+  }
+
+  function restCard(p) {
+    const ovr = calcOverall(p);
+    return `<div class="bench-card bench-rest-card">
+      <div style="flex-shrink:0">${avatarEl(p.image_url,p.player_name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:#3498db;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.player_name)}</div>
+        <div>${posBadge(p.position)}</div>
+        <div style="font-size:10px;color:#3498db;margin-top:2px">😴 Отдыхает · восстановление</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
+        <span style="font-size:11px;font-weight:800;color:#3498db">${ovr??'?'}</span>
+        ${staminaBar(p.stamina, true)}
+        <button class="btn-icon" onclick="recallFromInfirmary(${p.player_id},${teamId})" title="Вернуть в состав">⬆</button>
       </div>
     </div>`;
   }
@@ -4728,10 +4756,10 @@ function renderBenchSection(lineupSlots, allPlayers, teamId) {
         : '<div class="bench-empty">Перетащите игрока сюда</div>'}</div>
     </div>
     <div class="bench-col">
-      <div class="bench-col-header bench-header-injured">🚑 Лазарет <span class="bench-count">${allInjuredPlayers.length}</span></div>
-      <div class="bench-col-body">${allInjuredPlayers.length
-        ? allInjuredPlayers.map(injCard).join('')
-        : '<div class="bench-empty">Травмированных нет</div>'}</div>
+      <div class="bench-col-header bench-header-injured">🚑 Лазарет <span class="bench-count">${allInjuredPlayers.length + restingPlayers.length}</span></div>
+      <div class="bench-col-body">${(allInjuredPlayers.length || restingPlayers.length)
+        ? restingPlayers.map(restCard).join('') + allInjuredPlayers.map(injCard).join('')
+        : '<div class="bench-empty">Перетащите 🚑 чтобы отправить игрока на отдых</div>'}</div>
     </div>
   </div>`;
 }
@@ -4938,6 +4966,7 @@ async function refreshPitchEditor() {
   try {
     const lr = await GET('/lineups/'+tid);
     _pitchState.lineup = lr.lineup || [];
+    _pitchState.infirmary = lr.infirmary || [];
     _pitchState.selectedPlayerId = null;
     const starters = _pitchState.lineup.filter(s=>s.slot>=1&&s.slot<=11);
     const reserves = _pitchState.lineup.filter(s=>s.slot>11);
@@ -4948,6 +4977,23 @@ async function refreshPitchEditor() {
     if ($('pb-starter-count')) $('pb-starter-count').textContent = `${starters.length}/11 основных`;
     if ($('pb-formation-label')) $('pb-formation-label').textContent = computeFormation(_pitchState.lineup);
     if ($('pb-reserve-count')) $('pb-reserve-count').textContent = `${reserves.length} запасных`;
+  } catch(e) { toast(e.message,'error'); }
+}
+
+// ─── Lazaret (infirmary) ─────────────────────────────────────────────────────
+async function sendToInfirmary(playerId, teamId) {
+  try {
+    await POST('/lineups/'+teamId+'/infirmary', { player_id: playerId });
+    toast('Игрок отправлен в лазарет — отдыхает и восстанавливается');
+    await refreshPitchEditor();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function recallFromInfirmary(playerId, teamId) {
+  try {
+    await DEL('/lineups/'+teamId+'/infirmary/'+playerId);
+    toast('Игрок возвращён в состав');
+    await refreshPitchEditor();
   } catch(e) { toast(e.message,'error'); }
 }
 

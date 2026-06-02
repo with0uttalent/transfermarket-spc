@@ -226,9 +226,12 @@ async function simulateRound(db, tour) {
     `INSERT INTO match_events (match_id, minute, event_type, team_id, player_id, player2_id, description) VALUES (?,?,?,?,?,?,?)`
   );
 
+  // Exclude lazaret (resting) players from tournament squads
+  const squadSql = `SELECT * FROM players WHERE team_id=? AND status='active'
+    AND id NOT IN (SELECT player_id FROM player_infirmary WHERE team_id=?)`;
   for (const match of roundMatches) {
-    const homePl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.home_team_id);
-    const awayPl = db.prepare(`SELECT * FROM players WHERE team_id=? AND status='active'`).all(match.away_team_id);
+    const homePl = db.prepare(squadSql).all(match.home_team_id, match.home_team_id);
+    const awayPl = db.prepare(squadSql).all(match.away_team_id, match.away_team_id);
     const result = simulateMatch(match.home_team_id, match.away_team_id, homePl, awayPl);
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 

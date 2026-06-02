@@ -539,6 +539,15 @@ function initSchema() {
       FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
       FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
     )`,
+    // Manual infirmary (lazaret): players a coach has benched to rest/recover.
+    // They are excluded from match squads (starters + subs) until recalled.
+    `CREATE TABLE IF NOT EXISTS player_infirmary (
+      player_id INTEGER PRIMARY KEY,
+      team_id INTEGER NOT NULL,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

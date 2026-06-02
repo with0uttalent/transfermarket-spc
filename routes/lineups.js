@@ -101,7 +101,51 @@ router.get('/:teamId', (req, res) => {
     ORDER BY tl.slot ASC
   `).all(teamId);
 
-  res.json({ team_id: parseInt(teamId), team_name: team.name, lineup, lock: lineupLockInfo(db, teamId) });
+  // Manual infirmary (lazaret) players — resting, excluded from match squads.
+  const infirmary = db.prepare(`
+    SELECT pi.player_id, pi.added_at,
+           p.name AS player_name, p.position, p.shirt_number, p.market_value,
+           p.image_url, COALESCE(p.stamina, 100) AS stamina,
+           pinj.matches_remaining AS injury_matches_remaining, pinj.injury_type
+    FROM player_infirmary pi
+    JOIN players p ON pi.player_id = p.id
+    LEFT JOIN player_injuries pinj ON pinj.player_id = p.id AND pinj.matches_remaining > 0
+    WHERE pi.team_id = ? AND p.team_id = ?
+    ORDER BY pi.added_at DESC
+  `).all(teamId, teamId);
+
+  res.json({ team_id: parseInt(teamId), team_name: team.name, lineup, infirmary, lock: lineupLockInfo(db, teamId) });
+});
+
+// ─── POST /:teamId/infirmary — move a player into the lazaret ─────────────────
+// Resting players recover stamina and are NOT called up (starters or subs).
+router.post('/:teamId/infirmary', requireAuth, (req, res) => {
+  const db = getDb();
+  const teamId = req.params.teamId;
+  if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'You can only manage your own team' });
+
+  const playerId = req.body.player_id;
+  const player = db.prepare('SELECT id, team_id FROM players WHERE id=?').get(playerId);
+  if (!player || player.team_id != teamId) return res.status(404).json({ error: 'Player not on this team' });
+
+  db.transaction(() => {
+    db.prepare('INSERT OR IGNORE INTO player_infirmary (player_id, team_id) VALUES (?,?)').run(playerId, teamId);
+    // Remove from the active lineup so the slot-based starter/sub queries skip them.
+    db.prepare('DELETE FROM team_lineups WHERE team_id=? AND player_id=?').run(teamId, playerId);
+  })();
+
+  res.json({ ok: true });
+});
+
+// ─── DELETE /:teamId/infirmary/:playerId — recall a player from the lazaret ───
+router.delete('/:teamId/infirmary/:playerId', requireAuth, (req, res) => {
+  const db = getDb();
+  const { teamId, playerId } = req.params;
+  if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'You can only manage your own team' });
+
+  const r = db.prepare('DELETE FROM player_infirmary WHERE team_id=? AND player_id=?').run(teamId, playerId);
+  if (!r.changes) return res.status(404).json({ error: 'Player not in infirmary' });
+  res.json({ ok: true });
 });
 
 // ─── PUT /:teamId — set lineup ────────────────────────────────────────────────
@@ -191,12 +235,15 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
 
   if (!assertLineupUnlocked(req, db, teamId, res)) return;
 
-  // Get all active non-injured players
+  // Get all active non-injured players, excluding those resting in the lazaret
   const players = db.prepare(`
     SELECT p.* FROM players p
     WHERE p.team_id = ? AND p.status = 'active'
       AND NOT EXISTS (
         SELECT 1 FROM player_injuries i WHERE i.player_id = p.id AND i.matches_remaining > 0
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM player_infirmary pi WHERE pi.player_id = p.id
       )
     ORDER BY p.market_value DESC
   `).all(teamId);
