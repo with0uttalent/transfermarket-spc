@@ -1008,6 +1008,54 @@ function precreateUpcomingLeagueMatches() {
   }
 }
 
+// Self-heal: record any finished league match that was never written into the
+// standings/schedule (e.g. force-started before the bookkeeping fix). Idempotent
+// — a fixture is only recorded while its schedule slot is still unlinked.
+function reconcileUnrecordedLeagueMatches() {
+  try {
+    const db = getDb();
+    const orphans = db.prepare(`
+      SELECT m.id, m.league_id, m.matchday, m.home_team_id, m.away_team_id,
+             m.home_score, m.away_score
+      FROM matches m
+      WHERE m.status='finished'
+        AND m.league_id IS NOT NULL
+        AND (m.is_friendly IS NULL OR m.is_friendly = 0)
+        AND NOT EXISTS (SELECT 1 FROM league_schedule ls WHERE ls.match_id = m.id)
+    `).all();
+
+    for (const m of orphans) {
+      const slot = db.prepare(`
+        SELECT id FROM league_schedule
+        WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND match_id IS NULL
+        ORDER BY id LIMIT 1
+      `).get(m.league_id, m.matchday, m.home_team_id, m.away_team_id);
+      if (!slot) continue; // already recorded under another row, or no matching slot
+
+      const homeWon = m.home_score > m.away_score;
+      const draw = m.home_score === m.away_score;
+
+      db.prepare('UPDATE league_schedule SET match_id=? WHERE id=?').run(m.id, slot.id);
+      db.prepare(`UPDATE league_standings SET played=played+1, won=won+?, drawn=drawn+?, lost=lost+?, goals_for=goals_for+?, goals_against=goals_against+?, points=points+? WHERE league_id=? AND team_id=?`)
+        .run(homeWon?1:0, draw?1:0, (!homeWon&&!draw)?1:0, m.home_score, m.away_score, homeWon?3:draw?1:0, m.league_id, m.home_team_id);
+      db.prepare(`UPDATE league_standings SET played=played+1, won=won+?, drawn=drawn+?, lost=lost+?, goals_for=goals_for+?, goals_against=goals_against+?, points=points+? WHERE league_id=? AND team_id=?`)
+        .run((!homeWon&&!draw)?1:0, draw?1:0, homeWon?1:0, m.away_score, m.home_score, (!homeWon&&!draw)?3:draw?1:0, m.league_id, m.away_team_id);
+      db.prepare('UPDATE leagues SET current_matchday=? WHERE id=? AND current_matchday < ?')
+        .run(m.matchday, m.league_id, m.matchday);
+
+      const remaining = db.prepare('SELECT COUNT(*) as cnt FROM league_schedule WHERE league_id=? AND match_id IS NULL').get(m.league_id);
+      if (remaining.cnt === 0) {
+        const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 7);
+        db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`)
+          .run(windowEnd.toISOString().slice(0, 10), m.league_id);
+      }
+      console.log(`[Scheduler] Reconciled unrecorded league match ${m.id} (MD${m.matchday}) into standings`);
+    }
+  } catch(e) {
+    console.warn('[Scheduler] reconcileUnrecordedLeagueMatches error:', e.message);
+  }
+}
+
 function checkAndRunLeagueMatchdays() {
   try {
     const db = getDb();
@@ -1094,6 +1142,8 @@ async function checkAndRunTournamentRounds() {
 function startScheduler() {
   // Populate scheduled match rows immediately so betting is available on boot
   precreateUpcomingLeagueMatches();
+  // Heal any finished-but-unrecorded league matches (e.g. old force-started ones)
+  reconcileUnrecordedLeagueMatches();
 
   // Every 4 hours – generate player/team news
   cron.schedule('0 */4 * * *', () => {
@@ -1103,6 +1153,7 @@ function startScheduler() {
   // Every minute – pre-create upcoming matches (for betting), auto-sim + previews
   cron.schedule('* * * * *', () => {
     precreateUpcomingLeagueMatches();
+    reconcileUnrecordedLeagueMatches();
     checkAndRunLeagueMatchdays();
     checkUpcomingMatches();
     checkAndRunTournamentRounds();
