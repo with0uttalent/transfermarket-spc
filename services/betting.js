@@ -17,22 +17,27 @@ const MAX_ODD    = 15.0;
 const HOME_ADV   = 3;         // home advantage, in OVR points
 const MIN_BET    = 50000;     // €50k minimum stake
 
-// Average OVR of a team — prefers the set starting XI, falls back to top squad.
+// Average OVR of a team's STARTING XI — the same eleven the simulator fields.
+// Odds must reflect who actually starts, not the whole squad. We only fall back
+// to an auto-best-XI when the coach hasn't set a (near-)complete lineup at all.
 function teamOvr(db, teamId) {
-  let rows = db.prepare(`
+  const starters = db.prepare(`
     SELECT COALESCE(p.ovr_fixed, 65) AS ovr
     FROM team_lineups tl JOIN players p ON tl.player_id = p.id
     WHERE tl.team_id = ? AND tl.slot BETWEEN 1 AND 11 AND p.status = 'active'
   `).all(teamId);
-  if (rows.length < 6) {
-    rows = db.prepare(`
-      SELECT COALESCE(ovr_fixed, 65) AS ovr FROM players
-      WHERE team_id = ? AND status = 'active'
-      ORDER BY ovr_fixed DESC LIMIT 11
-    `).all(teamId);
+  // Trust the set starting XI once it's mostly filled (≥7 of 11).
+  if (starters.length >= 7) {
+    return starters.reduce((a, r) => a + r.ovr, 0) / starters.length;
   }
-  if (!rows.length) return 65;
-  return rows.reduce((a, r) => a + r.ovr, 0) / rows.length;
+  // No real lineup set → estimate the XI the team would realistically field.
+  const auto = db.prepare(`
+    SELECT COALESCE(ovr_fixed, 65) AS ovr FROM players
+    WHERE team_id = ? AND status = 'active'
+    ORDER BY ovr_fixed DESC LIMIT 11
+  `).all(teamId);
+  if (!auto.length) return 65;
+  return auto.reduce((a, r) => a + r.ovr, 0) / auto.length;
 }
 
 // Base outcome probabilities from team strengths (sums to 1).
