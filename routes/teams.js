@@ -60,6 +60,8 @@ router.get('/:id', (req, res) => {
     ORDER BY p.market_value DESC
   `).all(req.params.id);
 
+  // Group by competition/tournament so a tournament win shows as a single trophy,
+  // even if older data stored one row per participating player.
   const titles = db.prepare(`
     SELECT ti.*,
       comp.name as competition_name,
@@ -67,7 +69,8 @@ router.get('/:id', (req, res) => {
       comp.logo_url as competition_logo_url
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
-    WHERE ti.team_id = ? AND ti.player_id IS NULL
+    WHERE ti.team_id = ?
+    GROUP BY COALESCE(ti.competition_id, ti.tournament_id, ti.id), ti.title_name, ti.year
     ORDER BY ti.year DESC
   `).all(req.params.id);
 
