@@ -116,11 +116,6 @@ router.post('/', requireCoach, (req, res) => {
     return res.status(400).json({ error: 'Матч уже начался — ставки закрыты' });
   }
 
-  // Can't bet on your own team's match (conflict of interest)
-  if (match.home_team_id === coach.team_id || match.away_team_id === coach.team_id) {
-    return res.status(400).json({ error: 'Нельзя ставить на матч со своей командой' });
-  }
-
   const free = betting.availableBudget(db, coach.team_id);
   if (amount > free) {
     return res.status(400).json({ error: `Недостаточно средств. Доступно: ${Math.round(free).toLocaleString()} €` });
