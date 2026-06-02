@@ -6248,7 +6248,7 @@ async function renderBettingPage(app) {
     const matchesHtml = matches.length
       ? matches.map(m => renderBetMatchCard(m, data.is_coach)).join('')
       : `<div class="empty-state"><div class="empty-icon">🎲</div><p>Нет матчей для ставок</p>
-         <p style="font-size:13px;color:var(--text-muted)">Матчи лиги открываются для ставок за день до игры</p></div>`;
+         <p style="font-size:13px;color:var(--text-muted)">Ставки открываются после блокировки составов — за 12 часов до матча</p></div>`;
 
     app.innerHTML = `
       <div class="bet-page">

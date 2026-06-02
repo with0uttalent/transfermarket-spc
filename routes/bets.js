@@ -9,24 +9,24 @@ const router = express.Router();
 
 const VALID_OUTCOMES = ['home', 'draw', 'away'];
 
+// Bets open only once the coaches' lineups are locked — i.e. from
+// LINEUP_LOCK_HOURS before kickoff until the match starts. Must match the
+// value used in routes/lineups.js.
+const LINEUP_LOCK_HOURS = 12;
+
+// SQLite expression for a match's kickoff datetime (local wall-clock).
+const KICKOFF_SQL = `datetime(m.match_date || ' ' || COALESCE(substr(m.match_time,1,5),'16:00') || ':00')`;
+
 function getMyCoach(db, userId) {
   return db.prepare('SELECT * FROM coaches WHERE user_id=?').get(userId);
-}
-
-function nowDateTime() {
-  const now = new Date();
-  const pad2 = n => String(n).padStart(2, '0');
-  return {
-    date: now.toISOString().slice(0, 10),
-    time: `${pad2(now.getHours())}:${pad2(now.getMinutes())}`,
-  };
 }
 
 // ─── GET / — bettable matches with live odds (+ my open bets if coach) ────────
 router.get('/', optionalAuth, (req, res) => {
   const db = getDb();
-  const { date, time } = nowDateTime();
 
+  // Only matches whose lineups are already locked (kickoff − 12h ≤ now) and
+  // that haven't kicked off yet are open for betting.
   const matches = db.prepare(`
     SELECT m.id, m.home_team_id, m.away_team_id, m.match_date, m.match_time, m.matchday, m.league_id,
            ht.name AS home_team_name, ht.logo_url AS home_logo,
@@ -37,10 +37,11 @@ router.get('/', optionalAuth, (req, res) => {
     JOIN teams at ON m.away_team_id = at.id
     LEFT JOIN leagues lg ON m.league_id = lg.id
     WHERE m.status = 'scheduled' AND m.league_id IS NOT NULL
-      AND (m.match_date > ? OR (m.match_date = ? AND (m.match_time IS NULL OR m.match_time > ?)))
+      AND ${KICKOFF_SQL} > datetime('now','localtime')
+      AND ${KICKOFF_SQL} <= datetime('now','localtime','+${LINEUP_LOCK_HOURS} hours')
     ORDER BY m.match_date ASC, m.match_time ASC
     LIMIT 60
-  `).all(date, date, time);
+  `).all();
 
   // My open bets keyed by match
   let myBets = {};
@@ -111,9 +112,20 @@ router.post('/', requireCoach, (req, res) => {
   if (!match.league_id) return res.status(400).json({ error: 'Ставки доступны только на матчи лиги' });
 
   // Match must not have kicked off yet
-  const { date, time } = nowDateTime();
-  if (match.match_date < date || (match.match_date === date && match.match_time && match.match_time <= time)) {
-    return res.status(400).json({ error: 'Матч уже начался — ставки закрыты' });
+  const kickoff = new Date(`${match.match_date}T${(match.match_time || '16:00').slice(0, 5)}:00`);
+  const now = new Date();
+  if (!isNaN(kickoff.getTime())) {
+    if (now >= kickoff) {
+      return res.status(400).json({ error: 'Матч уже начался — ставки закрыты' });
+    }
+    // Bets open only after lineups are locked (kickoff − LINEUP_LOCK_HOURS).
+    const opensAt = new Date(kickoff.getTime() - LINEUP_LOCK_HOURS * 3600 * 1000);
+    if (now < opensAt) {
+      const opens = opensAt.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      return res.status(400).json({
+        error: `Ставки откроются после блокировки составов — за ${LINEUP_LOCK_HOURS} ч до матча (с ${opens}).`,
+      });
+    }
   }
 
   // No arbitrage: can't bet on a different outcome of a match you've already
