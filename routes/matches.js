@@ -303,8 +303,54 @@ router.post('/:id/simulate', requireAuth, (req, res) => {
   db.prepare(`UPDATE matches SET home_score=?, away_score=?, status='in_progress', started_at=? WHERE id=?`)
     .run(result.homeScore, result.awayScore, startedAt, match.id);
 
+  // League match: do the same bookkeeping as the scheduled auto-simulation so a
+  // force-started match counts in the table and its bets settle on finalization.
+  if (match.league_id && !match.is_friendly) {
+    try { applyLeagueBookkeeping(db, match, result); }
+    catch (e) { console.warn('[matches/simulate] league bookkeeping error:', e.message); }
+  }
+
   res.json({ ok: true, started_at: startedAt });
 });
+
+// Link the league_schedule slot, update standings and advance the matchday for a
+// freshly simulated league match. Idempotent: standings are only updated when the
+// schedule slot is still unlinked, so a fixture can't be double-counted.
+function applyLeagueBookkeeping(db, match, result) {
+  const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(match.league_id);
+  if (!league) return;
+
+  // Find the unplayed schedule slot for this fixture.
+  const slot = db.prepare(`
+    SELECT id FROM league_schedule
+    WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND match_id IS NULL
+    ORDER BY id LIMIT 1
+  `).get(match.league_id, match.matchday, match.home_team_id, match.away_team_id);
+
+  if (!slot) return; // already linked/counted — nothing to do
+
+  const { homeScore, awayScore } = result;
+  const homeWon = homeScore > awayScore;
+  const draw = homeScore === awayScore;
+
+  db.prepare('UPDATE league_schedule SET match_id=? WHERE id=?').run(match.id, slot.id);
+
+  db.prepare(`UPDATE league_standings SET played=played+1, won=won+?, drawn=drawn+?, lost=lost+?, goals_for=goals_for+?, goals_against=goals_against+?, points=points+? WHERE league_id=? AND team_id=?`)
+    .run(homeWon?1:0, draw?1:0, (!homeWon&&!draw)?1:0, homeScore, awayScore, homeWon?3:draw?1:0, match.league_id, match.home_team_id);
+  db.prepare(`UPDATE league_standings SET played=played+1, won=won+?, drawn=drawn+?, lost=lost+?, goals_for=goals_for+?, goals_against=goals_against+?, points=points+? WHERE league_id=? AND team_id=?`)
+    .run((!homeWon&&!draw)?1:0, draw?1:0, homeWon?1:0, awayScore, homeScore, (!homeWon&&!draw)?3:draw?1:0, match.league_id, match.away_team_id);
+
+  db.prepare('UPDATE leagues SET current_matchday=? WHERE id=? AND current_matchday < ?')
+    .run(match.matchday, match.league_id, match.matchday);
+
+  // If this was the last unplayed fixture, open the transfer window.
+  const remaining = db.prepare('SELECT COUNT(*) as cnt FROM league_schedule WHERE league_id=? AND match_id IS NULL').get(match.league_id);
+  if (remaining.cnt === 0) {
+    const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 7);
+    db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`)
+      .run(windowEnd.toISOString().slice(0, 10), match.league_id);
+  }
+}
 
 function advanceTournamentWinner(match, homeScore, awayScore) {
   const db = getDb();
