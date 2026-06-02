@@ -44,7 +44,7 @@ function baseProbabilities(db, homeTeamId, awayTeamId) {
   let pHome = eh / (eh + ea);
   let pAway = ea / (eh + ea);
   const closeness = 1 - Math.abs(pHome - pAway);        // 1 when teams are equal
-  const pDraw = 0.26 * (0.55 + 0.45 * closeness);        // ~0.14 … 0.26
+  const pDraw = 0.30 + 0.08 * closeness;                 // ~0.30 … 0.38 (draws are common)
   pHome *= (1 - pDraw);
   pAway *= (1 - pDraw);
   return { home: pHome, draw: pDraw, away: pAway };
