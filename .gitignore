@@ -1,6 +1,9 @@
 database/*.db
 database/*.db-shm
 database/*.db-wal
+*.db
+*.db-shm
+*.db-wal
 .env
 node_modules/
 public/images/uploads/*
