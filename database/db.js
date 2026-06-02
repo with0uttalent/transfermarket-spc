@@ -527,6 +527,18 @@ function initSchema() {
       FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE,
       FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
     )`,
+    // Tournament scheduling fields
+    `ALTER TABLE tournaments ADD COLUMN round_match_time TEXT DEFAULT '18:00'`,
+    `ALTER TABLE tournaments ADD COLUMN round_interval_days INTEGER DEFAULT 1`,
+    // BYE teams stored per-round so they show in the bracket
+    `CREATE TABLE IF NOT EXISTS tournament_byes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      round INTEGER NOT NULL,
+      FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

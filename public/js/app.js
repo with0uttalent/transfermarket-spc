@@ -3343,6 +3343,7 @@ async function renderTournamentDetail(app, id) {
               <span class="badge ${finished?'badge-green':inProg?'badge-gold':'badge-gray'}">${({setup:'Настройка',in_progress:'Идёт',finished:'Завершён'}[tour.status]||tour.status)}</span>
               <span>${tour.teams.length} команд</span>
               ${inProg?`<span>Раунд ${tour.current_round} из ${tour.total_rounds}</span>`:''}
+              ${tour.round_match_time?`<span>⏰ ${tour.round_match_time}${tour.round_interval_days?' · +'+tour.round_interval_days+'д':''}</span>`:''}
             </div>
           </div>
         </div>
@@ -3367,48 +3368,58 @@ async function renderTournamentDetail(app, id) {
 function renderBracket(tour) {
   const rounds = Object.keys(tour.bracket).sort((a,b)=>Number(a)-Number(b));
   if (!rounds.length) {
-    return `<div class="empty-state"><div class="empty-icon">📊</div><p>${tour.status==='setup'?'Add teams and start the tournament to see the bracket':'No matches generated yet'}</p></div>`;
+    return `<div class="empty-state"><div class="empty-icon">📊</div><p>${tour.status==='setup'?'Добавьте команды и запустите турнир':'Матчи ещё не созданы'}</p></div>`;
   }
   return `<div class="bracket-wrapper"><div class="bracket">
     ${rounds.map(rk=>{
       const round = tour.bracket[rk];
+      const byeCards = (round.byes||[]).map(b=>`
+        <div class="bracket-slot">
+          <div class="bracket-match bracket-bye">
+            <div class="bracket-team winner">
+              ${teamLogoEl(b.logo_url, b.team_name)}
+              <span class="bt-name">${escHtml(b.team_name)}</span>
+              <span class="bt-score bt-bye-label">BYE</span>
+            </div>
+          </div>
+        </div>`).join('');
+      const matchCards = round.matches.map(m=>{
+        const fin = m.status==='finished';
+        const isOT = m.status==='overtime';
+        const isPen = m.status==='penalties';
+        const isSched = m.status==='scheduled';
+        const penWin = fin && m.ot_type==='penalties';
+        const homeWon = fin && (penWin ? m.pen_home > m.pen_away : m.home_score > m.away_score);
+        const awayWon = fin && (penWin ? m.pen_away > m.pen_home : m.away_score > m.home_score);
+        const scoreH = fin||isOT||isPen ? m.home_score : (isSched ? '' : '');
+        const scoreA = fin||isOT||isPen ? m.away_score : '';
+        const penLabel = penWin ? `<div class="bt-pen">(${m.pen_home}:${m.pen_away} пен.)</div>` : '';
+        const otLabel = fin && m.ot_type && m.ot_type!=='penalties' ? `<span class="badge badge-gray" style="font-size:10px;padding:1px 4px">ДВ</span>` : '';
+        const schedLabel = isSched && m.match_date ? `<div class="bt-sched">${new Date(m.match_date).toLocaleDateString('ru-RU',{day:'numeric',month:'short'})} ${(m.match_time||'').substring(0,5)}</div>` : '';
+        return `<div class="bracket-slot">
+          <div class="bracket-match" onclick="navigate('/matches/${m.id}')">
+            <div class="bracket-team ${homeWon?'winner':''}">
+              ${teamLogoEl(m.home_logo,m.home_team_name)}
+              <span class="bt-name">${escHtml(m.home_team_name)}</span>
+              <span class="bt-score">${scoreH}</span>
+            </div>
+            <div class="bracket-team ${awayWon?'winner':''}">
+              ${teamLogoEl(m.away_logo,m.away_team_name)}
+              <span class="bt-name">${escHtml(m.away_team_name)}</span>
+              <span class="bt-score">${scoreA}</span>
+            </div>
+            ${penLabel}${otLabel}${schedLabel}
+          </div>
+          ${(isOT||isPen) && isAdmin() ? `<div class="bracket-ot-btns">
+            ${isOT?`<button class="btn btn-sm btn-gold" onclick="event.stopPropagation();playOvertime(${m.id},'golden_goal',${tour.id})">⚡ Золотой гол</button>
+            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();playOvertime(${m.id},'classic',${tour.id})">⏱ Овертайм (30 мин)</button>`:''}
+            ${isPen?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();playPenalties(${m.id},${tour.id})">🥅 Серия пенальти</button>`:''}`
+          +'</div>':''}
+        </div>`;
+      }).join('');
       return `<div class="bracket-round">
         <div class="bracket-round-header">${escHtml(round.name)}</div>
-        <div class="bracket-matches">
-          ${round.matches.map(m=>{
-            const fin = m.status==='finished';
-            const isOT = m.status==='overtime';
-            const isPen = m.status==='penalties';
-            const penWin = fin && m.ot_type==='penalties';
-            const homeWon = fin && (penWin ? m.pen_home > m.pen_away : m.home_score >= m.away_score);
-            const awayWon = fin && (penWin ? m.pen_away > m.pen_home : m.away_score > m.home_score);
-            const scoreH = fin||isOT||isPen ? m.home_score : '';
-            const scoreA = fin||isOT||isPen ? m.away_score : '';
-            const penLabel = penWin ? `<div class="bt-pen">(${m.pen_home}:${m.pen_away} пен.)</div>` : '';
-            const otLabel = fin && m.ot_type && m.ot_type!=='penalties' ? `<span class="badge badge-gray" style="font-size:10px;padding:1px 4px">ДВ</span>` : '';
-            return `<div class="bracket-slot">
-              <div class="bracket-match" onclick="navigate('/matches/${m.id}')">
-                <div class="bracket-team ${homeWon?'winner':''}">
-                  ${teamLogoEl(m.home_logo,m.home_team_name)}
-                  <span class="bt-name">${escHtml(m.home_team_name)}</span>
-                  <span class="bt-score">${scoreH}</span>
-                </div>
-                <div class="bracket-team ${awayWon?'winner':''}">
-                  ${teamLogoEl(m.away_logo,m.away_team_name)}
-                  <span class="bt-name">${escHtml(m.away_team_name)}</span>
-                  <span class="bt-score">${scoreA}</span>
-                </div>
-                ${penLabel}
-                ${otLabel}
-              </div>
-              ${(isOT||isPen) && isAdmin() ? `<div class="bracket-ot-btns">
-                ${isOT?`<button class="btn btn-sm btn-gold" onclick="event.stopPropagation();playOvertime(${m.id},'golden_goal',${tour.id})">⚡ Золотой гол</button>
-                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();playOvertime(${m.id},'classic',${tour.id})">⏱ Овертайм (30 мин)</button>`:''}
-                ${isPen?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();playPenalties(${m.id},${tour.id})">🥅 Серия пенальти</button>`:''}
-              </div>`:''}
-            </div>`;
-          }).join('')}
-        </div>
+        <div class="bracket-matches">${byeCards}${matchCards}</div>
       </div>`;
     }).join('')}
   </div></div>`;
@@ -3452,19 +3463,36 @@ function renderTournamentTeams(tour, tournamentId) {
   </table></div></div>`;
 }
 
-async function showTournamentForm() {
-  mkModal('Новый турнир', `
-    <div class="form-group"><label>Название *</label><input type="text" id="torf-name" placeholder="Например: Кубок чемпионов 2025"/></div>
+function _tournamentFormBody(t) {
+  return `
+    <div class="form-group"><label>Название *</label><input type="text" id="torf-name" value="${escHtml(t?.name||'')}" placeholder="Например: Кубок чемпионов 2025"/></div>
     <div class="form-group">
       <label>URL картинки трофея</label>
-      <input type="text" id="torf-trophy" placeholder="https://…"/>
+      <input type="text" id="torf-trophy" value="${escHtml(t?.trophy_url||'')}" placeholder="https://…"/>
+      ${t?.trophy_url ? `<img src="${escHtml(t.trophy_url)}" style="height:50px;margin-top:6px;object-fit:contain" onerror="this.style.display='none'">` : ''}
     </div>
-  `, async ()=>{
+    <div style="font-size:13px;font-weight:700;color:var(--text-muted);margin:14px 0 6px">Расписание раундов</div>
+    <div class="form-row-2">
+      <div class="form-group">
+        <label>Время матчей</label>
+        <input type="time" id="torf-time" value="${escHtml(t?.round_match_time||'18:00')}"/>
+      </div>
+      <div class="form-group">
+        <label>Интервал между раундами (дней)</label>
+        <input type="number" id="torf-interval" min="0" max="30" value="${t?.round_interval_days??1}"/>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted)">Матчи каждого раунда будут сыграны автоматически в указанное время. Следующий раунд — через N дней после завершения предыдущего.</div>`;
+}
+
+async function showTournamentForm() {
+  mkModal('Новый турнир', _tournamentFormBody(null), async () => {
     const name = document.getElementById('torf-name').value.trim();
     const trophy_url = document.getElementById('torf-trophy').value.trim() || null;
+    const round_match_time = document.getElementById('torf-time').value || '18:00';
+    const round_interval_days = parseInt(document.getElementById('torf-interval').value) || 1;
     if (!name) { toast('Название обязательно', 'error'); return false; }
-    const r = await POST('/tournaments', { name });
-    if (trophy_url) await PUT('/tournaments/' + r.id, { name, trophy_url });
+    const r = await POST('/tournaments', { name, trophy_url, round_match_time, round_interval_days });
     toast('Турнир создан');
     navigate('/tournaments/' + r.id);
     return true;
@@ -3472,18 +3500,13 @@ async function showTournamentForm() {
 }
 
 async function showTournamentEditForm(tour) {
-  mkModal('Настройки турнира', `
-    <div class="form-group"><label>Название *</label><input type="text" id="torf-edit-name" value="${escHtml(tour.name||'')}"/></div>
-    <div class="form-group">
-      <label>URL картинки трофея</label>
-      <input type="text" id="torf-edit-trophy" value="${escHtml(tour.trophy_url||'')}" placeholder="https://…"/>
-      ${tour.trophy_url ? `<img src="${escHtml(tour.trophy_url)}" style="height:60px;margin-top:6px;object-fit:contain" onerror="this.style.display='none'">` : ''}
-    </div>
-  `, async () => {
-    const name = document.getElementById('torf-edit-name').value.trim();
-    const trophy_url = document.getElementById('torf-edit-trophy').value.trim() || null;
+  mkModal('Настройки турнира', _tournamentFormBody(tour), async () => {
+    const name = document.getElementById('torf-name').value.trim();
+    const trophy_url = document.getElementById('torf-trophy').value.trim() || null;
+    const round_match_time = document.getElementById('torf-time').value || '18:00';
+    const round_interval_days = parseInt(document.getElementById('torf-interval').value) || 1;
     if (!name) { toast('Название обязательно', 'error'); return false; }
-    await PUT('/tournaments/' + tour.id, { name, trophy_url });
+    await PUT('/tournaments/' + tour.id, { name, trophy_url, round_match_time, round_interval_days });
     toast('Турнир обновлён');
     navigate('/tournaments/' + tour.id);
   });

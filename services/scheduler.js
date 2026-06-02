@@ -1053,6 +1053,44 @@ function finalizeExpiredMatchesSafe() {
   try { finalizeExpiredMatches(); } finally { _finalizeBusy = false; }
 }
 
+// Auto-simulate tournament rounds when all current-round matches reach their scheduled time
+async function checkAndRunTournamentRounds() {
+  const db = getDb();
+  const activeTours = db.prepare(`SELECT * FROM tournaments WHERE status='in_progress'`).all();
+  if (!activeTours.length) return;
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const pad2 = n => String(n).padStart(2, '0');
+  const nowTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+
+  for (const tour of activeTours) {
+    try {
+      // Check if there are scheduled matches whose date/time has passed
+      const readyMatches = db.prepare(`
+        SELECT COUNT(*) as c FROM matches
+        WHERE tournament_id=? AND tournament_round=? AND status='scheduled'
+          AND (match_date < ? OR (match_date = ? AND match_time <= ?))
+      `).get(tour.id, tour.current_round, todayStr, todayStr, nowTime);
+
+      if (readyMatches.c === 0) continue;
+
+      // Check there are no unresolved (non-scheduled, non-finished) matches blocking the round
+      const unresolved = db.prepare(`
+        SELECT COUNT(*) as c FROM matches
+        WHERE tournament_id=? AND tournament_round=? AND status NOT IN ('scheduled','finished')
+      `).get(tour.id, tour.current_round);
+      if (unresolved.c > 0) continue;
+
+      console.log(`[Scheduler] Auto-simulating tournament "${tour.name}" round ${tour.current_round}`);
+      const tourRoutes = require('../routes/tournaments');
+      await tourRoutes.simulateRound(db, tour);
+    } catch (e) {
+      console.warn(`[Scheduler] Tournament round sim error (tour ${tour.id}):`, e.message);
+    }
+  }
+}
+
 function startScheduler() {
   // Populate scheduled match rows immediately so betting is available on boot
   precreateUpcomingLeagueMatches();
@@ -1067,6 +1105,7 @@ function startScheduler() {
     precreateUpcomingLeagueMatches();
     checkAndRunLeagueMatchdays();
     checkUpcomingMatches();
+    checkAndRunTournamentRounds();
   });
 
   // Every 5 seconds – live broadcast, match finalization, matchday standings check, auction finalization

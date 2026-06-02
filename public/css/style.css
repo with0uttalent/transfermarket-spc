@@ -944,6 +944,10 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .bracket-team .bt-score { font-weight: 800; color: var(--gold); min-width: 18px; text-align: right; }
 .bracket-tbd { color: var(--text-muted); font-style: italic; font-size: 12px; }
 .bt-pen { font-size: 11px; color: var(--text-muted); text-align: center; padding: 2px 10px 4px; }
+.bt-sched { font-size: 10px; color: var(--text-muted); text-align: center; padding: 2px 10px 4px; }
+.bt-bye-label { color: var(--green) !important; font-size: 11px; font-weight: 700; }
+.bracket-bye { opacity: .8; border-style: dashed; cursor: default; }
+.bracket-bye:hover { box-shadow: none; border-color: var(--border); transform: none; }
 .bracket-ot-btns { display: flex; gap: 6px; padding: 6px 8px 8px; flex-wrap: wrap; justify-content: center; }
 
 /* ─── Rating bar ─────────────────────────────────────────────── */

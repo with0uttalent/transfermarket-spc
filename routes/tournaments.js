@@ -1,3 +1,4 @@
+'use strict';
 const express = require('express');
 const { getDb } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
@@ -42,34 +43,53 @@ router.get('/:id', (req, res) => {
     ORDER BY m.tournament_round, m.id
   `).all(req.params.id);
 
+  // BYE teams per round
+  const byeRows = db.prepare(`
+    SELECT tb.round, tb.team_id, t.name as team_name, t.logo_url
+    FROM tournament_byes tb JOIN teams t ON tb.team_id = t.id
+    WHERE tb.tournament_id=?
+  `).all(req.params.id);
+  const byesByRound = {};
+  for (const b of byeRows) {
+    (byesByRound[b.round] = byesByRound[b.round] || []).push(b);
+  }
+
   // Group matches by round
-  const bracket = {};
   const totalRounds = tour.total_rounds || 0;
+  const bracket = {};
   for (const m of matches) {
     const rn = roundName(totalRounds, m.tournament_round - 1);
-    if (!bracket[m.tournament_round]) bracket[m.tournament_round] = { name: rn, matches: [] };
+    if (!bracket[m.tournament_round]) bracket[m.tournament_round] = { name: rn, matches: [], byes: [] };
     bracket[m.tournament_round].matches.push(m);
+  }
+  // Attach byes to each round (even rounds with no matches yet)
+  for (const [round, byes] of Object.entries(byesByRound)) {
+    if (!bracket[round]) bracket[round] = { name: roundName(totalRounds, round - 1), matches: [], byes: [] };
+    bracket[round].byes = byes;
   }
 
   res.json({ ...tour, teams, bracket });
 });
 
 router.post('/', requireAuth, (req, res) => {
-  const { name } = req.body;
+  const { name, round_match_time, round_interval_days } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
   const db = getDb();
-  const r = db.prepare(`INSERT INTO tournaments (name) VALUES (?)`).run(name);
+  const r = db.prepare(
+    `INSERT INTO tournaments (name, round_match_time, round_interval_days) VALUES (?,?,?)`
+  ).run(name, round_match_time || '18:00', round_interval_days || 1);
   res.status(201).json({ id: r.lastInsertRowid, name });
 });
 
 router.put('/:id', requireAuth, (req, res) => {
-  const { name, trophy_url } = req.body;
+  const { name, trophy_url, round_match_time, round_interval_days } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
   const db = getDb();
   const tour = db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id);
   if (!tour) return res.status(404).json({ error: 'Not found' });
-  db.prepare(`UPDATE tournaments SET name=?, trophy_url=? WHERE id=?`)
-    .run(name, trophy_url ?? tour.trophy_url, req.params.id);
+  db.prepare(`UPDATE tournaments SET name=?, trophy_url=?, round_match_time=?, round_interval_days=? WHERE id=?`)
+    .run(name, trophy_url ?? tour.trophy_url, round_match_time || tour.round_match_time || '18:00',
+         round_interval_days || tour.round_interval_days || 1, req.params.id);
   res.json(db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id));
 });
 
@@ -94,7 +114,7 @@ router.delete('/:id/teams/:teamId', requireAuth, (req, res) => {
   res.json({ message: 'Removed' });
 });
 
-// Start tournament: seed teams, generate round 1 bracket
+// Start tournament: seed teams, generate round 1 bracket, save BYE teams to byes table
 router.post('/:id/start', requireAuth, (req, res) => {
   const db = getDb();
   const tour = db.prepare(`SELECT * FROM tournaments WHERE id=?`).get(req.params.id);
@@ -111,55 +131,65 @@ router.post('/:id/start', requireAuth, (req, res) => {
 
   if (teams.length < 2) return res.status(400).json({ error: 'Need at least 2 teams' });
 
-  // Seed by market value
   const teamIds = teams.map(t => t.team_id);
   const pairings = generateBracketRound1(teamIds);
 
-  // Calculate total rounds
   let size = 1;
   while (size < teamIds.length) size *= 2;
   const totalRounds = Math.log2(size);
 
-  // Update seeds
+  // Seed teams by market value rank
   const setSeed = db.prepare(`UPDATE tournament_teams SET seed=? WHERE tournament_id=? AND team_id=?`);
   teamIds.forEach((tid, i) => setSeed.run(i + 1, req.params.id, tid));
 
-  // Create round 1 matches (BYE = team advances immediately)
+  // Schedule round 1 matches for today at the configured time
+  const matchTime = tour.round_match_time || '18:00';
   const today = new Date().toISOString().slice(0, 10);
+
   const insertMatch = db.prepare(
-    `INSERT INTO matches (home_team_id, away_team_id, match_date, tournament_id, tournament_round) VALUES (?,?,?,?,1)`
+    `INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, tournament_id, tournament_round)
+     VALUES (?,?,?,?,'scheduled',?,1)`
   );
-  let byeWinners = [];
+  const insertBye = db.prepare(
+    `INSERT INTO tournament_byes (tournament_id, team_id, round) VALUES (?,?,?)`
+  );
+
+  const byeWinners = [];
   for (const p of pairings) {
     if (p.awayTeamId === null) {
-      byeWinners.push(p.homeTeamId); // BYE: auto-advance
+      byeWinners.push(p.homeTeamId);
+      insertBye.run(req.params.id, p.homeTeamId, 1);
     } else if (p.homeTeamId === null) {
       byeWinners.push(p.awayTeamId);
+      insertBye.run(req.params.id, p.awayTeamId, 1);
     } else {
-      insertMatch.run(p.homeTeamId, p.awayTeamId, today, req.params.id);
+      insertMatch.run(p.homeTeamId, p.awayTeamId, today, matchTime, req.params.id);
     }
   }
 
-  // Save bye winners so simulate-round can combine them with match winners
-  db.prepare(`UPDATE tournaments SET bye_winners=? WHERE id=?`)
-    .run(byeWinners.length ? JSON.stringify(byeWinners) : null, req.params.id);
-
-  // If some teams got BYE and all first-round matches would be byes, start at round 2
-  db.prepare(`UPDATE tournaments SET status='in_progress', current_round=1, total_rounds=? WHERE id=?`)
-    .run(totalRounds, req.params.id);
+  db.prepare(`UPDATE tournaments SET status='in_progress', current_round=1, total_rounds=?, bye_winners=? WHERE id=?`)
+    .run(totalRounds, byeWinners.length ? JSON.stringify(byeWinners) : null, req.params.id);
 
   db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
-    .run(`Tournament started: ${tour.name}`, `${teamIds.length} teams compete. Round 1 is ready.`, 'tournament', req.params.id);
+    .run(`Турнир начался: ${tour.name}`,
+         `${teamIds.length} команд участвуют. Матчи 1-го раунда запланированы на ${today} в ${matchTime}.`,
+         'tournament', req.params.id);
 
-  res.json({ message: 'Tournament started', total_rounds: totalRounds, pairings: pairings.length });
+  res.json({ message: 'Tournament started', total_rounds: totalRounds, pairings: pairings.length, byes: byeWinners.length });
 });
 
-// Simulate entire current round at once
+// Simulate entire current round at once (manual trigger)
 router.post('/:id/simulate-round', requireAuth, async (req, res) => {
   const db = getDb();
   const tour = db.prepare(`SELECT * FROM tournaments WHERE id=?`).get(req.params.id);
   if (!tour || tour.status !== 'in_progress') return res.status(400).json({ error: 'Tournament not in progress' });
+  const result = await simulateRound(db, tour);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json(result);
+});
 
+// Shared round simulation logic (used by both manual trigger and scheduler)
+async function simulateRound(db, tour) {
   const { simulateMatch } = require('../services/matchSimulator');
   const { applyMatchResults, generateMatchNews } = require('../services/scheduler');
 
@@ -169,9 +199,9 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
      JOIN teams ht ON m.home_team_id=ht.id
      JOIN teams at ON m.away_team_id=at.id
      WHERE m.tournament_id=? AND m.tournament_round=? AND m.status='scheduled'`
-  ).all(req.params.id, tour.current_round);
+  ).all(tour.id, tour.current_round);
 
-  if (!roundMatches.length) return res.status(400).json({ error: 'No scheduled matches in current round' });
+  if (!roundMatches.length) return { error: 'No scheduled matches in current round' };
 
   const results = [];
   let overtimeCount = 0;
@@ -181,7 +211,6 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
     const result = simulateMatch(match.home_team_id, match.away_team_id, homePl, awayPl);
     applyMatchResults(match.id, match.home_team_id, match.away_team_id, result);
 
-    // Tournament draw → set to overtime instead of finished
     if (result.homeScore === result.awayScore) {
       db.prepare(`UPDATE matches SET status='overtime' WHERE id=?`).run(match.id);
       overtimeCount++;
@@ -191,68 +220,94 @@ router.post('/:id/simulate-round', requireAuth, async (req, res) => {
 
     const evRows = db.prepare(`SELECT * FROM match_events WHERE match_id=?`).all(match.id);
     generateMatchNews(match.id, match.home_name, match.away_name, result.homeScore, result.awayScore, evRows);
-    const winnerId = result.homeScore >= result.awayScore ? match.home_team_id : match.away_team_id;
+    const winnerId = result.homeScore > result.awayScore ? match.home_team_id : match.away_team_id;
     results.push({ match_id: match.id, home_score: result.homeScore, away_score: result.awayScore, winner_id: winnerId });
   }
 
   if (overtimeCount > 0) {
-    return res.json({ simulated: results.length, results, overtime_count: overtimeCount, message: `${overtimeCount} матч(а) требуют дополнительного времени` });
+    return { simulated: results.length, results, overtime_count: overtimeCount,
+             message: `${overtimeCount} матч(а) требуют дополнительного времени` };
   }
 
-  // Check if round is complete and advance
-  const allDone = db.prepare(
+  // Check all round matches done
+  const pending = db.prepare(
     `SELECT COUNT(*) as c FROM matches WHERE tournament_id=? AND tournament_round=? AND status NOT IN ('finished')`
-  ).get(req.params.id, tour.current_round);
+  ).get(tour.id, tour.current_round);
 
-  if (allDone.c === 0) {
-    const roundMatches2 = db.prepare(`SELECT * FROM matches WHERE tournament_id=? AND tournament_round=?`)
-      .all(req.params.id, tour.current_round);
-    const winners = roundMatches2.map(m => {
-      if (m.ot_type === 'penalties') return m.pen_home > m.pen_away ? m.home_team_id : m.away_team_id;
-      return m.home_score >= m.away_score ? m.home_team_id : m.away_team_id;
-    });
-    const savedByes = tour.bye_winners ? JSON.parse(tour.bye_winners) : [];
-    const allWinners = [...winners, ...savedByes];
-    // Clear bye_winners now that they've been used
-    db.prepare(`UPDATE tournaments SET bye_winners=NULL WHERE id=?`).run(req.params.id);
-    const nextRound = tour.current_round + 1;
-    if (allWinners.length === 1) {
-      db.prepare(`UPDATE tournaments SET status='finished' WHERE id=?`).run(req.params.id);
-      const champ = db.prepare(`SELECT name FROM teams WHERE id=?`).get(allWinners[0]);
-      // Insert title for the winning team
-      db.prepare(`INSERT INTO titles (team_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?)`)
-        .run(allWinners[0], tour.name, `Турнир ${new Date().getFullYear()}`, new Date().getFullYear(), req.params.id, tour.trophy_url || null);
-      db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
-        .run(`🏆 ${champ.name} выигрывает ${tour.name}!`, `${champ.name} стал чемпионом турнира «${tour.name}»!`, 'tournament', req.params.id);
-      const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(allWinners[0]);
-      const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
-      const insertPlayerTitle = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?,?)`);
-      const tourYear = new Date().getFullYear();
-      const tourSeason = `Турнир ${tourYear}`;
-      for (const cp of champPl) {
-        insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tour.name}`, req.params.id);
-        insertPlayerTitle.run(allWinners[0], cp.id, tour.name, tourSeason, tourYear, req.params.id, tour.trophy_url || null);
-        const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
-        if (pl && pl.market_value > 0) {
-          const nv = pl.market_value * 1.05;
-          db.prepare(`UPDATE players SET market_value=? WHERE id=?`).run(nv, cp.id);
-          db.prepare(`INSERT INTO market_value_history (player_id,market_value) VALUES (?,?)`).run(cp.id, nv);
-        }
+  if (pending.c === 0) {
+    advanceRound(db, tour);
+  }
+
+  return { simulated: results.length, results };
+}
+
+// Advance to next round after all current-round matches finish
+function advanceRound(db, tour) {
+  const roundMatches = db.prepare(`SELECT * FROM matches WHERE tournament_id=? AND tournament_round=?`)
+    .all(tour.id, tour.current_round);
+  const winners = roundMatches.map(m => {
+    if (m.ot_type === 'penalties') return m.pen_home > m.pen_away ? m.home_team_id : m.away_team_id;
+    return m.home_score > m.away_score ? m.home_team_id : m.away_team_id;
+  });
+  const savedByes = tour.bye_winners ? JSON.parse(tour.bye_winners) : [];
+  const allWinners = [...winners, ...savedByes];
+  db.prepare(`UPDATE tournaments SET bye_winners=NULL WHERE id=?`).run(tour.id);
+
+  if (allWinners.length === 1) {
+    // Tournament over
+    db.prepare(`UPDATE tournaments SET status='finished' WHERE id=?`).run(tour.id);
+    const champ = db.prepare(`SELECT name FROM teams WHERE id=?`).get(allWinners[0]);
+    db.prepare(`INSERT INTO titles (team_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?)`)
+      .run(allWinners[0], tour.name, `Турнир ${new Date().getFullYear()}`, new Date().getFullYear(), tour.id, tour.trophy_url || null);
+    db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
+      .run(`🏆 ${champ.name} выигрывает ${tour.name}!`, `${champ.name} стал чемпионом турнира «${tour.name}»!`, 'tournament', tour.id);
+    const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(allWinners[0]);
+    const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
+    const insertPT  = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?,?)`);
+    const tourYear = new Date().getFullYear();
+    for (const cp of champPl) {
+      insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tour.name}`, tour.id);
+      insertPT.run(allWinners[0], cp.id, tour.name, `Турнир ${tourYear}`, tourYear, tour.id, tour.trophy_url || null);
+      const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
+      if (pl?.market_value > 0) {
+        const nv = pl.market_value * 1.05;
+        db.prepare(`UPDATE players SET market_value=? WHERE id=?`).run(nv, cp.id);
+        db.prepare(`INSERT INTO market_value_history (player_id,market_value) VALUES (?,?)`).run(cp.id, nv);
       }
+    }
+    return;
+  }
+
+  // Create next round matches, schedule them
+  const nextRound = tour.current_round + 1;
+  const intervalDays = tour.round_interval_days || 1;
+  const matchTime = tour.round_match_time || '18:00';
+  const nextDate = new Date();
+  nextDate.setDate(nextDate.getDate() + intervalDays);
+  const nextDateStr = nextDate.toISOString().slice(0, 10);
+
+  const insertBye = db.prepare(`INSERT INTO tournament_byes (tournament_id, team_id, round) VALUES (?,?,?)`);
+  const nextByeWinners = [];
+
+  for (let i = 0; i < allWinners.length; i += 2) {
+    if (allWinners[i + 1] !== undefined) {
+      db.prepare(`INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, tournament_id, tournament_round)
+                  VALUES (?,?,?,?,'scheduled',?,?)`)
+        .run(allWinners[i], allWinners[i + 1], nextDateStr, matchTime, tour.id, nextRound);
     } else {
-      const today = new Date().toISOString().slice(0, 10);
-      for (let i = 0; i < allWinners.length; i += 2) {
-        if (allWinners[i + 1] !== undefined) {
-          db.prepare(`INSERT INTO matches (home_team_id,away_team_id,match_date,tournament_id,tournament_round) VALUES (?,?,?,?,?)`)
-            .run(allWinners[i], allWinners[i + 1], today, req.params.id, nextRound);
-        }
-      }
-      db.prepare(`UPDATE tournaments SET current_round=? WHERE id=?`).run(nextRound, req.params.id);
+      // Odd number of winners — last one gets a bye to next round
+      nextByeWinners.push(allWinners[i]);
+      insertBye.run(tour.id, allWinners[i], nextRound);
     }
   }
 
-  res.json({ simulated: results.length, results });
-});
+  db.prepare(`UPDATE tournaments SET current_round=?, bye_winners=? WHERE id=?`)
+    .run(nextRound, nextByeWinners.length ? JSON.stringify(nextByeWinners) : null, tour.id);
+}
+
+// Export advanceRound and simulateRound for the scheduler
+module.exports.simulateRound = simulateRound;
+module.exports.advanceRound  = advanceRound;
 
 router.delete('/:id', requireAuth, (req, res) => {
   const db = getDb();
