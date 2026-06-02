@@ -6178,11 +6178,19 @@ function renderBetMatchCard(m, isCoach) {
   const totalPool = o.total_pool || 0;
   const myBetsTxt = (m.my_bets||[]).map(b => `${betOutcomeShort(b.outcome)} ${fmtValue(b.amount)} @${b.odds}`).join(', ');
 
-  const oddBtn = (outcome, label, odd) => `
-    <button class="bet-odd-btn${isCoach?'':' disabled'}" ${isCoach?`onclick="openBetSlip(${m.id},'${outcome}')"`:''}>
-      <span class="bet-odd-label">${label}</span>
+  // If the coach already bet on this match, only the same outcome stays open
+  // (no arbitrage). Other outcomes are locked.
+  const myOutcome = (m.my_bets && m.my_bets.length) ? m.my_bets[0].outcome : null;
+  const oddBtn = (outcome, label, odd) => {
+    const locked = isCoach && myOutcome && myOutcome !== outcome;
+    const active = myOutcome === outcome;
+    const clickable = isCoach && !locked;
+    return `
+    <button class="bet-odd-btn${clickable?'':' disabled'}${active?' picked':''}" ${clickable?`onclick="openBetSlip(${m.id},'${outcome}')"`:''}${locked?' title="Вы уже поставили на другой исход в этом матче"':''}>
+      <span class="bet-odd-label">${label}${active?' ✓':''}${locked?' 🔒':''}</span>
       <span class="bet-odd-value">${odd.toFixed(2)}</span>
     </button>`;
+  };
 
   return `
     <div class="bet-card">

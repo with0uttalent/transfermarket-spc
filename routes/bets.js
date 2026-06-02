@@ -116,6 +116,18 @@ router.post('/', requireCoach, (req, res) => {
     return res.status(400).json({ error: 'Матч уже начался — ставки закрыты' });
   }
 
+  // No arbitrage: can't bet on a different outcome of a match you've already
+  // bet on (only the same outcome may be topped up).
+  const existing = db.prepare(
+    `SELECT DISTINCT outcome FROM bets WHERE match_id=? AND coach_id=? AND status='open'`
+  ).all(match_id, coach.id);
+  if (existing.some(b => b.outcome !== outcome)) {
+    const label = { home: 'победу хозяев', draw: 'ничью', away: 'победу гостей' };
+    return res.status(400).json({
+      error: `Вы уже поставили на ${label[existing[0].outcome]} в этом матче. Ставить на другой исход нельзя.`,
+    });
+  }
+
   const free = betting.availableBudget(db, coach.team_id);
   if (amount > free) {
     return res.status(400).json({ error: `Недостаточно средств. Доступно: ${Math.round(free).toLocaleString()} €` });
