@@ -355,58 +355,23 @@ function applyLeagueBookkeeping(db, match, result) {
 function advanceTournamentWinner(match, homeScore, awayScore) {
   const db = getDb();
   const tournament = db.prepare(`SELECT * FROM tournaments WHERE id=?`).get(match.tournament_id);
-  if (!tournament) return;
+  if (!tournament || tournament.status === 'finished') return;
 
-  let winnerId = homeScore >= awayScore ? match.home_team_id : match.away_team_id;
-  // Check if all matches in this round are finished
+  // Check if all matches in this round are now finished
   const roundMatches = db.prepare(
-    `SELECT * FROM matches WHERE tournament_id=? AND tournament_round=?`
+    `SELECT id, status FROM matches WHERE tournament_id=? AND tournament_round=?`
   ).all(match.tournament_id, match.tournament_round);
   const allDone = roundMatches.every(m => m.status === 'finished' || m.id === match.id);
+  if (!allDone) return;
 
-  if (allDone) {
-    // Get winners of this round and create next round matches
-    const winners = roundMatches.map(m => {
-      if (m.id === match.id) return winnerId;
-      if (m.ot_type === 'penalties') return m.pen_home > m.pen_away ? m.home_team_id : m.away_team_id;
-      return m.home_score >= m.away_score ? m.home_team_id : m.away_team_id;
-    });
-    const nextRound = match.tournament_round + 1;
-    if (winners.length === 1) {
-      // Tournament champion!
-      const p = db.prepare(`SELECT name FROM teams WHERE id=?`).get(winners[0]);
-      db.prepare(`UPDATE tournaments SET status='finished' WHERE id=?`).run(match.tournament_id);
-      // Insert title for the winning team
-      db.prepare(`INSERT INTO titles (team_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?)`)
-        .run(winners[0], tournament.name, `Турнир ${new Date().getFullYear()}`, new Date().getFullYear(), match.tournament_id, tournament.trophy_url || null);
-      db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
-        .run(`🏆 ${p.name} — чемпион турнира!`, `${p.name} выиграл турнир «${tournament.name}»!`, 'tournament', match.tournament_id);
-      // Achievements for winning team players
-      const champs = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(winners[0]);
-      const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
-      for (const cp of champs) {
-        insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tournament.name}`, match.tournament_id);
-        const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
-        if (pl && pl.market_value > 0) {
-          const nv = pl.market_value * 1.05;
-          db.prepare(`UPDATE players SET market_value=? WHERE id=?`).run(nv, cp.id);
-          db.prepare(`INSERT INTO market_value_history (player_id,market_value) VALUES (?,?)`).run(cp.id, nv);
-        }
-      }
-      return;
-    }
-    // Create next round matches
-    for (let i = 0; i < winners.length; i += 2) {
-      if (winners[i + 1]) {
-        db.prepare(`INSERT INTO matches (home_team_id,away_team_id,match_date,tournament_id,tournament_round) VALUES (?,?,date('now'),?,?)`)
-          .run(winners[i], winners[i + 1], match.tournament_id, nextRound);
-      }
-    }
-    db.prepare(`UPDATE tournaments SET current_round=? WHERE id=?`).run(nextRound, match.tournament_id);
-    const roundMatchCount = db.prepare(`SELECT COUNT(*) as c FROM matches WHERE tournament_id=? AND tournament_round=?`)
-      .get(match.tournament_id, nextRound);
-    db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
-      .run(`Round ${nextRound} begins`, `${roundMatchCount.c} matches scheduled for round ${nextRound} of "${tournament.name}".`, 'tournament', match.tournament_id);
+  // Delegate to the canonical advanceRound in routes/tournaments.js which handles
+  // BYE winners, proper draw resolution, OVR buff, and participant-only trophies.
+  try {
+    const { advanceRound } = require('./tournaments');
+    const latestTour = db.prepare(`SELECT * FROM tournaments WHERE id=?`).get(match.tournament_id);
+    advanceRound(db, latestTour);
+  } catch(e) {
+    console.warn('[matches] advanceTournamentWinner error:', e.message);
   }
 }
 

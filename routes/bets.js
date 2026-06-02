@@ -37,10 +37,10 @@ router.get('/', optionalAuth, (req, res) => {
     JOIN teams at ON m.away_team_id = at.id
     LEFT JOIN leagues lg ON m.league_id = lg.id
     WHERE m.status = 'scheduled' AND m.league_id IS NOT NULL
-      AND m.match_date >= ?
+      AND (m.match_date > ? OR (m.match_date = ? AND (m.match_time IS NULL OR m.match_time > ?)))
     ORDER BY m.match_date ASC, m.match_time ASC
     LIMIT 60
-  `).all(date);
+  `).all(date, date, time);
 
   // My open bets keyed by match
   let myBets = {};

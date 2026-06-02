@@ -257,17 +257,37 @@ function advanceRound(db, tour) {
     // Tournament over
     db.prepare(`UPDATE tournaments SET status='finished' WHERE id=?`).run(tour.id);
     const champ = db.prepare(`SELECT name FROM teams WHERE id=?`).get(allWinners[0]);
-    db.prepare(`INSERT INTO titles (team_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?)`)
-      .run(allWinners[0], tour.name, `Турнир ${new Date().getFullYear()}`, new Date().getFullYear(), tour.id, tour.trophy_url || null);
     db.prepare(`INSERT INTO news (title,body,type,tournament_id) VALUES (?,?,?,?)`)
       .run(`🏆 ${champ.name} выигрывает ${tour.name}!`, `${champ.name} стал чемпионом турнира «${tour.name}»!`, 'tournament', tour.id);
+
+    // Only players who actually participated in tournament matches get the trophy + OVR buff
+    const participantIds = new Set(
+      db.prepare(`
+        SELECT DISTINCT pms.player_id
+        FROM player_match_stats pms
+        JOIN matches m ON pms.match_id = m.id
+        WHERE m.tournament_id = ? AND m.status = 'finished'
+      `).all(tour.id).map(r => r.player_id)
+    );
+
     const champPl = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(allWinners[0]);
     const insertAch = db.prepare(`INSERT INTO player_achievements (player_id,achievement_type,description,tournament_id) VALUES (?,?,?,?)`);
     const insertPT  = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, tournament_id, trophy_url) VALUES (?,?,?,?,?,?,?)`);
     const tourYear = new Date().getFullYear();
     for (const cp of champPl) {
+      if (!participantIds.has(cp.id)) continue; // trophy only for participants
       insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tour.name}`, tour.id);
       insertPT.run(allWinners[0], cp.id, tour.name, `Турнир ${tourYear}`, tourYear, tour.id, tour.trophy_url || null);
+      // OVR buff ~3.5% for tournament winners who participated
+      db.prepare(`
+        UPDATE player_skills SET
+          pace      = MIN(99, CAST(ROUND(pace      * 1.035) AS INTEGER)),
+          shooting  = MIN(99, CAST(ROUND(shooting  * 1.035) AS INTEGER)),
+          passing   = MIN(99, CAST(ROUND(passing   * 1.035) AS INTEGER)),
+          defending = MIN(99, CAST(ROUND(defending * 1.035) AS INTEGER)),
+          physical  = MIN(99, CAST(ROUND(physical  * 1.035) AS INTEGER))
+        WHERE player_id = ?
+      `).run(cp.id);
       const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
       if (pl?.market_value > 0) {
         const nv = pl.market_value * 1.05;
@@ -305,10 +325,6 @@ function advanceRound(db, tour) {
     .run(nextRound, nextByeWinners.length ? JSON.stringify(nextByeWinners) : null, tour.id);
 }
 
-// Export advanceRound and simulateRound for the scheduler
-module.exports.simulateRound = simulateRound;
-module.exports.advanceRound  = advanceRound;
-
 router.delete('/:id', requireAuth, (req, res) => {
   const db = getDb();
   const r = db.prepare(`DELETE FROM tournaments WHERE id=?`).run(req.params.id);
@@ -317,3 +333,6 @@ router.delete('/:id', requireAuth, (req, res) => {
 });
 
 module.exports = router;
+// Export shared helpers AFTER module.exports = router so they aren't overwritten
+module.exports.simulateRound = simulateRound;
+module.exports.advanceRound  = advanceRound;

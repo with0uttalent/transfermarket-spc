@@ -178,14 +178,16 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
 
   // Telegram: send match result banner
   const match = db.prepare(`
-    SELECT m.status, m.home_team_id, m.away_team_id, m.league_id, m.is_friendly,
+    SELECT m.status, m.home_team_id, m.away_team_id, m.league_id, m.tournament_id, m.is_friendly,
       ht.logo_url as home_logo, ht.stadium_url as home_stadium,
       at.logo_url as away_logo,
-      lg.name as league_name, lg.logo_url as league_logo
+      lg.name as league_name, lg.logo_url as league_logo,
+      t.name as tournament_name, t.trophy_url as tournament_trophy_url
     FROM matches m
     JOIN teams ht ON m.home_team_id = ht.id
     JOIN teams at ON m.away_team_id = at.id
     LEFT JOIN leagues lg ON m.league_id = lg.id
+    LEFT JOIN tournaments t ON m.tournament_id = t.id
     WHERE m.id = ?
   `).get(matchId);
   const base = `http://localhost:${process.env.PORT || 3000}`;
@@ -203,6 +205,12 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
     ORDER BY e.minute
   `).all(matchId);
 
+  // For tournament matches show the tournament name + trophy icon in the banner strip
+  const bannerLeagueName    = match?.league_name
+    || (match?.tournament_name ? `🏆 ${match.tournament_name}` : null);
+  const bannerLeagueLogoUrl = toUrl(match?.league_logo)
+    || toUrl(match?.tournament_trophy_url);
+
   const resultPayload = {
     matchId, homeTeam, awayTeam, homeScore, awayScore,
     homeLogo:      toUrl(match?.home_logo),
@@ -210,8 +218,8 @@ function generateMatchNews(matchId, homeTeam, awayTeam, homeScore, awayScore, ev
     stadiumUrl:    toUrl(match?.home_stadium),
     homeTeamId:    match?.home_team_id,
     awayTeamId:    match?.away_team_id,
-    leagueName:    match?.league_name || null,
-    leagueLogoUrl: toUrl(match?.league_logo),
+    leagueName:    bannerLeagueName,
+    leagueLogoUrl: bannerLeagueLogoUrl,
     goalEvents,
   };
 
