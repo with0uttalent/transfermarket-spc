@@ -1258,6 +1258,10 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 
 /* ─── Lineup editor ──────────────────────────────────────────── */
 .lineup-editor { background: var(--bg-card); border-radius: 10px; padding: 20px; border: 1px solid var(--border); }
+.lineup-lock-banner { background: rgba(231,76,60,.12); border: 1px solid rgba(231,76,60,.4); color: #e74c3c; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+.lineup-lock-banner.soft { background: rgba(241,196,15,.10); border-color: rgba(241,196,15,.35); color: #b7950b; font-weight: 500; }
+/* When locked, the pitch & bench are read-only (drag/click disabled) */
+.lineup-locked .pb-pitch-wrap, .lineup-locked #pb-bench-section, .lineup-locked #pb-player-list { pointer-events: none; opacity: .85; }
 .lineup-save-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .lineup-save-bar span { flex: 1; font-size: 14px; color: var(--text-muted); }
 .lineup-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

@@ -4296,7 +4296,7 @@ async function renderCoachDashboard(app) {
       GET('/match-challenges').catch(()=>({incoming:[],outgoing:[]})),
       GET('/loans/offers').catch(()=>[]),
     ]);
-    const lineup = { slots: lineupData.lineup || [] };
+    const lineup = { slots: lineupData.lineup || [], lock: lineupData.lock || null };
     const offers = Array.isArray(offersData) ? offersData : [];
     const pendingCount = offers.filter(o=>o.status==='pending').length;
     const challenges = challengesData || { incoming: [], outgoing: [] };
@@ -4427,25 +4427,37 @@ function renderLineupEditor(team, lineup) {
   const starterCount = slots.filter(s=>s.slot>=1&&s.slot<=11).length;
   _pitchState = { teamId: team.id, lineup: slots, players: allPlayers, selectedPlayerId: null };
 
+  const lock = lineup.lock;
+  const locked = lock && lock.locked;
+  let lockBanner = '';
+  if (locked) {
+    const ko = lock.kickoff ? new Date(lock.kickoff).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    lockBanner = `<div class="lineup-lock-banner">🔒 Состав заблокирован за ${lock.lock_hours||12} ч до матча${lock.opponent?` против <strong>${escHtml(lock.opponent)}</strong>`:''}${ko?` (${ko})`:''}. Изменить расстановку до конца матча нельзя.</div>`;
+  } else if (lock && lock.kickoff) {
+    const la = lock.lockedAt ? new Date(lock.lockedAt).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    lockBanner = `<div class="lineup-lock-banner soft">⏳ Состав можно менять до ${la}. После этого расстановка фиксируется для ставок.</div>`;
+  }
+
   return `
-    <div class="lineup-editor">
+    <div class="lineup-editor${locked?' lineup-locked':''}">
+      ${lockBanner}
       <div class="lineup-save-bar" style="flex-wrap:wrap;gap:8px">
         <span>Схема: <strong id="pb-formation-label">${computeFormation(slots)}</strong></span>
         <span id="pb-starter-count" style="font-size:12px;color:var(--text-muted)">${starterCount}/11 основных</span>
-        <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Авто-подбор</button>
+        ${locked?'':`<button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Авто-подбор</button>`}
       </div>
-      <div class="lineup-presets-bar">
+      ${locked?'':`<div class="lineup-presets-bar">
         <button class="btn btn-sm" style="background:#2980b9;color:#fff;white-space:nowrap" onclick="saveLineupPreset(${team.id})">💾 Сохранить пресет</button>
         <div class="lineup-presets-list" id="pb-presets-list"><span class="preset-empty">Загрузка...</span></div>
-      </div>
+      </div>`}
       <div class="pb-layout">
         <div class="pb-pitch-wrap" id="pb-pitch">${renderPitchZones(slots)}</div>
         <div class="pb-sidebar">
-          <div class="pb-sidebar-header">✋ Перетащите игрока на поле или в скамейку</div>
+          <div class="pb-sidebar-header">${locked?'🔒 Состав зафиксирован':'✋ Перетащите игрока на поле или в скамейку'}</div>
           <div id="pb-player-list"
-               ondragover="event.preventDefault()"
+               ${locked?'':`ondragover="event.preventDefault()"
                ondrop="dropOnSidebar(event)"
-               ondragleave="event.currentTarget.classList.remove('bench-drop-active')">${renderPitchSidebar(allPlayers, slots, null)}</div>
+               ondragleave="event.currentTarget.classList.remove('bench-drop-active')"`}>${renderPitchSidebar(allPlayers, slots, null)}</div>
         </div>
       </div>
       <div id="pb-bench-section" style="margin-top:16px">${renderBenchSection(slots, allPlayers, team.id)}</div>

@@ -20,6 +20,65 @@ function canManageTeam(req, db, teamId) {
   return coach && coach.team_id == teamId;
 }
 
+const LINEUP_LOCK_HOURS = 12;
+
+// Returns lock info for a team's next upcoming league match. The starting XI is
+// frozen from LINEUP_LOCK_HOURS before kickoff (so it can't be changed once
+// betting is in full swing). Returns { locked, kickoff, lockedAt, opponent } or
+// { locked:false } if no imminent match.
+function lineupLockInfo(db, teamId) {
+  // Earliest unplayed league fixture involving this team.
+  const row = db.prepare(`
+    SELECT ls.scheduled_date AS d,
+           COALESCE(ls.scheduled_time, l.match_start_time, '16:00') AS t,
+           ls.home_team_id, ls.away_team_id,
+           ht.name AS home_name, at.name AS away_name
+    FROM league_schedule ls
+    JOIN leagues l ON ls.league_id = l.id
+    JOIN teams ht ON ls.home_team_id = ht.id
+    JOIN teams at ON ls.away_team_id = at.id
+    WHERE l.status = 'active'
+      AND ls.match_id IS NULL
+      AND (ls.home_team_id = ? OR ls.away_team_id = ?)
+      AND ls.scheduled_date IS NOT NULL
+    ORDER BY ls.scheduled_date ASC, t ASC
+    LIMIT 1
+  `).get(teamId, teamId);
+
+  if (!row) return { locked: false };
+
+  const kickoff = new Date(`${row.d}T${(row.t || '16:00').slice(0, 5)}:00`);
+  if (isNaN(kickoff.getTime())) return { locked: false };
+
+  const lockedAt = new Date(kickoff.getTime() - LINEUP_LOCK_HOURS * 3600 * 1000);
+  const locked = Date.now() >= lockedAt.getTime();
+  const opponent = row.home_team_id == teamId ? row.away_name : row.home_name;
+
+  return {
+    locked,
+    kickoff: kickoff.toISOString(),
+    lockedAt: lockedAt.toISOString(),
+    opponent,
+    lock_hours: LINEUP_LOCK_HOURS,
+  };
+}
+
+// Guard for mutating routes: blocks coaches (not admins) within the lock window.
+function assertLineupUnlocked(req, db, teamId, res) {
+  if (req.user.role === 'admin') return true;
+  const info = lineupLockInfo(db, teamId);
+  if (info.locked) {
+    const ko = new Date(info.kickoff).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    res.status(403).json({
+      error: `Состав заблокирован за ${LINEUP_LOCK_HOURS} ч до матча (${info.opponent}, ${ko}). Изменить расстановку уже нельзя.`,
+      lineup_locked: true,
+      lock: info,
+    });
+    return false;
+  }
+  return true;
+}
+
 // ─── GET /:teamId — get current lineup ───────────────────────────────────────
 router.get('/:teamId', (req, res) => {
   const db = getDb();
@@ -42,7 +101,7 @@ router.get('/:teamId', (req, res) => {
     ORDER BY tl.slot ASC
   `).all(teamId);
 
-  res.json({ team_id: parseInt(teamId), team_name: team.name, lineup });
+  res.json({ team_id: parseInt(teamId), team_name: team.name, lineup, lock: lineupLockInfo(db, teamId) });
 });
 
 // ─── PUT /:teamId — set lineup ────────────────────────────────────────────────
@@ -56,6 +115,8 @@ router.put('/:teamId', requireAuth, (req, res) => {
 
   const team = db.prepare('SELECT id FROM teams WHERE id=?').get(teamId);
   if (!team) return res.status(404).json({ error: 'Team not found' });
+
+  if (!assertLineupUnlocked(req, db, teamId, res)) return;
 
   const { lineup } = req.body;
   if (!Array.isArray(lineup)) {
@@ -127,6 +188,8 @@ router.post('/:teamId/auto', requireAuth, (req, res) => {
 
   const team = db.prepare('SELECT id FROM teams WHERE id=?').get(teamId);
   if (!team) return res.status(404).json({ error: 'Team not found' });
+
+  if (!assertLineupUnlocked(req, db, teamId, res)) return;
 
   // Get all active non-injured players
   const players = db.prepare(`
@@ -315,6 +378,7 @@ router.post('/:teamId/presets/:presetId/apply', requireAuth, (req, res) => {
   const db = getDb();
   const { teamId, presetId } = req.params;
   if (!canManageTeam(req, db, teamId)) return res.status(403).json({ error: 'Forbidden' });
+  if (!assertLineupUnlocked(req, db, teamId, res)) return;
   const preset = db.prepare('SELECT id FROM lineup_presets WHERE id=? AND team_id=?').get(presetId, teamId);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
