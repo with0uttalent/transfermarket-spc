@@ -43,11 +43,47 @@
     return String(Math.round(n));
   }
 
+  // Ensure the socket.io client global `io` exists. If the server-served copy
+  // at /socket.io/socket.io.js didn't load (e.g. nginx not proxying that path,
+  // or socket.io not installed/restarted), fall back to a CDN copy.
+  let _ioLoading = null;
+  function ensureIo() {
+    if (typeof io !== 'undefined') return Promise.resolve(true);
+    if (_ioLoading) return _ioLoading;
+    const SOURCES = [
+      '/socket.io/socket.io.js',
+      'https://cdn.socket.io/4.8.1/socket.io.min.js',
+      'https://cdn.jsdelivr.net/npm/socket.io-client@4.8.1/dist/socket.io.min.js',
+    ];
+    _ioLoading = new Promise((resolve) => {
+      let i = 0;
+      const tryNext = () => {
+        if (typeof io !== 'undefined') return resolve(true);
+        if (i >= SOURCES.length) return resolve(false);
+        const src = SOURCES[i++];
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = true;
+        s.onload = () => resolve(typeof io !== 'undefined' ? true : (tryNext(), undefined));
+        s.onerror = tryNext;
+        document.head.appendChild(s);
+      };
+      tryNext();
+    });
+    return _ioLoading;
+  }
+
   // ── socket lifecycle ───────────────────────────────────────────────────────
-  function connect() {
+  async function connect() {
     if (socket && socket.connected) return socket;
-    if (typeof io === 'undefined') { toast('Socket.io не загружен', 'error'); return null; }
-    socket = io({ auth: { token: State.token || '' } });
+    const ok = await ensureIo();
+    if (!ok || typeof io === 'undefined') {
+      toast('Не удалось загрузить покер-движок (socket.io). Проверьте подключение.', 'error');
+      return null;
+    }
+    if (socket && socket.connected) return socket;
+    socket = io({ auth: { token: State.token || '' }, transports: ['websocket', 'polling'] });
+    socket.on('connect_error', (err) => { toast('Покер: нет связи с сервером (' + (err.message || 'ошибка') + ')', 'error'); });
 
     socket.on('connect', () => { socket.emit('lobby:join'); });
     socket.on('lobby:tables', tables => { if (lobbyData) lobbyData.tables = tables; if (view === 'lobby') renderLobby(); });
@@ -77,7 +113,7 @@
     }
     el.innerHTML = `<div class="empty-state"><p>Подключение к покер-серверу…</p></div>`;
     try { lobbyData = await GET('/poker'); } catch (e) { lobbyData = { tables: [], room: [] }; }
-    connect();
+    await connect();
     view = 'lobby';
     renderLobby();
   }
@@ -128,13 +164,14 @@
       </div>`;
   }
 
-  function enterTable(tableId) {
+  async function enterTable(tableId) {
     currentTableId = tableId;
     view = 'table';
     tableState = null;
-    connect();
-    socket.emit('table:watch', { tableId });
     appEl.innerHTML = `<div class="empty-state"><p>Загрузка стола…</p></div>`;
+    const s = await connect();
+    if (!s) return;
+    s.emit('table:watch', { tableId });
   }
 
   // ── TABLE ──────────────────────────────────────────────────────────────────
