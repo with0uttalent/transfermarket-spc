@@ -1446,6 +1446,10 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .goal-banner-pattern-dots { background-image: radial-gradient(var(--pat-color) 3px, transparent 3px); background-size: 18px 18px; }
 .goal-banner-pattern-chevrons { background: repeating-linear-gradient(120deg, var(--pat-color) 0, var(--pat-color) 4px, transparent 4px, transparent 14px), repeating-linear-gradient(60deg, var(--pat-color) 0, var(--pat-color) 4px, transparent 4px, transparent 14px); }
 .goal-banner { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, 92vw); background: linear-gradient(160deg, #c0392b 0%, #e74c3c 45%, #f39c12 100%); color: #fff; border-radius: 20px; z-index: 9999; box-shadow: 0 16px 60px rgba(0,0,0,.65), 0 0 0 3px rgba(255,255,255,.15); overflow: hidden; animation: goal-banner-in .5s cubic-bezier(.34,1.56,.64,1) forwards; pointer-events: none; text-shadow: 0 2px 6px rgba(0,0,0,.4); }
+.goal-banner:has(.goal-banner-body--with-scorer) { width: min(680px, 94vw); }
+.goal-banner-body { position: relative; z-index: 1; }
+.goal-banner-body--with-scorer { display: flex; align-items: stretch; }
+.goal-banner-body--with-scorer .goal-banner-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .goal-banner-hide { animation: goal-banner-out .5s ease forwards; }
 .goal-banner-custom-img::before { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 0; border-radius: inherit; }
 .goal-banner-top { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 22px 24px 14px; position: relative; z-index: 1; }
@@ -1455,7 +1459,8 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .goal-banner-team { font-size: 26px; font-weight: 900; letter-spacing: .5px; }
 .goal-banner-marquee-wrap { overflow: hidden; border-top: 1px solid rgba(255,255,255,.2); border-bottom: 1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.2); padding: 8px 0; }
 .goal-banner-marquee { display: inline-block; white-space: nowrap; font-size: 20px; font-weight: 900; letter-spacing: 2px; animation: goal-marquee 3s linear infinite; }
-.goal-banner-scorer { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; font-weight: 700; padding: 12px 24px 18px; opacity: .95; letter-spacing: .5px; }
+.goal-banner-scorer { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; flex: 0 0 auto; width: 190px; padding: 22px 18px; background: rgba(0,0,0,.28); border-left: 2px solid rgba(255,255,255,.25); }
+.goal-banner-scorer-name { font-size: 19px; font-weight: 800; letter-spacing: .3px; text-align: center; line-height: 1.2; text-shadow: 0 2px 6px rgba(0,0,0,.55); }
 
 /* ─── Team Profile — 3-column grid ──────────────────────────── */
 .tp-title { font-size: 26px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
@@ -1681,8 +1686,8 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .about-text-card { margin-top: 0; }
 
 /* ── Goal banner extras ───────────────────────────────────── */
-.goal-banner-scorer-av { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,.5); background: rgba(0,0,0,.2); flex-shrink: 0; }
-.goal-banner-scorer-ini { width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; background: rgba(255,255,255,.25); border: 2px solid rgba(255,255,255,.5); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900; }
+.goal-banner-scorer-av { width: 104px; height: 104px; border-radius: 50%; object-fit: cover; border: 3px solid rgba(255,255,255,.65); background: rgba(0,0,0,.2); flex-shrink: 0; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+.goal-banner-scorer-ini { width: 104px; height: 104px; border-radius: 50%; flex-shrink: 0; background: rgba(255,255,255,.25); border: 3px solid rgba(255,255,255,.65); display: flex; align-items: center; justify-content: center; font-size: 46px; font-weight: 900; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
 @keyframes sb-flash { 0%,100% { box-shadow: none; } 30% { box-shadow: 0 0 0 6px rgba(241,196,15,.7), 0 0 40px rgba(241,196,15,.4); } 60% { box-shadow: 0 0 0 12px rgba(231,76,60,.4), 0 0 60px rgba(231,76,60,.3); } }
 .sb-goal-flash { animation: sb-flash .7s ease; }
 .ev-buildup { opacity: .6; font-size: 12px; }

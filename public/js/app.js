@@ -3180,21 +3180,25 @@ function triggerGoalCelebration(side, match, ev) {
 
   banner.innerHTML = `
     ${patternHtml}
-    <div class="goal-banner-top">
-      ${logoHtml}
-      <span class="goal-banner-team">${escHtml(teamName)}</span>
+    <div class="goal-banner-body${scorerName ? ' goal-banner-body--with-scorer' : ''}">
+      <div class="goal-banner-main">
+        <div class="goal-banner-top">
+          ${logoHtml}
+          <span class="goal-banner-team">${escHtml(teamName)}</span>
+        </div>
+        <div class="goal-banner-marquee-wrap">
+          <div class="goal-banner-marquee">${escHtml(marqueeText)}</div>
+        </div>
+      </div>
+      ${scorerName ? `
+      <div class="goal-banner-scorer">
+        ${scorerImg
+          ? `<img src="${escHtml(scorerImg)}" class="goal-banner-scorer-av" onerror="this.style.display='none'">`
+          : `<span class="goal-banner-scorer-ini">${escHtml(scorerName.charAt(0))}</span>`
+        }
+        <span class="goal-banner-scorer-name">${escHtml(scorerName)}</span>
+      </div>` : ''}
     </div>
-    <div class="goal-banner-marquee-wrap">
-      <div class="goal-banner-marquee">${escHtml(marqueeText)}</div>
-    </div>
-    ${scorerName ? `
-    <div class="goal-banner-scorer">
-      ${scorerImg
-        ? `<img src="${escHtml(scorerImg)}" class="goal-banner-scorer-av" onerror="this.style.display='none'">`
-        : `<span class="goal-banner-scorer-ini">${escHtml(scorerName.charAt(0))}</span>`
-      }
-      <span>⚽ ${escHtml(scorerName)}</span>
-    </div>` : ''}
   `;
   document.body.appendChild(banner);
   setTimeout(() => { banner.classList.add('goal-banner-hide'); setTimeout(() => banner.remove(), 600); }, 3000);
