@@ -31,12 +31,60 @@
       return `<div class="pk-card pk-card-back${opts.small ? ' pk-card-sm' : ''}"><div class="pk-card-back-inner"></div></div>`;
     }
     const s = SUIT[card.suit] || SUIT.s;
-    const hl = opts.highlight ? ' pk-card-hl' : (opts.dim ? ' pk-card-dim' : '');
+    const hl = opts.highlight ? ' pk-card-hl' : opts.liveHl ? ' pk-card-live-hl' : (opts.dim ? ' pk-card-dim' : '');
     return `<div class="pk-card ${s.cls}${opts.small ? ' pk-card-sm' : ''}${opts.deal ? ' pk-card-deal' : ''}${hl}">
       <div class="pk-card-corner tl"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
       <div class="pk-card-center">${s.sym}</div>
       <div class="pk-card-corner br"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
     </div>`;
+  }
+
+  // ── Client-side hand evaluator (for live combo display) ───────────────────
+  function _combos5(arr) {
+    const res = [], n = arr.length;
+    for (let a = 0; a < n-4; a++)
+    for (let b = a+1; b < n-3; b++)
+    for (let c = b+1; c < n-2; c++)
+    for (let d = c+1; d < n-1; d++)
+    for (let e = d+1; e < n; e++)
+      res.push([arr[a], arr[b], arr[c], arr[d], arr[e]]);
+    return res;
+  }
+
+  function _evalFive(cards) {
+    const ranks = cards.map(c => c.rank).sort((a, b) => b - a);
+    const suits = cards.map(c => c.suit);
+    const isFlush = suits.every(s => s === suits[0]);
+    const uniq = [...new Set(ranks)];
+    const isStraight = (uniq.length === 5 && ranks[0] - ranks[4] === 4) ||
+      (ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2);
+    const cnt = {};
+    for (const r of ranks) cnt[r] = (cnt[r] || 0) + 1;
+    const groups = Object.entries(cnt).map(([r, c]) => [+r, c]).sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+    const top = groups[0][1], sec = groups[1] ? groups[1][1] : 0;
+    if (isFlush && isStraight) return ranks[0] === 14 && ranks[1] === 13 ? 9 : 8;
+    if (top === 4) return 7;
+    if (top === 3 && sec === 2) return 6;
+    if (isFlush) return 5;
+    if (isStraight) return 4;
+    if (top === 3) return 3;
+    if (top === 2 && sec === 2) return 2;
+    if (top === 2) return 1;
+    return 0;
+  }
+
+  const HAND_NAMES_RU = ['Старшая карта','Пара','Две пары','Тройка','Стрит','Флеш','Фулл-хаус','Каре','Стрит-флеш','Флеш-рояль'];
+
+  function evalCurrentHand(holeCards, communityCards) {
+    const visible = [...(holeCards || []), ...(communityCards || [])].filter(c => c && !c.hidden);
+    if (visible.length < 2) return null;
+    const allCombos = visible.length <= 5 ? [visible] : _combos5(visible);
+    let bestRank = -1, bestCards = null;
+    for (const combo of allCombos) {
+      const r = _evalFive(combo);
+      if (r > bestRank) { bestRank = r; bestCards = combo; }
+    }
+    return bestCards ? { rank: bestRank, name: HAND_NAMES_RU[bestRank], cards: bestCards } : null;
   }
 
   // Build the set of card keys forming the winning combination(s) at showdown.
@@ -221,6 +269,19 @@
       return comboKeys.has(cardKey(c)) ? { small, highlight: true } : { small, dim: true };
     };
 
+    // Live combination — shows the player's current best hand during betting rounds
+    const activeBetting = iAmSeated && mySeat && !mySeat.hasFolded &&
+      ['preflop','flop','turn','river'].includes(st.state);
+    let liveHand = null, liveKeys = null;
+    if (activeBetting && !comboKeys) {
+      const myCards = (mySeat.cards || []).filter(c => c && !c.hidden);
+      if (myCards.length === 2) {
+        liveHand = evalCurrentHand(myCards, st.community || []);
+        if (liveHand) liveKeys = new Set(liveHand.cards.map(cardKey));
+      }
+    }
+    const liveHlOpt = (c, small) => liveKeys && liveKeys.has(cardKey(c)) ? { small, liveHl: true } : { small };
+
     // Seats
     const seatsHtml = SEAT_POS.slice(0, st.maxSeats).map((pos, i) => {
       const seat = st.seats[i];
@@ -232,9 +293,9 @@
         </div>`;
       }
       const winner = st.lastResult && st.lastResult.payouts && st.lastResult.payouts[i] > 0;
-      // Only highlight hole cards for revealed winners; everyone else stays plain.
+      // Showdown: highlight winner combo. Live: highlight own combo. Others: plain.
       const holeCards = (seat.cards || []).map(c =>
-        cardHtml(c, (comboKeys && winner) ? hlOpt(c, true) : { small: true })
+        cardHtml(c, (comboKeys && winner) ? hlOpt(c, true) : seat.isMe && liveKeys ? liveHlOpt(c, true) : { small: true })
       ).join('');
       return `<div class="pk-seat pk-seat-filled${isActing ? ' pk-seat-acting' : ''}${seat.hasFolded ? ' pk-seat-folded' : ''}${winner ? ' pk-seat-winner' : ''}" style="left:${pos.x}%;top:${pos.y}%">
         ${isDealer ? '<span class="pk-dealer-btn">D</span>' : ''}
@@ -251,7 +312,7 @@
     }).join('');
 
     const community = st.community.map(c =>
-      cardHtml(c, comboKeys ? { deal: true, ...hlOpt(c, false) } : { deal: true })
+      cardHtml(c, comboKeys ? { deal: true, ...hlOpt(c, false) } : liveKeys ? { deal: true, ...liveHlOpt(c, false) } : { deal: true })
     ).join('') || '<div class="pk-board-placeholder">Карты стола появятся здесь</div>';
 
     // Result banner
@@ -262,6 +323,11 @@
       resultBanner = `<div class="pk-result-banner">🏆 ${wins} забирает ${fmtChips((r.pots || []).reduce((a, p) => a + p.amount, 0))} 🪙</div>`;
     }
 
+    // Live hand badge
+    const liveHandBadge = liveHand
+      ? `<div class="pk-live-hand-badge"><span class="pk-live-hand-icon">🃏</span> ${escHtml(liveHand.name)}</div>`
+      : '';
+
     // Action controls
     let controls = '';
     if (iAmSeated) {
@@ -270,6 +336,7 @@
         const minRaiseTo = st.currentBet + st.minRaise;
         const maxTo = mySeat.betThisRound + mySeat.chips;
         controls = `
+          ${liveHandBadge}
           <div class="pk-actions">
             <button class="pk-act pk-act-fold" onclick="PokerUI._act('fold')">Фолд</button>
             ${toCall > 0
@@ -284,7 +351,7 @@
             <button class="pk-act pk-act-allin" onclick="PokerUI._act('allin')">ALL-IN</button>
           </div>`;
       } else {
-        controls = `<div class="pk-actions-wait">${st.state === 'waiting' ? 'Ждём начала раздачи…' : 'Ход другого игрока…'}
+        controls = `${liveHandBadge}<div class="pk-actions-wait">${st.state === 'waiting' ? 'Ждём начала раздачи…' : 'Ход другого игрока…'}
           <button class="pk-leave-btn" onclick="PokerUI._leaveTable()">Встать из-за стола</button></div>`;
       }
     } else {
