@@ -14,19 +14,19 @@
   let lobbyData = null;
   let mySeatChips = null;      // chips when I'm seated (for bet slider bounds)
 
-  // ── Football-themed suits ──────────────────────────────────────────────────
+  // ── Standard suits ─────────────────────────────────────────────────────────
   const SUIT = {
-    s: { sym: '⚽', cls: 'suit-dark',  name: 'Мяч' },
-    c: { sym: '👟', cls: 'suit-dark',  name: 'Бутса' },
-    h: { sym: '🏆', cls: 'suit-red',   name: 'Кубок' },
-    d: { sym: '🥅', cls: 'suit-red',   name: 'Ворота' },
+    s: { sym: '♠', cls: 'suit-dark', name: 'Пики' },
+    c: { sym: '♣', cls: 'suit-dark', name: 'Трефы' },
+    h: { sym: '♥', cls: 'suit-red',  name: 'Червы' },
+    d: { sym: '♦', cls: 'suit-red',  name: 'Бубны' },
   };
   const RANK_LABEL = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
   function rankLabel(r) { return RANK_LABEL[r] || String(r); }
 
   function cardHtml(card, opts = {}) {
     if (!card || card.hidden) {
-      return `<div class="pk-card pk-card-back${opts.small ? ' pk-card-sm' : ''}"><div class="pk-card-back-inner">⚽</div></div>`;
+      return `<div class="pk-card pk-card-back${opts.small ? ' pk-card-sm' : ''}"><div class="pk-card-back-inner"></div></div>`;
     }
     const s = SUIT[card.suit] || SUIT.s;
     return `<div class="pk-card ${s.cls}${opts.small ? ' pk-card-sm' : ''}${opts.deal ? ' pk-card-deal' : ''}">
