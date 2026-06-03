@@ -384,11 +384,15 @@ router.post('/:teamId/presets', requireAuth, (req, res) => {
   const currentLineup = db.prepare('SELECT * FROM team_lineups WHERE team_id=?').all(teamId);
   if (!currentLineup.length) return res.status(400).json({ error: 'Lineup is empty' });
 
+  const currentInfirmary = db.prepare('SELECT player_id FROM player_infirmary WHERE team_id=?').all(teamId);
+
   const save = db.transaction(() => {
     const preset = db.prepare('INSERT INTO lineup_presets (team_id, name) VALUES (?,?)').run(teamId, name);
     const pid = preset.lastInsertRowid;
     const ins = db.prepare('INSERT INTO lineup_preset_slots (preset_id, player_id, slot, position_override, priority_sub) VALUES (?,?,?,?,?)');
     for (const s of currentLineup) ins.run(pid, s.player_id, s.slot, s.position_override || null, s.priority_sub || 0);
+    const insInf = db.prepare('INSERT INTO lineup_preset_infirmary (preset_id, player_id) VALUES (?,?)');
+    for (const r of currentInfirmary) insInf.run(pid, r.player_id);
     return pid;
   });
 
@@ -430,23 +434,26 @@ router.post('/:teamId/presets/:presetId/apply', requireAuth, (req, res) => {
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
   const slots = db.prepare('SELECT * FROM lineup_preset_slots WHERE preset_id=?').all(presetId);
+  const presetInfirmary = db.prepare('SELECT player_id FROM lineup_preset_infirmary WHERE preset_id=?').all(presetId);
 
-  // Only keep entries for players still on this team, active, and not in the infirmary
+  // Only restore players still on this team and active
   const teamPlayerIds = new Set(
     db.prepare("SELECT id FROM players WHERE team_id=? AND status='active'").all(teamId).map(p => p.id)
   );
-  const infirmaryIds = new Set(
-    db.prepare('SELECT player_id FROM player_infirmary WHERE team_id=?').all(teamId).map(p => p.player_id)
-  );
+  const presetInfirmaryIds = new Set(presetInfirmary.map(r => r.player_id).filter(id => teamPlayerIds.has(id)));
 
   const apply = db.transaction(() => {
+    // Restore lineup
     db.prepare('DELETE FROM team_lineups WHERE team_id=?').run(teamId);
     const ins = db.prepare('INSERT INTO team_lineups (team_id, player_id, slot, position_override, priority_sub) VALUES (?,?,?,?,?)');
     for (const s of slots) {
       if (!teamPlayerIds.has(s.player_id)) continue;
-      if (infirmaryIds.has(s.player_id)) continue; // skip resting players
       ins.run(teamId, s.player_id, s.slot, s.position_override || null, s.priority_sub || 0);
     }
+    // Restore infirmary: clear current and apply preset's infirmary
+    db.prepare('DELETE FROM player_infirmary WHERE team_id=?').run(teamId);
+    const insInf = db.prepare('INSERT OR IGNORE INTO player_infirmary (player_id, team_id) VALUES (?,?)');
+    for (const pid of presetInfirmaryIds) insInf.run(pid, teamId);
   });
   apply();
 
@@ -462,7 +469,13 @@ router.post('/:teamId/presets/:presetId/apply', requireAuth, (req, res) => {
     WHERE tl.team_id = ? ORDER BY tl.slot ASC
   `).all(teamId);
 
-  res.json({ team_id: parseInt(teamId), lineup: updatedLineup });
+  const updatedInfirmary = db.prepare(`
+    SELECT pi2.player_id, p.name AS player_name, p.position, p.image_url, COALESCE(p.stamina,100) AS stamina
+    FROM player_infirmary pi2 JOIN players p ON pi2.player_id = p.id
+    WHERE pi2.team_id = ?
+  `).all(teamId);
+
+  res.json({ team_id: parseInt(teamId), lineup: updatedLineup, infirmary: updatedInfirmary });
 });
 
 module.exports = router;

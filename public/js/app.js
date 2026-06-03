@@ -268,18 +268,19 @@ function renderStaminaWidget(lineupSlots, allPlayers) {
   const staminas = starterIds.map(id => playerMap[id]?.stamina ?? 100);
   const avg = Math.round(staminas.reduce((a, b) => a + b, 0) / staminas.length);
 
-  let color, icon, label;
-  if (avg >= 80) {
-    color = '#27ae60'; icon = '💪'; label = 'Штрафов нет';
-  } else if (avg >= 60) {
-    color = '#f39c12'; icon = '⚡'; label = `Штраф −${Math.round((1 - (0.65 + avg/80*0.35))*100)}%`;
-  } else {
-    color = '#e74c3c'; icon = '🔴'; label = `Штраф −${Math.round((1 - (0.65 + avg/80*0.35))*100)}%`;
-  }
-  const penalty = avg < 80 ? `<span style="font-size:11px;color:${color};margin-left:4px">${label}</span>` : `<span style="font-size:11px;color:${color};margin-left:4px">${label}</span>`;
-  return `<span title="Средняя стамина стартового состава (11 игроков). Штраф к силе команды при ср. стамине < 80."
-    style="display:inline-flex;align-items:center;gap:4px;font-size:12px;background:rgba(0,0,0,.25);padding:3px 8px;border-radius:12px">
-    ${icon} <span style="color:${color};font-weight:600">${avg}%</span>${penalty}
+  // Badge background matches OVR badge colour scale; text uses same shadow trick as
+  // player names on the pitch so it stays readable in both light and dark themes.
+  const bg   = avg >= 80 ? '#27ae60' : avg >= 60 ? '#f39c12' : '#e74c3c';
+  const debuff = avg < 80 ? Math.round((1 - (0.65 + avg / 80 * 0.35)) * 100) : 0;
+  const label  = debuff > 0 ? `−${debuff}% сила` : 'Форма OK';
+  const shadow = '0 1px 0 rgba(0,0,0,.9), 1px 0 0 rgba(0,0,0,.7), -1px 0 0 rgba(0,0,0,.7), 0 -1px 0 rgba(0,0,0,.5)';
+  return `<span title="Средняя стамина стартового состава. Штраф к силе команды при ср. стамине < 80."
+    style="display:inline-flex;align-items:center;gap:5px;background:${bg};
+           padding:3px 9px 3px 7px;border-radius:20px;
+           box-shadow:0 1px 4px rgba(0,0,0,.55),0 0 0 1.5px rgba(0,0,0,.25);">
+    <span style="font-size:13px;line-height:1">⚡</span>
+    <span style="font-size:12px;font-weight:900;color:#fff;text-shadow:${shadow}">${avg}%</span>
+    <span style="font-size:11px;font-weight:600;color:rgba(255,255,255,.9);text-shadow:${shadow}">${label}</span>
   </span>`;
 }
 

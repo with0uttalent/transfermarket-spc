@@ -511,6 +511,12 @@ function initSchema() {
       priority_sub INTEGER DEFAULT 0,
       FOREIGN KEY (preset_id) REFERENCES lineup_presets(id) ON DELETE CASCADE
     )`,
+    `CREATE TABLE IF NOT EXISTS lineup_preset_infirmary (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      preset_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      FOREIGN KEY (preset_id) REFERENCES lineup_presets(id) ON DELETE CASCADE
+    )`,
     `CREATE TABLE IF NOT EXISTS bets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       match_id INTEGER NOT NULL,
