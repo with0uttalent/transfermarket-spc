@@ -258,6 +258,31 @@ function ovrBadge(ovr, assignedZone, naturalZone) {
   return `<span style="${style}" title="${outOfPos?'Не на своей позиции (-штраф)':'Рейтинг'}">${ovr}${outOfPos?'⚠':''}</span>`;
 }
 
+// Average stamina widget for the starting XI (slots 1-11).
+// Shows avg stamina + penalty warning if avg < 80 (matches staminaFactor threshold).
+function renderStaminaWidget(lineupSlots, allPlayers) {
+  const starterIds = (lineupSlots || []).filter(s => s.slot >= 1 && s.slot <= 11).map(s => s.player_id);
+  if (!starterIds.length) return '';
+  const playerMap = {};
+  for (const p of (allPlayers || [])) playerMap[p.id] = p;
+  const staminas = starterIds.map(id => playerMap[id]?.stamina ?? 100);
+  const avg = Math.round(staminas.reduce((a, b) => a + b, 0) / staminas.length);
+
+  let color, icon, label;
+  if (avg >= 80) {
+    color = '#27ae60'; icon = '💪'; label = 'Штрафов нет';
+  } else if (avg >= 60) {
+    color = '#f39c12'; icon = '⚡'; label = `Штраф −${Math.round((1 - (0.65 + avg/80*0.35))*100)}%`;
+  } else {
+    color = '#e74c3c'; icon = '🔴'; label = `Штраф −${Math.round((1 - (0.65 + avg/80*0.35))*100)}%`;
+  }
+  const penalty = avg < 80 ? `<span style="font-size:11px;color:${color};margin-left:4px">${label}</span>` : `<span style="font-size:11px;color:${color};margin-left:4px">${label}</span>`;
+  return `<span title="Средняя стамина стартового состава (11 игроков). Штраф к силе команды при ср. стамине < 80."
+    style="display:inline-flex;align-items:center;gap:4px;font-size:12px;background:rgba(0,0,0,.25);padding:3px 8px;border-radius:12px">
+    ${icon} <span style="color:${color};font-weight:600">${avg}%</span>${penalty}
+  </span>`;
+}
+
 function staminaBar(stamina, compact = false) {
   const s = stamina ?? 100;
   const color = s >= 70 ? '#27ae60' : s >= 40 ? '#f39c12' : '#e74c3c';
@@ -4457,6 +4482,7 @@ function renderLineupEditor(team, lineup) {
       <div class="lineup-save-bar" style="flex-wrap:wrap;gap:8px">
         <span>Схема: <strong id="pb-formation-label">${computeFormation(slots)}</strong></span>
         <span id="pb-starter-count" style="font-size:12px;color:var(--text-muted)">${starterCount}/11 основных</span>
+        <span id="pb-stamina-widget">${renderStaminaWidget(slots, allPlayers)}</span>
         ${locked?'':`<button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" onclick="autoLineup(${team.id})">Авто-подбор</button>`}
       </div>
       ${locked?'':`<div class="lineup-presets-bar">
@@ -4976,6 +5002,7 @@ async function refreshPitchEditor() {
     if ($('pb-bench-section')) $('pb-bench-section').innerHTML = renderBenchSection(_pitchState.lineup, _pitchState.players, tid);
     if ($('pb-starter-count')) $('pb-starter-count').textContent = `${starters.length}/11 основных`;
     if ($('pb-formation-label')) $('pb-formation-label').textContent = computeFormation(_pitchState.lineup);
+    if ($('pb-stamina-widget')) $('pb-stamina-widget').innerHTML = renderStaminaWidget(_pitchState.lineup, _pitchState.players);
     if ($('pb-reserve-count')) $('pb-reserve-count').textContent = `${reserves.length} запасных`;
   } catch(e) { toast(e.message,'error'); }
 }

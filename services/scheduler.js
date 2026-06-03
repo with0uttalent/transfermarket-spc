@@ -141,9 +141,15 @@ function applyMatchResults(matchId, homeTeamId, awayTeamId, result) {
     const playedSet = new Set((playedIds || Object.keys(playerStats)).map(Number));
     for (const tid of [homeTeamId, awayTeamId]) {
       const teamPlayers = db.prepare('SELECT id FROM players WHERE team_id=?').all(tid);
+      // Players manually resting in the infirmary recover at double rate (+20 per match-tick).
+      const infirmaryIds = new Set(
+        db.prepare('SELECT player_id FROM player_infirmary WHERE team_id=?').all(tid).map(r => r.player_id)
+      );
       for (const p of teamPlayers) {
         if (playedSet.has(p.id)) {
           db.prepare('UPDATE players SET stamina = MAX(0, COALESCE(stamina, 100) - 15) WHERE id=?').run(p.id);
+        } else if (infirmaryIds.has(p.id)) {
+          db.prepare('UPDATE players SET stamina = MIN(100, COALESCE(stamina, 100) + 20) WHERE id=?').run(p.id);
         } else {
           db.prepare('UPDATE players SET stamina = MIN(100, COALESCE(stamina, 100) + 10) WHERE id=?').run(p.id);
         }

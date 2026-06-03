@@ -431,9 +431,12 @@ router.post('/:teamId/presets/:presetId/apply', requireAuth, (req, res) => {
 
   const slots = db.prepare('SELECT * FROM lineup_preset_slots WHERE preset_id=?').all(presetId);
 
-  // Only keep entries for players still on this team and active
+  // Only keep entries for players still on this team, active, and not in the infirmary
   const teamPlayerIds = new Set(
     db.prepare("SELECT id FROM players WHERE team_id=? AND status='active'").all(teamId).map(p => p.id)
+  );
+  const infirmaryIds = new Set(
+    db.prepare('SELECT player_id FROM player_infirmary WHERE team_id=?').all(teamId).map(p => p.player_id)
   );
 
   const apply = db.transaction(() => {
@@ -441,6 +444,7 @@ router.post('/:teamId/presets/:presetId/apply', requireAuth, (req, res) => {
     const ins = db.prepare('INSERT INTO team_lineups (team_id, player_id, slot, position_override, priority_sub) VALUES (?,?,?,?,?)');
     for (const s of slots) {
       if (!teamPlayerIds.has(s.player_id)) continue;
+      if (infirmaryIds.has(s.player_id)) continue; // skip resting players
       ins.run(teamId, s.player_id, s.slot, s.position_override || null, s.priority_sub || 0);
     }
   });
