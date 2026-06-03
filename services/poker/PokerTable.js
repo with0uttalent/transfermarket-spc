@@ -384,6 +384,7 @@ class PokerTable {
       revealed: evaluated.map(e => ({
         pos: e.pos, coachId: e.seat.coachId, name: e.seat.name,
         cards: e.seat.cards, hand: e.eval.name,
+        combo: e.eval.cards, // the 5 cards that make this player's best hand
       })),
     };
     for (const pr of potResults) {

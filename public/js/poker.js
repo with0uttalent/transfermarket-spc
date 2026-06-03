@@ -24,16 +24,35 @@
   const RANK_LABEL = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
   function rankLabel(r) { return RANK_LABEL[r] || String(r); }
 
+  const cardKey = c => c ? c.rank + c.suit : '';
+
   function cardHtml(card, opts = {}) {
     if (!card || card.hidden) {
       return `<div class="pk-card pk-card-back${opts.small ? ' pk-card-sm' : ''}"><div class="pk-card-back-inner"></div></div>`;
     }
     const s = SUIT[card.suit] || SUIT.s;
-    return `<div class="pk-card ${s.cls}${opts.small ? ' pk-card-sm' : ''}${opts.deal ? ' pk-card-deal' : ''}">
+    const hl = opts.highlight ? ' pk-card-hl' : (opts.dim ? ' pk-card-dim' : '');
+    return `<div class="pk-card ${s.cls}${opts.small ? ' pk-card-sm' : ''}${opts.deal ? ' pk-card-deal' : ''}${hl}">
       <div class="pk-card-corner tl"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
       <div class="pk-card-center">${s.sym}</div>
       <div class="pk-card-corner br"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
     </div>`;
+  }
+
+  // Build the set of card keys forming the winning combination(s) at showdown.
+  function winningComboKeys(st) {
+    if (!st || !st.lastResult) return null;
+    const r = st.lastResult;
+    if (!r.revealed || !r.pots) return null;
+    const winnerPos = new Set();
+    for (const p of r.pots) for (const w of (p.winners || [])) winnerPos.add(w.pos);
+    const keys = new Set();
+    for (const rv of r.revealed) {
+      if (winnerPos.has(rv.pos) && rv.combo) {
+        for (const c of rv.combo) keys.add(cardKey(c));
+      }
+    }
+    return keys.size ? keys : null;
   }
 
   function fmtChips(n) {
@@ -195,6 +214,13 @@
     const iAmSeated = !!mySeat;
     const myTurn = iAmSeated && st.actingPos === mySeat.pos && st.state !== 'waiting' && st.state !== 'showdown';
 
+    // Winning combination highlight (only while a result is on screen)
+    const comboKeys = winningComboKeys(st);
+    const hlOpt = (c, small) => {
+      if (!comboKeys) return { small };
+      return comboKeys.has(cardKey(c)) ? { small, highlight: true } : { small, dim: true };
+    };
+
     // Seats
     const seatsHtml = SEAT_POS.slice(0, st.maxSeats).map((pos, i) => {
       const seat = st.seats[i];
@@ -205,8 +231,11 @@
           ${iAmSeated ? `<div class="pk-seat-open">место</div>` : `<button class="pk-seat-sit" onclick="PokerUI._openSitModal(${i})">＋ Сесть</button>`}
         </div>`;
       }
-      const holeCards = (seat.cards || []).map(c => cardHtml(c, { small: true })).join('');
       const winner = st.lastResult && st.lastResult.payouts && st.lastResult.payouts[i] > 0;
+      // Only highlight hole cards for revealed winners; everyone else stays plain.
+      const holeCards = (seat.cards || []).map(c =>
+        cardHtml(c, (comboKeys && winner) ? hlOpt(c, true) : { small: true })
+      ).join('');
       return `<div class="pk-seat pk-seat-filled${isActing ? ' pk-seat-acting' : ''}${seat.hasFolded ? ' pk-seat-folded' : ''}${winner ? ' pk-seat-winner' : ''}" style="left:${pos.x}%;top:${pos.y}%">
         ${isDealer ? '<span class="pk-dealer-btn">D</span>' : ''}
         <div class="pk-seat-cards">${holeCards}</div>
@@ -221,8 +250,9 @@
       </div>`;
     }).join('');
 
-    const community = st.community.map(c => cardHtml(c, { deal: true })).join('') ||
-      '<div class="pk-board-placeholder">Карты стола появятся здесь</div>';
+    const community = st.community.map(c =>
+      cardHtml(c, comboKeys ? { deal: true, ...hlOpt(c, false) } : { deal: true })
+    ).join('') || '<div class="pk-board-placeholder">Карты стола появятся здесь</div>';
 
     // Result banner
     let resultBanner = '';
