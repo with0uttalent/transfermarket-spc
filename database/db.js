@@ -517,6 +517,24 @@ function initSchema() {
       player_id INTEGER NOT NULL,
       FOREIGN KEY (preset_id) REFERENCES lineup_presets(id) ON DELETE CASCADE
     )`,
+    `CREATE TABLE IF NOT EXISTS poker_player_locks (
+      player_id INTEGER PRIMARY KEY,
+      coach_id INTEGER NOT NULL,
+      table_id TEXT NOT NULL,
+      locked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS poker_settlements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      stake_type TEXT NOT NULL,
+      chips_in REAL DEFAULT 0,
+      chips_out REAL DEFAULT 0,
+      delta REAL DEFAULT 0,
+      detail TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`,
     `CREATE TABLE IF NOT EXISTS bets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       match_id INTEGER NOT NULL,

@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 
@@ -56,14 +57,27 @@ app.use('/api/free-agents',      require('./routes/free-agents'));
 app.use('/api/auctions',         require('./routes/auctions'));
 app.use('/api/notifications',    require('./routes/notifications'));
 app.use('/api/bets',             require('./routes/bets'));
+app.use('/api/poker',            require('./routes/poker'));
 
 // SPA fallback
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Wrap express in an HTTP server so socket.io can share the port.
+const server = http.createServer(app);
+
+// Real-time poker (WebSocket)
+try {
+  const { initPokerSocket } = require('./services/poker/pokerSocket');
+  initPokerSocket(server);
+  console.log('Poker WebSocket initialized');
+} catch (e) {
+  console.warn('Poker socket failed to start:', e.message);
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`TransferMarket running on http://localhost:${PORT}`);
   // Start daily scheduler
   try {
