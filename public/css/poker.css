@@ -1,0 +1,164 @@
+/* ============================================================================
+   POKER — stadium-themed table, football playing cards, animations.
+   Works against both light & dark themes via existing CSS variables.
+   ========================================================================== */
+
+/* ── Lobby ─────────────────────────────────────────────────────────────────*/
+.pk-lobby { padding: 4px 2px 40px; }
+.pk-lobby-hero { position: relative; border-radius: 20px; overflow: hidden; margin-bottom: 20px; min-height: 170px; display: flex; align-items: center; }
+.pk-lobby-hero-bg { position: absolute; inset: 0; background:
+  radial-gradient(ellipse at 30% 20%, rgba(46,204,113,.35), transparent 60%),
+  linear-gradient(135deg, #0b3d1f 0%, #14532d 45%, #166534 100%); }
+.pk-lobby-hero-bg::after { content: ''; position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 40px, transparent 40px 80px);
+  opacity: .6; }
+.pk-lobby-hero-content { position: relative; z-index: 1; padding: 22px 26px; color: #fff; }
+.pk-lobby-title { font-size: 30px; font-weight: 900; margin: 0 0 6px; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.pk-lobby-sub { font-size: 15px; opacity: .92; margin: 0 0 14px; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+.pk-bankroll { display: flex; gap: 18px; flex-wrap: wrap; }
+.pk-bankroll-item { background: rgba(0,0,0,.3); padding: 8px 14px; border-radius: 20px; font-size: 14px; backdrop-filter: blur(4px); }
+.pk-bankroll-item b { color: #6ee7a0; }
+.pk-warn { background: rgba(0,0,0,.35); color: #fde68a; padding: 8px 14px; border-radius: 12px; display: inline-block; }
+
+.pk-room-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; padding: 10px 14px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); }
+.pk-room-label { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+.pk-room-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.pk-room-chip { background: var(--accent, #2ecc71); color: #fff; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.pk-room-empty { font-size: 12px; color: var(--text-muted); font-style: italic; }
+
+.pk-section-title { font-size: 18px; font-weight: 800; margin: 0 0 14px; color: var(--text); }
+.pk-tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.pk-table-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; cursor: pointer; transition: transform .18s, box-shadow .18s; }
+.pk-table-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,.28); }
+.pk-table-card-felt { position: relative; height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 40%, #1a7a43 0%, #0d4d28 75%); overflow: hidden; }
+.pk-table-card-glow { position: absolute; width: 160px; height: 80px; border-radius: 50%; background: rgba(110,231,160,.25); filter: blur(24px); }
+.pk-table-card-name { position: relative; font-size: 18px; font-weight: 800; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); z-index: 1; }
+.pk-table-card-blinds { position: relative; font-size: 12px; color: #a7f3c4; margin-top: 4px; z-index: 1; }
+.pk-table-card-meta { display: flex; align-items: center; gap: 8px; padding: 12px 14px 4px; flex-wrap: wrap; }
+.pk-seats-badge, .pk-state-badge, .pk-pot-badge { font-size: 12px; padding: 3px 9px; border-radius: 10px; font-weight: 600; }
+.pk-seats-badge { background: var(--bg-hover, rgba(127,127,127,.12)); color: var(--text); }
+.pk-state-badge.pk-state-waiting { background: rgba(148,163,184,.2); color: #94a3b8; }
+.pk-state-badge.pk-state-preflop, .pk-state-badge.pk-state-flop, .pk-state-badge.pk-state-turn,
+.pk-state-badge.pk-state-river, .pk-state-badge.pk-state-showdown { background: rgba(46,204,113,.2); color: #2ecc71; }
+.pk-pot-badge { background: rgba(241,196,15,.18); color: #d4a015; }
+.pk-join-btn { margin: 10px 14px 14px; width: calc(100% - 28px); padding: 9px; border: none; border-radius: 10px; background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; font-weight: 700; cursor: pointer; }
+
+/* ── Table view ─────────────────────────────────────────────────────────────*/
+.pk-table-view { padding: 2px; }
+.pk-table-topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.pk-back, .pk-leave-btn { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); padding: 7px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+.pk-back:hover, .pk-leave-btn:hover { background: var(--bg-hover, rgba(127,127,127,.12)); }
+.pk-table-title { font-size: 18px; font-weight: 800; flex: 1; }
+.pk-table-blinds { font-size: 13px; color: var(--text-muted); }
+
+.pk-stadium { position: relative; border-radius: 24px; overflow: hidden; padding: 30px 18px;
+  background: linear-gradient(180deg, #0a1f12 0%, #0d2818 100%); min-height: 540px; }
+.pk-stadium-stands { position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 6px, transparent 6px 12px),
+    radial-gradient(ellipse at 50% -10%, rgba(80,80,90,.5), transparent 55%),
+    radial-gradient(ellipse at 50% 110%, rgba(80,80,90,.4), transparent 55%);
+  pointer-events: none; }
+
+.pk-felt { position: relative; width: 100%; max-width: 760px; margin: 0 auto; aspect-ratio: 16/11;
+  border-radius: 50% / 42%;
+  background: radial-gradient(ellipse at 50% 45%, #1c8a4e 0%, #116034 70%, #0c4a28 100%);
+  border: 10px solid #3a2417; box-shadow: 0 0 0 4px #553522, inset 0 0 60px rgba(0,0,0,.5), 0 20px 50px rgba(0,0,0,.6); }
+.pk-felt::before { content: ''; position: absolute; inset: 8%; border: 2px solid rgba(255,255,255,.12); border-radius: 50% / 42%; pointer-events: none; }
+/* center line + circle, like a pitch */
+.pk-felt::after { content: ''; position: absolute; left: 50%; top: 10%; bottom: 10%; width: 2px; background: rgba(255,255,255,.1); transform: translateX(-50%); pointer-events: none; }
+
+.pk-felt-center { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 2; }
+.pk-pot { background: rgba(0,0,0,.45); color: #fde68a; padding: 6px 18px; border-radius: 20px; font-size: 15px; font-weight: 700; backdrop-filter: blur(4px); }
+.pk-pot b { color: #fff; }
+.pk-board { display: flex; gap: 8px; min-height: 84px; align-items: center; }
+.pk-board-placeholder { color: rgba(255,255,255,.35); font-size: 13px; }
+.pk-result-banner { background: linear-gradient(135deg, #d4a015, #f1c40f); color: #1a1a1a; padding: 8px 18px; border-radius: 14px; font-weight: 800; font-size: 14px; box-shadow: 0 6px 20px rgba(241,196,15,.5); animation: pk-pop .4s cubic-bezier(.34,1.56,.64,1); }
+
+/* ── Seats ──────────────────────────────────────────────────────────────────*/
+.pk-seat { position: absolute; transform: translate(-50%, -50%); z-index: 3; width: 96px; text-align: center; }
+.pk-seat-empty .pk-seat-open { color: rgba(255,255,255,.3); font-size: 12px; border: 2px dashed rgba(255,255,255,.2); border-radius: 12px; padding: 14px 8px; }
+.pk-seat-sit { background: rgba(22,163,74,.9); color: #fff; border: none; padding: 12px 10px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+.pk-seat-sit:hover { background: #16a34a; transform: scale(1.05); }
+.pk-seat-filled { background: rgba(15,23,20,.82); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 6px; backdrop-filter: blur(6px); }
+.pk-seat-acting { box-shadow: 0 0 0 3px #f1c40f, 0 0 22px rgba(241,196,15,.7); animation: pk-pulse 1.2s infinite; }
+.pk-seat-folded { opacity: .42; filter: grayscale(.7); }
+.pk-seat-winner { box-shadow: 0 0 0 3px #2ecc71, 0 0 26px rgba(46,204,113,.8); }
+.pk-seat-cards { display: flex; gap: 3px; justify-content: center; height: 40px; margin-bottom: -8px; position: relative; z-index: 1; }
+.pk-seat-av { width: 44px; height: 44px; border-radius: 50%; margin: 4px auto 4px; overflow: hidden; background: linear-gradient(135deg, #16a34a, #15803d); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 18px; border: 2px solid rgba(255,255,255,.25); position: relative; z-index: 2; }
+.pk-seat-av img { width: 100%; height: 100%; object-fit: cover; }
+.pk-seat-name { font-size: 12px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-seat-chips { font-size: 12px; color: #6ee7a0; font-weight: 700; }
+.pk-seat-bet { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); background: #f1c40f; color: #1a1a1a; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.4); animation: pk-chip-in .3s ease; }
+.pk-seat-allin { position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); background: #e74c3c; color: #fff; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 8px; letter-spacing: .5px; }
+.pk-seat-stake { font-size: 9px; font-weight: 700; color: #fde68a; background: rgba(0,0,0,.4); border-radius: 6px; padding: 1px 5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-dealer-btn { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; background: #fff; color: #1a1a1a; border-radius: 50%; font-size: 12px; font-weight: 900; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.5); z-index: 4; }
+
+/* ── Football playing cards ──────────────────────────────────────────────────*/
+.pk-card { position: relative; width: 58px; height: 82px; border-radius: 8px; background: linear-gradient(160deg, #ffffff, #f1f5f9); box-shadow: 0 3px 10px rgba(0,0,0,.4); flex-shrink: 0; overflow: hidden; }
+.pk-card-sm { width: 34px; height: 48px; border-radius: 5px; }
+.pk-card.suit-red .pk-card-rank, .pk-card.suit-red .pk-card-center { color: #dc2626; }
+.pk-card.suit-dark .pk-card-rank, .pk-card.suit-dark .pk-card-center { color: #1e293b; }
+.pk-card-corner { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.pk-card-corner.tl { top: 4px; left: 5px; }
+.pk-card-corner.br { bottom: 4px; right: 5px; transform: rotate(180deg); }
+.pk-card-rank { font-weight: 900; font-size: 15px; }
+.pk-card-sm .pk-card-rank { font-size: 10px; }
+.pk-card-corner .pk-card-suit { font-size: 10px; }
+.pk-card-sm .pk-card-corner .pk-card-suit { font-size: 7px; }
+.pk-card-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 30px; filter: saturate(1.1); }
+.pk-card-sm .pk-card-center { font-size: 17px; }
+.pk-card-back { background: linear-gradient(135deg, #15803d, #166534); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,.25); }
+.pk-card-back-inner { font-size: 26px; opacity: .55;
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 6px, transparent 6px 12px); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.pk-card-sm.pk-card-back .pk-card-back-inner { font-size: 15px; }
+.pk-card-deal { animation: pk-deal .35s cubic-bezier(.2,.9,.3,1.2) backwards; }
+
+/* ── Action controls ────────────────────────────────────────────────────────*/
+.pk-actions { display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 16px; padding: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; }
+.pk-actions-wait { display: flex; align-items: center; gap: 14px; justify-content: center; margin-top: 16px; padding: 14px; color: var(--text-muted); font-size: 14px; }
+.pk-act { border: none; padding: 12px 22px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; color: #fff; transition: transform .12s, filter .12s; }
+.pk-act:hover { transform: translateY(-2px); filter: brightness(1.08); }
+.pk-act-fold { background: linear-gradient(135deg, #6b7280, #4b5563); }
+.pk-act-check { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.pk-act-call { background: linear-gradient(135deg, #16a34a, #15803d); }
+.pk-act-raise { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.pk-act-allin { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+.pk-raise-group { display: flex; align-items: center; gap: 8px; }
+.pk-raise-group input[type=range] { width: 120px; accent-color: #f59e0b; }
+.pk-raise-group input[type=number] { width: 90px; padding: 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-input, var(--bg-card)); color: var(--text); font-weight: 700; }
+
+/* ── Sit modal ──────────────────────────────────────────────────────────────*/
+.pk-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: flex; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(3px); }
+.pk-modal { background: var(--bg-card); border-radius: 18px; width: min(440px, 92vw); overflow: hidden; box-shadow: 0 24px 70px rgba(0,0,0,.6); }
+.pk-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: linear-gradient(135deg, #14532d, #166534); color: #fff; }
+.pk-modal-head h3 { margin: 0; font-size: 17px; }
+.pk-modal-close { background: none; border: none; color: #fff; font-size: 26px; cursor: pointer; line-height: 1; }
+.pk-modal-body { padding: 20px; }
+.pk-stake-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+.pk-stake-tab { flex: 1; padding: 10px; border: 1px solid var(--border); background: var(--bg-input, transparent); color: var(--text); border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 13px; }
+.pk-stake-tab.active { background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; border-color: transparent; }
+.pk-stake-pane { display: flex; flex-direction: column; gap: 8px; }
+.pk-stake-pane label { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+.pk-stake-pane input, .pk-stake-pane select { padding: 11px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-input, var(--bg-card)); color: var(--text); font-size: 15px; }
+.pk-stake-warn { font-size: 12px; color: #f59e0b; font-weight: 600; margin: 4px 0 0; }
+.pk-sit-confirm { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: 12px; background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; font-weight: 800; font-size: 15px; cursor: pointer; }
+.pk-sit-confirm:hover { filter: brightness(1.08); }
+.hidden { display: none !important; }
+
+/* ── Animations ─────────────────────────────────────────────────────────────*/
+@keyframes pk-deal { from { transform: translateY(-60px) rotate(-12deg); opacity: 0; } to { transform: translateY(0) rotate(0); opacity: 1; } }
+@keyframes pk-chip-in { from { transform: translateX(-50%) translateY(-8px) scale(.6); opacity: 0; } to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } }
+@keyframes pk-pulse { 0%,100% { box-shadow: 0 0 0 3px #f1c40f, 0 0 22px rgba(241,196,15,.7); } 50% { box-shadow: 0 0 0 3px #f1c40f, 0 0 30px rgba(241,196,15,1); } }
+@keyframes pk-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ── Responsive ─────────────────────────────────────────────────────────────*/
+@media (max-width: 620px) {
+  .pk-seat { width: 72px; }
+  .pk-seat-av { width: 36px; height: 36px; font-size: 15px; }
+  .pk-card { width: 44px; height: 62px; }
+  .pk-card-center { font-size: 22px; }
+  .pk-act { padding: 11px 16px; font-size: 14px; }
+  .pk-raise-group input[type=range] { width: 80px; }
+}

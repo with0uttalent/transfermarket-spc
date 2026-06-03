@@ -1046,12 +1046,13 @@ const PAGE_TITLES = {
   home:'Главная', teams:'Команды', players:'Игроки', competitions:'Соревнования',
   transfers:'Трансферы', matches:'Матчи', tournaments:'Турниры', leagues:'Лиги',
   'free-agents':'Свободные агенты', coach:'Мой клуб', admin:'Администратор',
-  news:'Новости', search:'Поиск', betting:'Ставки',
+  news:'Новости', search:'Поиск', betting:'Ставки', poker:'Покер',
 };
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
   stopLiveMatchPoll(); // cancel live polling when navigating away
   if (_homeLivePollTimer) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; }
+  if (window.PokerUI && window.PokerUI.teardown) window.PokerUI.teardown();
   const hash = window.location.hash.replace(/^#/,'') || '/';
   const [rawPath, qs = ''] = hash.split('?');
   const params = Object.fromEntries(new URLSearchParams(qs));
@@ -1077,6 +1078,7 @@ function router() {
   if (rawPath==='/transfers') return renderTransfers(app, params);
   if (rawPath==='/matches') return renderMatches(app, params);
   if (rawPath==='/betting') return renderBettingPage(app);
+  if (rawPath==='/poker') return (window.PokerUI && window.PokerUI.render(app));
   if (parts[0]==='matches'&&parts[1]) return renderMatchDetail(app, parts[1]);
   if (rawPath==='/tournaments') return renderTournaments(app);
   if (parts[0]==='tournaments'&&parts[1]) return renderTournamentDetail(app, parts[1]);
