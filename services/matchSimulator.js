@@ -76,9 +76,9 @@ function calcAvgStamina(players, staminaMap) {
 }
 
 function staminaFactor(avgStamina) {
-  if (avgStamina >= 70) return 1.0;
-  // Below 70: up to 25% strength debuff at stamina = 0 (significant fatigue penalty)
-  return 0.75 + (avgStamina / 70) * 0.25;
+  if (avgStamina >= 80) return 1.0;
+  // Below 80: up to 35% strength debuff at stamina = 0
+  return 0.65 + (avgStamina / 80) * 0.35;
 }
 
 function applyStaminaDebuff(str, factor) {
@@ -448,7 +448,7 @@ function simulateMatchCore(
   }
 
   for (let m = 1; m <= 90; m++) {
-    const hAtkEff = homeStr.attack  * Math.pow(0.88, homeRed) * 1.08;
+    const hAtkEff = homeStr.attack  * Math.pow(0.88, homeRed) * 1.03;
     const hDefEff = homeStr.defense * Math.pow(0.85, homeRed);
     const aAtkEff = awayStr.attack  * Math.pow(0.88, awayRed);
     const aDefEff = awayStr.defense * Math.pow(0.85, awayRed);
