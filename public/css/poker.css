@@ -86,7 +86,8 @@
 .pk-seat-folded { opacity: .42; filter: grayscale(.7); }
 .pk-seat-winner { box-shadow: 0 0 0 3px #2ecc71, 0 0 26px rgba(46,204,113,.8); }
 .pk-seat-cards { display: flex; gap: 3px; justify-content: center; height: 54px; margin-bottom: -8px; position: relative; z-index: 1; }
-.pk-seat-av { width: 44px; height: 44px; border-radius: 50%; margin: 4px auto 4px; overflow: hidden; background: linear-gradient(135deg, #16a34a, #15803d); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 18px; border: 2px solid rgba(255,255,255,.25); position: relative; z-index: 2; }
+.pk-seat-av-wrap { position: relative; width: 44px; margin: 4px auto; z-index: 2; }
+.pk-seat-av { width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, #16a34a, #15803d); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 18px; border: 2px solid rgba(255,255,255,.25); }
 .pk-seat-av img { width: 100%; height: 100%; object-fit: cover; }
 .pk-seat-name { font-size: 12px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-seat-chips { font-size: 12px; color: #6ee7a0; font-weight: 700; }
@@ -201,11 +202,17 @@
 .pk-show-cards-btn:hover { filter: brightness(1.1); }
 
 /* ── Emotes ──────────────────────────────────────────────────────────────────*/
-.pk-emote-bubble { position: absolute; top: -48px; left: 50%; transform: translateX(-50%); font-size: 32px; z-index: 20; pointer-events: none; animation: pk-emote-in 0.4s cubic-bezier(.34,1.56,.64,1) forwards, pk-emote-out 0.5s ease-in 3.5s forwards; }
+.pk-emote-bubble { position: absolute; top: -52px; left: 50%; transform: translateX(-50%); font-size: 36px; z-index: 20; pointer-events: none; animation: pk-emote-in 0.4s cubic-bezier(.34,1.56,.64,1) forwards, pk-emote-out 0.5s ease-in 3.5s forwards; }
+/* Downward variant for seats in the top half of the table */
+.pk-emote-bubble-down { top: auto; bottom: -52px; animation: pk-emote-in-down 0.4s cubic-bezier(.34,1.56,.64,1) forwards, pk-emote-out-down 0.5s ease-in 3.5s forwards; }
 @keyframes pk-emote-in { from { transform: translateX(-50%) scale(0) translateY(10px); opacity: 0; } to { transform: translateX(-50%) scale(1) translateY(0); opacity: 1; } }
 @keyframes pk-emote-out { from { opacity: 1; } to { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.8); } }
-.pk-emote-open { position: absolute; bottom: -8px; right: -8px; background: rgba(0,0,0,.6); border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; }
+@keyframes pk-emote-in-down { from { transform: translateX(-50%) scale(0) translateY(-10px); opacity: 0; } to { transform: translateX(-50%) scale(1) translateY(0); opacity: 1; } }
+@keyframes pk-emote-out-down { from { opacity: 1; } to { opacity: 0; transform: translateX(-50%) translateY(12px) scale(0.8); } }
+.pk-emote-open { position: absolute; bottom: -8px; right: -8px; background: rgba(0,0,0,.6); border: none; border-radius: 50%; width: 24px; height: 24px; font-size: 13px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; }
 .pk-emote-picker { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(20,30,24,.95); border: 1px solid rgba(255,255,255,.15); border-radius: 14px; padding: 8px; display: flex; flex-wrap: wrap; gap: 4px; width: 160px; z-index: 30; backdrop-filter: blur(8px); animation: pk-pop 0.2s ease; }
+/* Open picker downward for top-half seats */
+.pk-emote-picker-down { bottom: auto; top: 100%; }
 .pk-emote-item { background: none; border: none; font-size: 22px; cursor: pointer; padding: 4px 6px; border-radius: 8px; transition: transform 0.1s; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .pk-emote-item:hover { transform: scale(1.25); background: rgba(255,255,255,.1); }
 .pk-emote-label { font-size: 8px; color: rgba(255,255,255,.55); white-space: nowrap; }
@@ -215,8 +222,7 @@
 .pk-show-cards-btn:hover { filter: brightness(1.12); }
 
 /* ── Cosmetics ───────────────────────────────────────────────────────────────*/
-.pk-seat-av { position: relative; }
-.pk-cosmetic-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 20px; line-height: 1; filter: drop-shadow(0 1px 4px rgba(0,0,0,.8)); pointer-events: none; animation: pk-pop .3s cubic-bezier(.34,1.56,.64,1); }
+.pk-cosmetic-badge { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 28px; line-height: 1; filter: drop-shadow(0 1px 6px rgba(0,0,0,.9)); pointer-events: none; animation: pk-pop .3s cubic-bezier(.34,1.56,.64,1); z-index: 5; }
 
 /* ── Shop lobby button ───────────────────────────────────────────────────────*/
 .pk-shop-open-btn { background: rgba(0,0,0,.3); color: #fff; border: 1px solid rgba(255,255,255,.3); padding: 8px 14px; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 700; backdrop-filter: blur(4px); }
@@ -242,6 +248,7 @@
 /* ── Responsive ─────────────────────────────────────────────────────────────*/
 @media (max-width: 620px) {
   .pk-seat { width: 76px; }
+  .pk-seat-av-wrap { width: 36px; }
   .pk-seat-av { width: 36px; height: 36px; font-size: 15px; }
   .pk-seat-cards { height: 46px; }
   .pk-card { width: 54px; height: 76px; }

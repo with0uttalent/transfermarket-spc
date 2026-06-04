@@ -413,7 +413,10 @@
         ${isDealer ? '<span class="pk-dealer-btn">D</span>' : ''}
         ${isActing ? `<div class="pk-seat-timer"><span id="pk-timer-seat" class="pk-timer-num">–</span></div>` : ''}
         <div class="pk-seat-cards">${holeCardsHtml}</div>
-        <div class="pk-seat-av">${seat.avatarUrl ? `<img src="${escHtml(seat.avatarUrl)}" onerror="this.style.display='none'">` : escHtml((seat.name || '?').charAt(0))}${seat.cosmetic ? `<span class="pk-cosmetic-badge">${seat.cosmetic.emoji}</span>` : ''}</div>
+        <div class="pk-seat-av-wrap">
+          <div class="pk-seat-av">${seat.avatarUrl ? `<img src="${escHtml(seat.avatarUrl)}" onerror="this.style.display='none'">` : escHtml((seat.name || '?').charAt(0))}</div>
+          ${seat.cosmetic ? `<span class="pk-cosmetic-badge">${seat.cosmetic.emoji}</span>` : ''}
+        </div>
         <div class="pk-seat-info">
           <div class="pk-seat-name">${escHtml(seat.name)}${seat.isMe ? ' (вы)' : ''}</div>
           <div class="pk-seat-chips">${fmtChips(seat.chips)} 🪙</div>
@@ -650,6 +653,11 @@
   }
 
   // ── emotes ──────────────────────────────────────────────────────────────────
+  function _isTopSeat(seatIdx) {
+    const pos = SEAT_POS[seatIdx];
+    return pos && pos.y < 45;
+  }
+
   function _renderEmotes() {
     const now = Date.now();
     for (const [seatIdx, data] of activeEmotes) {
@@ -657,7 +665,7 @@
       const seatEl = appEl && appEl.querySelector('.pk-seat-filled[data-seat="' + seatIdx + '"]');
       if (!seatEl || seatEl.querySelector('.pk-emote-bubble')) continue;
       const div = document.createElement('div');
-      div.className = 'pk-emote-bubble';
+      div.className = 'pk-emote-bubble' + (_isTopSeat(seatIdx) ? ' pk-emote-bubble-down' : '');
       div.textContent = data.emoji;
       seatEl.appendChild(div);
     }
@@ -680,7 +688,7 @@
     _emotePickerOpen = true;
     const picker = document.createElement('div');
     picker.id = 'pk-emote-picker';
-    picker.className = 'pk-emote-picker';
+    picker.className = 'pk-emote-picker' + (_isTopSeat(myPos) ? ' pk-emote-picker-down' : '');
     picker.innerHTML = EMOTES.map(e =>
       `<button class="pk-emote-item" title="${e.label}" onclick="PokerUI._sendEmote('${e.key}')">${e.emoji}</button>`
     ).join('');
