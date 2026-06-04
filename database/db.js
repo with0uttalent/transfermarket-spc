@@ -572,6 +572,16 @@ function initSchema() {
       FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
       FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
     )`,
+    // Cosmetics shop: avatar accessories purchasable with team budget.
+    `CREATE TABLE IF NOT EXISTS coach_cosmetics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      coach_id INTEGER NOT NULL,
+      item_key TEXT NOT NULL,
+      equipped INTEGER DEFAULT 0,
+      bought_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(coach_id, item_key),
+      FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

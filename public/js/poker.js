@@ -14,6 +14,22 @@
   let lobbyData = null;
   let mySeatChips = null;      // chips when I'm seated (for bet slider bounds)
   let _timerInterval = null;   // countdown timer interval
+  let lastCommunityLen = 0;    // for staggered deal animation
+
+  const EMOTES = [
+    { key: 'laugh',  emoji: '😂', label: 'Смеюсь' },
+    { key: 'mind',   emoji: '🤯', label: 'Ничего себе' },
+    { key: 'flex',   emoji: '💪', label: 'Сила' },
+    { key: 'cool',   emoji: '😎', label: 'Красавчик' },
+    { key: 'party',  emoji: '🎉', label: 'Отмечаем' },
+    { key: 'cry',    emoji: '😢', label: 'Грустно' },
+    { key: 'think',  emoji: '🤔', label: 'Думаю' },
+    { key: 'angry',  emoji: '😤', label: 'Злой' },
+    { key: 'clap',   emoji: '👏', label: 'Аплодирую' },
+    { key: 'fire',   emoji: '🔥', label: 'Огонь' },
+  ];
+  const activeEmotes = new Map(); // seatIndex → { emoji, expiresAt }
+  let _emotePickerOpen = false;
 
   // ── Standard suits ─────────────────────────────────────────────────────────
   const SUIT = {
@@ -34,7 +50,8 @@
     }
     const s = SUIT[card.suit] || SUIT.s;
     const hl = opts.highlight ? ' pk-card-hl' : opts.liveHl ? ' pk-card-live-hl' : (opts.dim ? ' pk-card-dim' : '');
-    return `<div class="pk-card ${s.cls}${szCls}${opts.deal ? ' pk-card-deal' : ''}${hl}">
+    const dealStyle = opts.deal && opts.dealDelay ? ` style="animation-delay:${opts.dealDelay}ms"` : '';
+    return `<div class="pk-card ${s.cls}${szCls}${opts.deal ? ' pk-card-deal' : ''}${hl}"${dealStyle}>
       <div class="pk-card-corner tl"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
       <div class="pk-card-center">${s.sym}</div>
       <div class="pk-card-corner br"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
@@ -193,6 +210,15 @@
     socket.on('table:sat', ({ chips }) => { mySeatChips = chips; toast('Вы сели за стол!'); });
     socket.on('table:left', ({ summary }) => { announceCashout(summary); mySeatChips = null; });
     socket.on('poker:error', ({ error }) => toast(error, 'error'));
+    socket.on('table:emote', ({ seatIndex, emoteKey }) => {
+      const emote = EMOTES.find(e => e.key === emoteKey);
+      if (!emote) return;
+      activeEmotes.set(seatIndex, { emoji: emote.emoji, expiresAt: Date.now() + 4000 });
+      if (view === 'table') {
+        _renderEmotes();
+        setTimeout(() => { if (view === 'table') _renderEmotes(); }, 4100);
+      }
+    });
     return socket;
   }
 
@@ -220,6 +246,8 @@
       socket = null;
     }
     view = 'lobby'; currentTableId = null; tableState = null; mySeatChips = null;
+    lastCommunityLen = 0;
+    activeEmotes.clear();
   }
 
   // ── entry ────────────────────────────────────────────────────────────────
@@ -268,6 +296,7 @@
             ${canPlay ? `<div class="pk-bankroll">
               <span class="pk-bankroll-item">💰 Бюджет: <b>${fmtValue(d.budget || 0)}</b></span>
               <span class="pk-bankroll-item">⚽ Стоимость команды: <b>${fmtValue(d.teamValue || 0)}</b></span>
+              <button class="pk-shop-open-btn" onclick="PokerUI._openShop()">🛍️ Магазин косметики</button>
             </div>` : `<div class="pk-warn">Нужна команда, чтобы садиться за стол</div>`}
           </div>
         </div>
@@ -357,7 +386,7 @@
       const isDealer = st.dealerPos === i;
       const isActing = st.actingPos === i;
       if (!seat) {
-        return `<div class="pk-seat pk-seat-empty" style="left:${pos.x}%;top:${pos.y}%">
+        return `<div class="pk-seat pk-seat-empty" data-seat="${i}" style="left:${pos.x}%;top:${pos.y}%">
           ${iAmSeated ? `<div class="pk-seat-open">место</div>` : `<button class="pk-seat-sit" onclick="PokerUI._openSitModal(${i})">＋ Сесть</button>`}
         </div>`;
       }
@@ -376,11 +405,14 @@
         ).join('');
       }
 
-      return `<div class="pk-seat pk-seat-filled${isActing ? ' pk-seat-acting' : ''}${seat.hasFolded ? ' pk-seat-folded' : ''}${winner ? ' pk-seat-winner' : ''}" style="left:${pos.x}%;top:${pos.y}%">
+      const alreadyRevealed = st.lastResult && st.lastResult.revealed && st.lastResult.revealed.some(r => r.pos === i);
+      const showCardsBtn = seat.isMe && iAmSeated && st.state === 'waiting' && st.lastResult && st.lastResult.byFold && winner && !alreadyRevealed
+        ? `<button class="pk-show-cards-btn" onclick="PokerUI._showCards()">Показать карты</button>` : '';
+      return `<div class="pk-seat pk-seat-filled${isActing ? ' pk-seat-acting' : ''}${seat.hasFolded ? ' pk-seat-folded' : ''}${winner ? ' pk-seat-winner' : ''}" data-seat="${i}" style="left:${pos.x}%;top:${pos.y}%">
         ${isDealer ? '<span class="pk-dealer-btn">D</span>' : ''}
         ${isActing ? `<div class="pk-seat-timer"><span id="pk-timer-seat" class="pk-timer-num">–</span></div>` : ''}
         <div class="pk-seat-cards">${holeCardsHtml}</div>
-        <div class="pk-seat-av">${seat.avatarUrl ? `<img src="${escHtml(seat.avatarUrl)}" onerror="this.style.display='none'">` : escHtml((seat.name || '?').charAt(0))}</div>
+        <div class="pk-seat-av">${seat.avatarUrl ? `<img src="${escHtml(seat.avatarUrl)}" onerror="this.style.display='none'">` : escHtml((seat.name || '?').charAt(0))}${seat.cosmetic ? `<span class="pk-cosmetic-badge">${seat.cosmetic.emoji}</span>` : ''}</div>
         <div class="pk-seat-info">
           <div class="pk-seat-name">${escHtml(seat.name)}${seat.isMe ? ' (вы)' : ''}</div>
           <div class="pk-seat-chips">${fmtChips(seat.chips)} 🪙</div>
@@ -388,12 +420,17 @@
         ${seat.betThisRound ? `<div class="pk-seat-bet">${fmtChips(seat.betThisRound)}</div>` : ''}
         ${seat.isAllIn ? '<div class="pk-seat-allin">ALL-IN</div>' : ''}
         ${seat.stake && seat.stake.type !== 'cash' ? `<div class="pk-seat-stake">${seat.stake.type === 'team' ? '⚽ КОМАНДА' : '👤 ' + escHtml(seat.stake.playerName || 'игрок')}</div>` : ''}
+        ${showCardsBtn}
       </div>`;
     }).join('');
 
-    const community = st.community.map(c =>
-      cardHtml(c, comboKeys ? { deal: true, ...hlOpt(c, false) } : liveKeys ? { deal: true, ...liveHlOpt(c, false) } : { deal: true })
-    ).join('') || '<div class="pk-board-placeholder">Карты стола появятся здесь</div>';
+    if (st.community.length === 0) lastCommunityLen = 0;
+    const community = st.community.map((c, i) => {
+      const isNew = i >= lastCommunityLen;
+      const delay = isNew ? (i - lastCommunityLen) * 180 : 0;
+      const baseOpts = { deal: isNew, dealDelay: delay };
+      return cardHtml(c, comboKeys ? { ...baseOpts, ...hlOpt(c, false) } : liveKeys ? { ...baseOpts, ...liveHlOpt(c, false) } : baseOpts);
+    }).join('') || '<div class="pk-board-placeholder">Карты стола появятся здесь</div>';
 
     // Result banner
     let resultBanner = '';
@@ -468,8 +505,15 @@
         ${controls}
       </div>`;
 
+    // Update community card tracker after render
+    lastCommunityLen = st.community.length;
+
     // Start action countdown timer after DOM is ready
     if (st.actingPos >= 0 && st.actionDeadline) _startTimer(st.actionDeadline);
+
+    // Render emotes and emote button
+    _renderEmotes();
+    if (iAmSeated && st.state !== 'showdown') _ensureEmoteBtn(mySeat.pos);
   }
 
   // ── actions ──────────────────────────────────────────────────────────────
@@ -575,6 +619,114 @@
     toast(`Результат: ${sign}${fmtChips(summary.delta)} 🪙`, summary.delta >= 0 ? 'success' : 'info');
   }
 
+  // ── show cards (voluntary reveal after winning by fold) ─────────────────────
+  function showCards() {
+    if (!socket || !currentTableId) return;
+    socket.emit('table:showcards', { tableId: currentTableId });
+  }
+
+  // ── emotes ──────────────────────────────────────────────────────────────────
+  function _renderEmotes() {
+    const now = Date.now();
+    for (const [seatIdx, data] of activeEmotes) {
+      if (now > data.expiresAt) { activeEmotes.delete(seatIdx); continue; }
+      const seatEl = appEl && appEl.querySelector('.pk-seat-filled[data-seat="' + seatIdx + '"]');
+      if (!seatEl || seatEl.querySelector('.pk-emote-bubble')) continue;
+      const div = document.createElement('div');
+      div.className = 'pk-emote-bubble';
+      div.textContent = data.emoji;
+      seatEl.appendChild(div);
+    }
+  }
+
+  function _ensureEmoteBtn(myPos) {
+    const seatEl = appEl && appEl.querySelector('.pk-seat-filled[data-seat="' + myPos + '"]');
+    if (!seatEl || seatEl.querySelector('.pk-emote-open')) return;
+    const btn = document.createElement('button');
+    btn.className = 'pk-emote-open';
+    btn.textContent = '😊';
+    btn.title = 'Эмоции';
+    btn.onclick = (e) => { e.stopPropagation(); _toggleEmotePicker(myPos); };
+    seatEl.appendChild(btn);
+  }
+
+  function _toggleEmotePicker(myPos) {
+    const existing = document.getElementById('pk-emote-picker');
+    if (existing) { existing.remove(); _emotePickerOpen = false; return; }
+    _emotePickerOpen = true;
+    const picker = document.createElement('div');
+    picker.id = 'pk-emote-picker';
+    picker.className = 'pk-emote-picker';
+    picker.innerHTML = EMOTES.map(e =>
+      `<button class="pk-emote-item" title="${e.label}" onclick="PokerUI._sendEmote('${e.key}')">${e.emoji}</button>`
+    ).join('');
+    const seatEl = appEl && appEl.querySelector('.pk-seat-filled[data-seat="' + myPos + '"]');
+    if (seatEl) seatEl.appendChild(picker);
+    setTimeout(() => document.addEventListener('click', _closeEmotePicker, { once: true }), 10);
+  }
+
+  function _closeEmotePicker() {
+    const el = document.getElementById('pk-emote-picker');
+    if (el) el.remove();
+    _emotePickerOpen = false;
+  }
+
+  function sendEmote(key) {
+    if (!socket || !currentTableId) return;
+    socket.emit('table:emote', { tableId: currentTableId, emoteKey: key });
+    _closeEmotePicker();
+  }
+
+  // ── cosmetics shop ───────────────────────────────────────────────────────────
+  async function openShop() {
+    let shopData;
+    try { shopData = await GET('/poker/shop'); } catch { toast('Ошибка загрузки магазина', 'error'); return; }
+    const modal = document.createElement('div');
+    modal.className = 'pk-modal-overlay';
+    modal.id = 'pk-shop-modal';
+    modal.innerHTML = `
+      <div class="pk-modal pk-shop-modal">
+        <div class="pk-modal-head">
+          <h3>🛍️ Магазин аксессуаров</h3>
+          <button class="pk-modal-close" onclick="document.getElementById('pk-shop-modal').remove()">×</button>
+        </div>
+        <div class="pk-modal-body">
+          <div class="pk-shop-budget">Бюджет: <b>${fmtValue(shopData.budget)}</b></div>
+          <div class="pk-shop-grid">
+            ${shopData.catalog.map(item => `
+              <div class="pk-shop-item${item.equipped ? ' pk-shop-item-equipped' : ''}">
+                <div class="pk-shop-emoji">${item.emoji}</div>
+                <div class="pk-shop-name">${escHtml(item.name)}</div>
+                <div class="pk-shop-price">${item.owned ? (item.equipped ? '✓ Надет' : 'В наличии') : fmtValue(item.price)}</div>
+                ${item.owned
+                  ? `<button class="pk-shop-btn ${item.equipped ? 'pk-shop-unequip' : 'pk-shop-equip'}" onclick="PokerUI._shopEquip('${item.key}', ${item.equipped})">${item.equipped ? 'Снять' : 'Надеть'}</button>`
+                  : `<button class="pk-shop-btn pk-shop-buy" onclick="PokerUI._shopBuy('${item.key}', '${escHtml(item.name)}', ${item.price})"${item.price > shopData.budget ? ' disabled' : ''}>Купить</button>`
+                }
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+
+  async function shopBuy(key, name, price) {
+    if (!confirm(`Купить "${name}" за ${fmtValue(price)}?`)) return;
+    try {
+      await POST('/poker/shop/buy', { itemKey: key });
+      toast('Куплено!', 'success');
+      document.getElementById('pk-shop-modal')?.remove();
+      openShop();
+    } catch (e) { toast(e.message || 'Ошибка покупки', 'error'); }
+  }
+
+  async function shopEquip(key, isEquipped) {
+    try {
+      await POST('/poker/shop/equip', { itemKey: isEquipped ? null : key });
+      document.getElementById('pk-shop-modal')?.remove();
+      openShop();
+    } catch (e) { toast(e.message || 'Ошибка', 'error'); }
+  }
+
   // public API
   window.PokerUI = {
     render, teardown,
@@ -582,5 +734,8 @@
     _act: act, _raise: raise, _syncRaise: syncRaise, _syncRaiseFromInput: syncRaiseFromInput,
     _leaveTable: leaveTable, _backToLobby: backToLobby,
     _openSitModal: openSitModal, _stakeTab: stakeTab, _closeSit: closeSit, _confirmSit: confirmSit,
+    _showCards: showCards,
+    _sendEmote: sendEmote,
+    _openShop: openShop, _shopBuy: shopBuy, _shopEquip: shopEquip,
   };
 })();

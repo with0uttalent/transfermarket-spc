@@ -477,6 +477,20 @@ class PokerTable {
     this.handLog.push({ t: Date.now(), msg });
   }
 
+  // ── show cards (voluntary reveal after winning by fold) ──────────────────
+  showCards(coachId) {
+    if (this.state !== 'waiting' || !this.lastResult) return { error: 'Нет активного результата' };
+    if (!this.lastResult.byFold) return { error: 'Только при победе фолдом' };
+    const idx = this.seats.findIndex(s => s && s.coachId === coachId);
+    if (idx === -1) return { error: 'Вы не за столом' };
+    const winner = this.lastResult.pots?.[0]?.winners?.find(w => w.pos === idx);
+    if (!winner) return { error: 'Только победитель может показать карты' };
+    if (!this.lastResult.revealed) this.lastResult.revealed = [];
+    if (this.lastResult.revealed.some(r => r.pos === idx)) return { ok: true };
+    this.lastResult.revealed.push({ pos: idx, coachId, name: this.seats[idx].name, cards: this.seats[idx].cards, hand: 'Показал карты', combo: null, comboRank: null, voluntaryShow: true });
+    return { ok: true };
+  }
+
   // Public snapshot for a specific viewer (hides others' hole cards).
   snapshotFor(coachId) {
     const showdown = this.state === 'showdown' || (this.lastResult && this.state === 'waiting');

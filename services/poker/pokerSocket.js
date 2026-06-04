@@ -5,6 +5,21 @@ const { Server } = require('socket.io');
 const { getDb } = require('../../database/db');
 const { getPokerManager } = require('./PokerManager');
 
+const COSMETICS_CATALOG = [
+  { key: 'cap',        name: 'Кепка',            emoji: '🧢', price: 200000 },
+  { key: 'tophat',     name: 'Цилиндр',           emoji: '🎩', price: 500000 },
+  { key: 'crown',      name: 'Корона',            emoji: '👑', price: 1500000 },
+  { key: 'wreath',     name: 'Лавровый венок',    emoji: '🌿', price: 300000 },
+  { key: 'sunglasses', name: 'Очки',              emoji: '🕶️', price: 250000 },
+  { key: 'halo',       name: 'Нимб',              emoji: '😇', price: 750000 },
+  { key: 'cowboy',     name: 'Ковбойская шляпа',  emoji: '🤠', price: 400000 },
+  { key: 'partyhat',   name: 'Праздничный колпак', emoji: '🎉', price: 150000 },
+  { key: 'pirate',     name: 'Пиратская шляпа',   emoji: '☠️', price: 600000 },
+  { key: 'diamond',    name: 'Бриллиант',         emoji: '💎', price: 2000000 },
+  { key: 'fire',       name: 'Пламя',             emoji: '🔥', price: 350000 },
+  { key: 'star',       name: 'Золотая звезда',    emoji: '⭐', price: 450000 },
+];
+
 // Resolve a socket's authenticated coach from its JWT.
 function authCoach(token) {
   if (!token) return null;
@@ -36,11 +51,22 @@ function initPokerSocket(httpServer) {
     if (!table) return;
     const room = io.sockets.adapter.rooms.get('table:' + table.id);
     if (!room) return;
+    const db = getDb();
     for (const sid of room) {
       const sock = io.sockets.sockets.get(sid);
       if (!sock) continue;
       const cid = sock.data.coach?.coachId;
-      sock.emit('table:state', table.snapshotFor(cid));
+      const snapshot = table.snapshotFor(cid);
+      // Augment with cosmetics
+      for (const seat of snapshot.seats) {
+        if (!seat || !seat.coachId) continue;
+        const cosm = db.prepare('SELECT item_key FROM coach_cosmetics WHERE coach_id=? AND equipped=1').get(seat.coachId);
+        if (cosm) {
+          const item = COSMETICS_CATALOG.find(c => c.key === cosm.item_key);
+          if (item) seat.cosmetic = { key: item.key, emoji: item.emoji, name: item.name };
+        }
+      }
+      sock.emit('table:state', snapshot);
     }
   }
 
@@ -77,6 +103,8 @@ function initPokerSocket(httpServer) {
       if (changed) broadcastTable(table);
     }
   }, 1000);
+
+  const emoteCooldowns = new Map(); // socketId → lastEmoteTime
 
   io.on('connection', (socket) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
@@ -144,8 +172,32 @@ function initPokerSocket(httpServer) {
       broadcastTable(table);
     });
 
+    // ── show cards (voluntary reveal after winning by fold) ──────────────────
+    socket.on('table:showcards', ({ tableId }) => {
+      const table = mgr.getTable(tableId);
+      if (!table || !coach?.coachId) return;
+      const res = table.showCards(coach.coachId);
+      if (res.error) return socket.emit('poker:error', { error: res.error });
+      broadcastTable(table);
+    });
+
+    // ── player emotes ────────────────────────────────────────────────────────
+    socket.on('table:emote', ({ tableId, emoteKey }) => {
+      const table = mgr.getTable(tableId);
+      if (!table || !coach?.coachId) return;
+      const now = Date.now();
+      if (now - (emoteCooldowns.get(socket.id) || 0) < 5000) return; // rate limit
+      emoteCooldowns.set(socket.id, now);
+      const seatIdx = table.seats.findIndex(s => s && s.coachId === coach.coachId);
+      if (seatIdx === -1) return;
+      const VALID = ['laugh','mind','flex','cool','party','cry','think','angry','clap','fire'];
+      if (!VALID.includes(emoteKey)) return;
+      io.to('table:' + tableId).emit('table:emote', { seatIndex: seatIdx, emoteKey });
+    });
+
     socket.on('disconnect', () => {
       // Leave the lobby room; keep seat (chips) so a reconnect can resume.
+      emoteCooldowns.delete(socket.id);
       if (coach && coach.coachId) {
         mgr.leaveRoom(coach.coachId);
         broadcastLobby();
