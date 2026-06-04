@@ -13,6 +13,7 @@
   let tableState = null;
   let lobbyData = null;
   let mySeatChips = null;      // chips when I'm seated (for bet slider bounds)
+  let _timerInterval = null;   // countdown timer interval
 
   // ── Standard suits ─────────────────────────────────────────────────────────
   const SUIT = {
@@ -27,12 +28,13 @@
   const cardKey = c => c ? c.rank + c.suit : '';
 
   function cardHtml(card, opts = {}) {
+    const szCls = opts.xs ? ' pk-card-xs' : (opts.small ? ' pk-card-sm' : '');
     if (!card || card.hidden) {
-      return `<div class="pk-card pk-card-back${opts.small ? ' pk-card-sm' : ''}"><div class="pk-card-back-inner"></div></div>`;
+      return `<div class="pk-card pk-card-back${szCls}"><div class="pk-card-back-inner"></div></div>`;
     }
     const s = SUIT[card.suit] || SUIT.s;
     const hl = opts.highlight ? ' pk-card-hl' : opts.liveHl ? ' pk-card-live-hl' : (opts.dim ? ' pk-card-dim' : '');
-    return `<div class="pk-card ${s.cls}${opts.small ? ' pk-card-sm' : ''}${opts.deal ? ' pk-card-deal' : ''}${hl}">
+    return `<div class="pk-card ${s.cls}${szCls}${opts.deal ? ' pk-card-deal' : ''}${hl}">
       <div class="pk-card-corner tl"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
       <div class="pk-card-center">${s.sym}</div>
       <div class="pk-card-corner br"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
@@ -75,6 +77,37 @@
 
   const HAND_NAMES_RU = ['Старшая карта','Пара','Две пары','Тройка','Стрит','Флеш','Фулл-хаус','Каре','Стрит-флеш','Флеш-рояль'];
 
+  // Returns only the "key" cards that define the combination (e.g. just the pair, not kickers).
+  function getKeyCards(rank, cards) {
+    if (!cards || !cards.length) return cards || [];
+    const cnt = {};
+    for (const c of cards) cnt[c.rank] = (cnt[c.rank] || 0) + 1;
+    switch (rank) {
+      case 0: { // high card — just the highest card
+        const max = Math.max(...cards.map(c => c.rank));
+        return cards.filter(c => c.rank === max).slice(0, 1);
+      }
+      case 1: { // pair
+        const pr = Object.entries(cnt).find(([, n]) => n === 2);
+        return pr ? cards.filter(c => c.rank === +pr[0]) : cards;
+      }
+      case 2: { // two pair
+        const prs = Object.entries(cnt).filter(([, n]) => n === 2).map(([r]) => +r);
+        return cards.filter(c => prs.includes(c.rank));
+      }
+      case 3: { // three of a kind
+        const tr = Object.entries(cnt).find(([, n]) => n === 3);
+        return tr ? cards.filter(c => c.rank === +tr[0]) : cards;
+      }
+      case 7: { // four of a kind
+        const qr = Object.entries(cnt).find(([, n]) => n === 4);
+        return qr ? cards.filter(c => c.rank === +qr[0]) : cards;
+      }
+      default: // straight(4), flush(5), full house(6), sf(8), rf(9) — show all 5
+        return cards;
+    }
+  }
+
   function evalCurrentHand(holeCards, communityCards) {
     const visible = [...(holeCards || []), ...(communityCards || [])].filter(c => c && !c.hidden);
     if (visible.length < 2) return null;
@@ -87,7 +120,7 @@
     return bestCards ? { rank: bestRank, name: HAND_NAMES_RU[bestRank], cards: bestCards } : null;
   }
 
-  // Build the set of card keys forming the winning combination(s) at showdown.
+  // Build the set of card keys for the winning combination's KEY cards only (not kickers).
   function winningComboKeys(st) {
     if (!st || !st.lastResult) return null;
     const r = st.lastResult;
@@ -97,7 +130,8 @@
     const keys = new Set();
     for (const rv of r.revealed) {
       if (winnerPos.has(rv.pos) && rv.combo) {
-        for (const c of rv.combo) keys.add(cardKey(c));
+        const keycards = getKeyCards(rv.comboRank ?? 0, rv.combo);
+        for (const c of keycards) keys.add(cardKey(c));
       }
     }
     return keys.size ? keys : null;
@@ -162,7 +196,24 @@
     return socket;
   }
 
+  function _startTimer(deadline) {
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+    if (!deadline || deadline <= Date.now()) return;
+    const tick = () => {
+      const secs = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      const urgent = secs <= 7;
+      ['pk-timer-seat', 'pk-timer-ctrl'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.textContent = secs; el.className = 'pk-timer-num' + (urgent ? ' pk-timer-urgent' : ''); }
+      });
+      if (secs <= 0) { clearInterval(_timerInterval); _timerInterval = null; }
+    };
+    tick();
+    _timerInterval = setInterval(tick, 500);
+  }
+
   function teardown() {
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
     if (socket) {
       try { socket.emit('lobby:leave'); if (currentTableId) socket.emit('table:unwatch', { tableId: currentTableId }); } catch (e) {}
       socket.disconnect();
@@ -277,10 +328,28 @@
       const myCards = (mySeat.cards || []).filter(c => c && !c.hidden);
       if (myCards.length === 2) {
         liveHand = evalCurrentHand(myCards, st.community || []);
-        if (liveHand) liveKeys = new Set(liveHand.cards.map(cardKey));
+        if (liveHand) {
+          // Only show badge for real combos preflop; post-flop always show
+          if (st.community.length < 3 && liveHand.rank < 1) liveHand = null;
+        }
+        if (liveHand) liveKeys = new Set(getKeyCards(liveHand.rank, liveHand.cards).map(cardKey));
       }
     }
     const liveHlOpt = (c, small) => liveKeys && liveKeys.has(cardKey(c)) ? { small, liveHl: true } : { small };
+
+    // Helper: render a hole card with hover-to-reveal flip (for the local player's own cards).
+    const renderFlipCard = (c, opts) => {
+      const isHl = opts.liveHl;
+      const backHtml = `<div class="pk-card pk-card-back pk-card-sm"><div class="pk-card-back-inner"></div></div>`;
+      // strip liveHl from face card — glow is applied to the flip container instead
+      const faceHtml = cardHtml(c, { ...opts, liveHl: false });
+      return `<div class="pk-hole-flip${isHl ? ' pk-hole-flip-hl' : ''}">
+        <div class="pk-hole-flip-inner">
+          <div class="pk-hole-flip-back">${backHtml}</div>
+          <div class="pk-hole-flip-front">${faceHtml}</div>
+        </div>
+      </div>`;
+    };
 
     // Seats
     const seatsHtml = SEAT_POS.slice(0, st.maxSeats).map((pos, i) => {
@@ -293,13 +362,24 @@
         </div>`;
       }
       const winner = st.lastResult && st.lastResult.payouts && st.lastResult.payouts[i] > 0;
-      // Showdown: highlight winner combo. Live: highlight own combo. Others: plain.
-      const holeCards = (seat.cards || []).map(c =>
-        cardHtml(c, (comboKeys && winner) ? hlOpt(c, true) : seat.isMe && liveKeys ? liveHlOpt(c, true) : { small: true })
-      ).join('');
+
+      let holeCardsHtml;
+      if (seat.isMe && !comboKeys) {
+        // Own cards: hover-to-reveal flip, with live combo glow on key cards
+        const myCardOpts = (c) => liveKeys ? liveHlOpt(c, true) : { small: true };
+        const flips = (seat.cards || []).map(c => renderFlipCard(c, myCardOpts(c))).join('');
+        holeCardsHtml = `<div class="pk-my-hole-wrap">${flips}</div>`;
+      } else {
+        // Opponents / showdown: standard cards with showdown highlight
+        holeCardsHtml = (seat.cards || []).map(c =>
+          cardHtml(c, (comboKeys && winner) ? hlOpt(c, true) : { small: true })
+        ).join('');
+      }
+
       return `<div class="pk-seat pk-seat-filled${isActing ? ' pk-seat-acting' : ''}${seat.hasFolded ? ' pk-seat-folded' : ''}${winner ? ' pk-seat-winner' : ''}" style="left:${pos.x}%;top:${pos.y}%">
         ${isDealer ? '<span class="pk-dealer-btn">D</span>' : ''}
-        <div class="pk-seat-cards">${holeCards}</div>
+        ${isActing ? `<div class="pk-seat-timer"><span id="pk-timer-seat" class="pk-timer-num">–</span></div>` : ''}
+        <div class="pk-seat-cards">${holeCardsHtml}</div>
         <div class="pk-seat-av">${seat.avatarUrl ? `<img src="${escHtml(seat.avatarUrl)}" onerror="this.style.display='none'">` : escHtml((seat.name || '?').charAt(0))}</div>
         <div class="pk-seat-info">
           <div class="pk-seat-name">${escHtml(seat.name)}${seat.isMe ? ' (вы)' : ''}</div>
@@ -323,10 +403,15 @@
       resultBanner = `<div class="pk-result-banner">🏆 ${wins} забирает ${fmtChips((r.pots || []).reduce((a, p) => a + p.amount, 0))} 🪙</div>`;
     }
 
-    // Live hand badge
-    const liveHandBadge = liveHand
-      ? `<div class="pk-live-hand-badge"><span class="pk-live-hand-icon">🃏</span> ${escHtml(liveHand.name)}</div>`
-      : '';
+    // Live hand badge — shows combo name + key card images
+    const liveHandBadge = liveHand ? (() => {
+      const keyCards = getKeyCards(liveHand.rank, liveHand.cards);
+      const miniCards = keyCards.map(c => cardHtml(c, { xs: true })).join('');
+      return `<div class="pk-live-hand-badge">
+        <span class="pk-live-hand-name">${escHtml(liveHand.name)}</span>
+        <div class="pk-live-hand-cards">${miniCards}</div>
+      </div>`;
+    })() : '';
 
     // Action controls
     let controls = '';
@@ -349,6 +434,7 @@
                 <button class="pk-act pk-act-raise" onclick="PokerUI._raise()">Рейз</button>
               </div>` : ''}
             <button class="pk-act pk-act-allin" onclick="PokerUI._act('allin')">ALL-IN</button>
+            <div class="pk-my-timer">⏱ <span id="pk-timer-ctrl" class="pk-timer-num">–</span>с</div>
           </div>`;
       } else {
         controls = `${liveHandBadge}<div class="pk-actions-wait">${st.state === 'waiting' ? 'Ждём начала раздачи…' : 'Ход другого игрока…'}
@@ -381,6 +467,9 @@
 
         ${controls}
       </div>`;
+
+    // Start action countdown timer after DOM is ready
+    if (st.actingPos >= 0 && st.actionDeadline) _startTimer(st.actionDeadline);
   }
 
   // ── actions ──────────────────────────────────────────────────────────────

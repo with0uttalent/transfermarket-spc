@@ -85,7 +85,7 @@
 .pk-seat-acting { box-shadow: 0 0 0 3px #f1c40f, 0 0 22px rgba(241,196,15,.7); animation: pk-pulse 1.2s infinite; }
 .pk-seat-folded { opacity: .42; filter: grayscale(.7); }
 .pk-seat-winner { box-shadow: 0 0 0 3px #2ecc71, 0 0 26px rgba(46,204,113,.8); }
-.pk-seat-cards { display: flex; gap: 3px; justify-content: center; height: 40px; margin-bottom: -8px; position: relative; z-index: 1; }
+.pk-seat-cards { display: flex; gap: 3px; justify-content: center; height: 54px; margin-bottom: -8px; position: relative; z-index: 1; }
 .pk-seat-av { width: 44px; height: 44px; border-radius: 50%; margin: 4px auto 4px; overflow: hidden; background: linear-gradient(135deg, #16a34a, #15803d); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 18px; border: 2px solid rgba(255,255,255,.25); position: relative; z-index: 2; }
 .pk-seat-av img { width: 100%; height: 100%; object-fit: cover; }
 .pk-seat-name { font-size: 12px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -95,36 +95,62 @@
 .pk-seat-stake { font-size: 9px; font-weight: 700; color: #fde68a; background: rgba(0,0,0,.4); border-radius: 6px; padding: 1px 5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-dealer-btn { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; background: #fff; color: #1a1a1a; border-radius: 50%; font-size: 12px; font-weight: 900; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.5); z-index: 4; }
 
-/* ── Football playing cards ──────────────────────────────────────────────────*/
-.pk-card { position: relative; width: 58px; height: 82px; border-radius: 8px; background: linear-gradient(160deg, #ffffff, #f1f5f9); box-shadow: 0 3px 10px rgba(0,0,0,.4); flex-shrink: 0; overflow: hidden; }
-.pk-card-sm { width: 34px; height: 48px; border-radius: 5px; }
+/* ── Playing cards ───────────────────────────────────────────────────────────*/
+.pk-card { position: relative; width: 72px; height: 100px; border-radius: 9px; background: linear-gradient(160deg, #ffffff, #f1f5f9); box-shadow: 0 3px 10px rgba(0,0,0,.4); flex-shrink: 0; overflow: hidden; }
+.pk-card-sm { width: 44px; height: 62px; border-radius: 6px; }
+.pk-card-xs { width: 30px; height: 42px; border-radius: 4px; }
 .pk-card.suit-red .pk-card-rank, .pk-card.suit-red .pk-card-center { color: #dc2626; }
 .pk-card.suit-dark .pk-card-rank, .pk-card.suit-dark .pk-card-center { color: #1e293b; }
 .pk-card-corner { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.pk-card-corner.tl { top: 4px; left: 5px; }
-.pk-card-corner.br { bottom: 4px; right: 5px; transform: rotate(180deg); }
-.pk-card-rank { font-weight: 900; font-size: 15px; }
-.pk-card-sm .pk-card-rank { font-size: 10px; }
-.pk-card-corner .pk-card-suit { font-size: 10px; }
-.pk-card-sm .pk-card-corner .pk-card-suit { font-size: 7px; }
-.pk-card-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 30px; filter: saturate(1.1); }
-.pk-card-sm .pk-card-center { font-size: 17px; }
+.pk-card-corner.tl { top: 5px; left: 6px; }
+.pk-card-corner.br { bottom: 5px; right: 6px; transform: rotate(180deg); }
+.pk-card-rank { font-weight: 900; font-size: 18px; }
+.pk-card-sm .pk-card-rank { font-size: 12px; }
+.pk-card-xs .pk-card-rank { font-size: 9px; }
+.pk-card-corner .pk-card-suit { font-size: 12px; }
+.pk-card-sm .pk-card-corner .pk-card-suit { font-size: 8px; }
+.pk-card-xs .pk-card-corner .pk-card-suit { font-size: 6px; }
+.pk-card-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 38px; filter: saturate(1.1); }
+.pk-card-sm .pk-card-center { font-size: 22px; }
+.pk-card-xs .pk-card-center { font-size: 15px; }
 .pk-card-back { background: linear-gradient(135deg, #9a1f2b, #b91c1c); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,.35); padding: 4px; }
 .pk-card-back-inner { width: 100%; height: 100%; border-radius: 4px; border: 1.5px solid rgba(255,255,255,.45);
   background-image:
     repeating-linear-gradient(45deg, rgba(255,255,255,.14) 0 4px, transparent 4px 8px),
     repeating-linear-gradient(-45deg, rgba(255,255,255,.14) 0 4px, transparent 4px 8px); }
 .pk-card-deal { animation: pk-deal .35s cubic-bezier(.2,.9,.3,1.2) backwards; }
-/* Winning-combination highlight at showdown */
-.pk-card-hl { box-shadow: 0 0 0 3px #f1c40f, 0 0 18px rgba(241,196,15,.9); transform: translateY(-6px); z-index: 5; animation: pk-card-glow 1.1s ease-in-out infinite alternate; }
+
+/* Showdown winning-combination highlight */
+.pk-card-hl { box-shadow: 0 0 0 3px #f1c40f, 0 0 18px rgba(241,196,15,.9); transform: translateY(-8px); z-index: 5; animation: pk-card-glow 1.1s ease-in-out infinite alternate; }
 .pk-card-dim { opacity: .42; filter: saturate(.6); }
 @keyframes pk-card-glow { from { box-shadow: 0 0 0 3px #f1c40f, 0 0 14px rgba(241,196,15,.7); } to { box-shadow: 0 0 0 3px #f7d94c, 0 0 26px rgba(241,196,15,1); } }
 /* Live combination highlight (current best hand during betting rounds) */
-.pk-card-live-hl { box-shadow: 0 0 0 2.5px #22c55e, 0 0 14px rgba(34,197,94,.75); transform: translateY(-4px); z-index: 4; animation: pk-card-live-glow 1.3s ease-in-out infinite alternate; }
+.pk-card-live-hl { box-shadow: 0 0 0 2.5px #22c55e, 0 0 14px rgba(34,197,94,.75); transform: translateY(-5px); z-index: 4; animation: pk-card-live-glow 1.3s ease-in-out infinite alternate; }
 @keyframes pk-card-live-glow { from { box-shadow: 0 0 0 2.5px #22c55e, 0 0 10px rgba(34,197,94,.55); } to { box-shadow: 0 0 0 2.5px #4ade80, 0 0 20px rgba(34,197,94,.9); } }
-/* Live hand name badge */
-.pk-live-hand-badge { display: inline-flex; align-items: center; gap: 6px; margin: 12px auto 0; padding: 7px 16px; background: linear-gradient(135deg, rgba(21,128,61,.85), rgba(22,163,74,.85)); border: 1px solid rgba(74,222,128,.45); border-radius: 20px; color: #bbf7d0; font-size: 14px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.6); backdrop-filter: blur(4px); letter-spacing: .3px; width: fit-content; }
-[data-theme=light] .pk-live-hand-badge { background: linear-gradient(135deg, rgba(21,128,61,.15), rgba(22,163,74,.15)); border-color: rgba(22,163,74,.4); color: #15803d; text-shadow: none; }
+
+/* ── Hover-to-reveal flip for own hole cards ─────────────────────────────────*/
+.pk-my-hole-wrap { display: flex; gap: 4px; cursor: pointer; justify-content: center; }
+.pk-hole-flip { perspective: 700px; width: 44px; height: 62px; flex-shrink: 0; }
+.pk-hole-flip-inner { position: relative; width: 44px; height: 62px; transform-style: preserve-3d; transition: transform 0.38s cubic-bezier(.4,0,.2,1); }
+.pk-my-hole-wrap:hover .pk-hole-flip-inner { transform: rotateY(180deg); }
+.pk-hole-flip-back, .pk-hole-flip-front { position: absolute; top: 0; left: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.pk-hole-flip-front { transform: rotateY(180deg); }
+/* Green glow on the flip container (visible in both states) */
+.pk-hole-flip-hl .pk-hole-flip-inner { filter: drop-shadow(0 0 5px rgba(34,197,94,.8)); animation: pk-hole-hl-pulse 1.3s ease-in-out infinite alternate; }
+@keyframes pk-hole-hl-pulse { from { filter: drop-shadow(0 0 4px rgba(34,197,94,.6)); } to { filter: drop-shadow(0 0 10px rgba(74,222,128,1)); } }
+
+/* ── Live hand badge ─────────────────────────────────────────────────────────*/
+.pk-live-hand-badge { display: inline-flex; align-items: center; gap: 10px; margin: 10px auto 0; padding: 8px 14px; background: linear-gradient(135deg, rgba(21,128,61,.88), rgba(22,163,74,.88)); border: 1px solid rgba(74,222,128,.45); border-radius: 14px; color: #bbf7d0; font-size: 13px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.6); backdrop-filter: blur(4px); width: fit-content; }
+.pk-live-hand-name { white-space: nowrap; }
+.pk-live-hand-cards { display: flex; gap: 3px; align-items: center; }
+[data-theme=light] .pk-live-hand-badge { background: linear-gradient(135deg, rgba(21,128,61,.12), rgba(22,163,74,.12)); border-color: rgba(22,163,74,.4); color: #15803d; text-shadow: none; }
+
+/* ── Action timer ────────────────────────────────────────────────────────────*/
+.pk-seat-timer { position: absolute; top: -18px; right: -4px; z-index: 5; }
+.pk-timer-num { display: inline-block; background: rgba(0,0,0,.65); color: #fde68a; font-size: 13px; font-weight: 800; padding: 2px 7px; border-radius: 10px; min-width: 28px; text-align: center; backdrop-filter: blur(4px); }
+.pk-timer-num.pk-timer-urgent { background: #dc2626; color: #fff; animation: pk-timer-flash .5s ease-in-out infinite alternate; }
+@keyframes pk-timer-flash { from { opacity: 1; } to { opacity: .6; } }
+.pk-my-timer { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #fde68a; font-weight: 700; white-space: nowrap; margin-left: auto; }
 
 /* ── Action controls ────────────────────────────────────────────────────────*/
 .pk-actions { display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px; padding: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; }
@@ -166,10 +192,15 @@
 
 /* ── Responsive ─────────────────────────────────────────────────────────────*/
 @media (max-width: 620px) {
-  .pk-seat { width: 72px; }
+  .pk-seat { width: 76px; }
   .pk-seat-av { width: 36px; height: 36px; font-size: 15px; }
-  .pk-card { width: 44px; height: 62px; }
-  .pk-card-center { font-size: 22px; }
+  .pk-seat-cards { height: 46px; }
+  .pk-card { width: 54px; height: 76px; }
+  .pk-card-sm { width: 34px; height: 48px; }
+  .pk-card-center { font-size: 28px; }
+  .pk-card-sm .pk-card-center { font-size: 17px; }
+  .pk-hole-flip { width: 34px; height: 48px; }
+  .pk-hole-flip-inner { width: 34px; height: 48px; }
   .pk-act { padding: 11px 16px; font-size: 14px; }
   .pk-raise-group input[type=range] { width: 80px; }
 }

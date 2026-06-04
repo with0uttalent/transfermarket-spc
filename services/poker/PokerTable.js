@@ -114,6 +114,7 @@ class PokerTable {
       s.betThisRound = 0;
       s.totalBet = 0;
       s.cards = [];
+      s.actedThisRound = false;
     }
 
     const players = this.activePlayers();
@@ -236,6 +237,9 @@ class PokerTable {
         return { error: 'Неизвестное действие' };
     }
 
+    // Mark this player as having freely acted this round
+    seat.actedThisRound = true;
+
     // Did the hand end by everyone folding?
     if (this.activePlayers().length === 1) {
       this._endHandByFold();
@@ -254,33 +258,27 @@ class PokerTable {
       return;
     }
 
-    const next = this._nextActionable(this.actingPos);
-    // Round is complete when action returns to the aggressor (or everyone matched)
-    if (this._isRoundComplete(next)) {
+    if (this._isRoundComplete()) {
       this._nextStage();
     } else {
-      this.actingPos = next;
+      this.actingPos = this._nextActionable(this.actingPos);
       this._setDeadline();
     }
   }
 
-  _isRoundComplete(nextPos) {
+  // Round ends when all active (non-allin) players have freely acted AND all bets are matched.
+  _isRoundComplete() {
     const actms = this.actionablePlayers();
     if (actms.length === 0) return true;
-    // Everyone still in has matched the current bet?
     const allMatched = this.activePlayers().every(
       x => x.s.isAllIn || x.s.betThisRound === this.currentBet
     );
-    // Action has returned to the last aggressor
-    if (allMatched && nextPos === this.lastAggressorPos) return true;
-    // Special preflop case: BB option — handled because lastAggressor=BB initially
-    if (allMatched && this.lastAggressorPos === -1) return true;
-    return false;
+    return allMatched && actms.every(x => x.s.actedThisRound);
   }
 
   _nextStage() {
-    // Reset per-round bets
-    for (const { s } of this.activePlayers()) s.betThisRound = 0;
+    // Reset per-round bets and acted flags
+    for (const { s } of this.activePlayers()) { s.betThisRound = 0; s.actedThisRound = false; }
     this.currentBet = 0;
     this.minRaise = this.bigBlind;
     this.lastAggressorPos = -1;
@@ -384,7 +382,8 @@ class PokerTable {
       revealed: evaluated.map(e => ({
         pos: e.pos, coachId: e.seat.coachId, name: e.seat.name,
         cards: e.seat.cards, hand: e.eval.name,
-        combo: e.eval.cards, // the 5 cards that make this player's best hand
+        combo: e.eval.cards,     // the 5 cards that make this player's best hand
+        comboRank: e.eval.rank,  // numeric rank (0=high card … 9=royal flush)
       })),
     };
     for (const pr of potResults) {
