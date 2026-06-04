@@ -201,11 +201,17 @@
 @keyframes pk-emote-out { from { opacity: 1; } to { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.8); } }
 .pk-emote-open { position: absolute; bottom: -8px; right: -8px; background: rgba(0,0,0,.6); border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; }
 .pk-emote-picker { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(20,30,24,.95); border: 1px solid rgba(255,255,255,.15); border-radius: 14px; padding: 8px; display: flex; flex-wrap: wrap; gap: 4px; width: 160px; z-index: 30; backdrop-filter: blur(8px); animation: pk-pop 0.2s ease; }
-.pk-emote-item { background: none; border: none; font-size: 22px; cursor: pointer; padding: 4px; border-radius: 8px; transition: transform 0.1s; }
-.pk-emote-item:hover { transform: scale(1.3); background: rgba(255,255,255,.1); }
+.pk-emote-item { background: none; border: none; font-size: 22px; cursor: pointer; padding: 4px 6px; border-radius: 8px; transition: transform 0.1s; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pk-emote-item:hover { transform: scale(1.25); background: rgba(255,255,255,.1); }
+.pk-emote-label { font-size: 8px; color: rgba(255,255,255,.55); white-space: nowrap; }
+
+/* ── Show-cards button ───────────────────────────────────────────────────────*/
+.pk-show-cards-btn { position: absolute; bottom: -28px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border: none; border-radius: 10px; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; box-shadow: 0 3px 12px rgba(109,40,217,.55); animation: pk-pop .3s cubic-bezier(.34,1.56,.64,1); z-index: 10; }
+.pk-show-cards-btn:hover { filter: brightness(1.12); }
 
 /* ── Cosmetics ───────────────────────────────────────────────────────────────*/
-.pk-cosmetic-badge { position: absolute; top: -8px; right: -4px; font-size: 18px; line-height: 1; filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); pointer-events: none; animation: pk-pop .3s cubic-bezier(.34,1.56,.64,1); }
+.pk-seat-av { position: relative; }
+.pk-cosmetic-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 20px; line-height: 1; filter: drop-shadow(0 1px 4px rgba(0,0,0,.8)); pointer-events: none; animation: pk-pop .3s cubic-bezier(.34,1.56,.64,1); }
 
 /* ── Shop lobby button ───────────────────────────────────────────────────────*/
 .pk-shop-open-btn { background: rgba(0,0,0,.3); color: #fff; border: 1px solid rgba(255,255,255,.3); padding: 8px 14px; border-radius: 20px; font-size: 14px; cursor: pointer; font-weight: 700; backdrop-filter: blur(4px); }
