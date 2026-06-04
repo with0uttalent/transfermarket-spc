@@ -52,8 +52,8 @@
 .pk-table-title { font-size: 18px; font-weight: 800; flex: 1; }
 .pk-table-blinds { font-size: 13px; color: var(--text-muted); }
 
-.pk-stadium { position: relative; border-radius: 24px; overflow: hidden; padding: 30px 18px;
-  background: linear-gradient(180deg, #0a1f12 0%, #0d2818 100%); min-height: 540px; }
+.pk-stadium { position: relative; border-radius: 24px; overflow: hidden; padding: 62px 30px 50px;
+  background: linear-gradient(180deg, #0a1f12 0%, #0d2818 100%); min-height: 580px; }
 .pk-stadium-stands { position: absolute; inset: 0;
   background:
     repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 6px, transparent 6px 12px),
@@ -61,7 +61,7 @@
     radial-gradient(ellipse at 50% 110%, rgba(80,80,90,.4), transparent 55%);
   pointer-events: none; }
 
-.pk-felt { position: relative; width: 100%; max-width: 760px; margin: 0 auto; aspect-ratio: 16/11;
+.pk-felt { position: relative; width: 100%; max-width: 720px; margin: 0 auto; aspect-ratio: 16/11;
   border-radius: 50% / 42%;
   background: radial-gradient(ellipse at 50% 45%, #1c8a4e 0%, #116034 70%, #0c4a28 100%);
   border: 10px solid #3a2417; box-shadow: 0 0 0 4px #553522, inset 0 0 60px rgba(0,0,0,.5), 0 20px 50px rgba(0,0,0,.6); }
@@ -247,6 +247,7 @@
 
 /* ── Responsive ─────────────────────────────────────────────────────────────*/
 @media (max-width: 620px) {
+  .pk-stadium { padding: 48px 16px 38px; }
   .pk-seat { width: 76px; }
   .pk-seat-av-wrap { width: 36px; }
   .pk-seat-av { width: 36px; height: 36px; font-size: 15px; }

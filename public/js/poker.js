@@ -325,15 +325,15 @@
   // ── TABLE ──────────────────────────────────────────────────────────────────
   // Seat screen positions around an oval (9 seats), in %.
   const SEAT_POS = [
-    { x: 50, y: 90 },  // 0 bottom center (hero)
-    { x: 22, y: 84 },
-    { x: 6,  y: 58 },
-    { x: 10, y: 28 },
-    { x: 30, y: 10 },
-    { x: 50, y: 6 },
-    { x: 70, y: 10 },
-    { x: 90, y: 28 },
-    { x: 94, y: 58 },
+    { x: 50, y: 88 },  // 0 bottom center (hero)
+    { x: 24, y: 80 },  // 1 bottom left
+    { x: 10, y: 57 },  // 2 left
+    { x: 15, y: 27 },  // 3 top left
+    { x: 33, y: 11 },  // 4 top left-ish
+    { x: 50, y: 8  },  // 5 top center
+    { x: 67, y: 11 },  // 6 top right-ish
+    { x: 85, y: 27 },  // 7 top right
+    { x: 90, y: 57 },  // 8 right
   ];
 
   function renderTable() {
