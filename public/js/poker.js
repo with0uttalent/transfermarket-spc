@@ -30,6 +30,7 @@
   ];
   const activeEmotes = new Map(); // seatIndex → { emoji, expiresAt }
   let _emotePickerOpen = false;
+  let _comboHidden = false;
 
   // ── Standard suits ─────────────────────────────────────────────────────────
   const SUIT = {
@@ -444,9 +445,14 @@
     const liveHandBadge = liveHand ? (() => {
       const keyCards = getKeyCards(liveHand.rank, liveHand.cards);
       const miniCards = keyCards.map(c => cardHtml(c, { xs: true })).join('');
-      return `<div class="pk-live-hand-badge">
-        <span class="pk-live-hand-name">${escHtml(liveHand.name)}</span>
-        <div class="pk-live-hand-cards">${miniCards}</div>
+      const hiddenClass = _comboHidden ? ' pk-combo-hidden' : '';
+      const eyeIcon = _comboHidden ? '👁' : '🙈';
+      return `<div class="pk-live-hand-badge${hiddenClass}">
+        <span class="pk-combo-content">
+          <span class="pk-live-hand-name">${escHtml(liveHand.name)}</span>
+          <div class="pk-live-hand-cards">${miniCards}</div>
+        </span>
+        <button class="pk-combo-toggle" onclick="PokerUI._toggleCombo()" title="${_comboHidden ? 'Показать комбинацию' : 'Скрыть комбинацию'}">${eyeIcon}</button>
       </div>`;
     })() : '';
 
@@ -625,6 +631,24 @@
     socket.emit('table:showcards', { tableId: currentTableId });
   }
 
+  // ── combo badge visibility toggle ────────────────────────────────────────────
+  function toggleCombo() {
+    _comboHidden = !_comboHidden;
+    // Re-render just the badge in place if possible, otherwise full re-render
+    const badge = document.querySelector('.pk-live-hand-badge');
+    if (!badge) return;
+    if (_comboHidden) {
+      badge.classList.add('pk-combo-hidden');
+    } else {
+      badge.classList.remove('pk-combo-hidden');
+    }
+    const btn = badge.querySelector('.pk-combo-toggle');
+    if (btn) {
+      btn.textContent = _comboHidden ? '👁' : '🙈';
+      btn.title = _comboHidden ? 'Показать комбинацию' : 'Скрыть комбинацию';
+    }
+  }
+
   // ── emotes ──────────────────────────────────────────────────────────────────
   function _renderEmotes() {
     const now = Date.now();
@@ -735,6 +759,7 @@
     _leaveTable: leaveTable, _backToLobby: backToLobby,
     _openSitModal: openSitModal, _stakeTab: stakeTab, _closeSit: closeSit, _confirmSit: confirmSit,
     _showCards: showCards,
+    _toggleCombo: toggleCombo,
     _sendEmote: sendEmote,
     _openShop: openShop, _shopBuy: shopBuy, _shopEquip: shopEquip,
   };

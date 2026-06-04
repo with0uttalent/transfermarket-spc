@@ -135,14 +135,19 @@
 .pk-my-hole-wrap:hover .pk-hole-flip-inner { transform: rotateY(180deg); }
 .pk-hole-flip-back, .pk-hole-flip-front { position: absolute; top: 0; left: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .pk-hole-flip-front { transform: rotateY(180deg); }
-/* Green glow on the flip container (visible in both states) */
-.pk-hole-flip-hl .pk-hole-flip-inner { filter: drop-shadow(0 0 5px rgba(34,197,94,.8)); animation: pk-hole-hl-pulse 1.3s ease-in-out infinite alternate; }
-@keyframes pk-hole-hl-pulse { from { filter: drop-shadow(0 0 4px rgba(34,197,94,.6)); } to { filter: drop-shadow(0 0 10px rgba(74,222,128,1)); } }
+/* Green glow on the flip wrapper — use box-shadow (not filter) so preserve-3d context is not broken */
+.pk-hole-flip-hl { box-shadow: 0 0 0 2px #22c55e, 0 0 12px rgba(34,197,94,.7); border-radius: 6px; animation: pk-hole-hl-box 1.3s ease-in-out infinite alternate; }
+@keyframes pk-hole-hl-box { from { box-shadow: 0 0 0 2px #22c55e, 0 0 8px rgba(34,197,94,.5); } to { box-shadow: 0 0 0 2px #4ade80, 0 0 18px rgba(74,222,128,.9); } }
 
 /* ── Live hand badge ─────────────────────────────────────────────────────────*/
-.pk-live-hand-badge { display: inline-flex; align-items: center; gap: 10px; margin: 10px auto 0; padding: 8px 14px; background: linear-gradient(135deg, rgba(21,128,61,.88), rgba(22,163,74,.88)); border: 1px solid rgba(74,222,128,.45); border-radius: 14px; color: #bbf7d0; font-size: 13px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.6); backdrop-filter: blur(4px); width: fit-content; }
+.pk-live-hand-badge { display: inline-flex; align-items: center; gap: 8px; margin: 10px auto 0; padding: 6px 10px 6px 14px; background: linear-gradient(135deg, rgba(21,128,61,.88), rgba(22,163,74,.88)); border: 1px solid rgba(74,222,128,.45); border-radius: 14px; color: #bbf7d0; font-size: 13px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.6); backdrop-filter: blur(4px); width: fit-content; }
+.pk-combo-content { display: inline-flex; align-items: center; gap: 10px; transition: filter .2s, opacity .2s; }
 .pk-live-hand-name { white-space: nowrap; }
 .pk-live-hand-cards { display: flex; gap: 3px; align-items: center; }
+/* Hidden state — blur the content so it's unreadable without removing layout */
+.pk-combo-hidden .pk-combo-content { filter: blur(6px); opacity: .5; pointer-events: none; user-select: none; }
+.pk-combo-toggle { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; opacity: .8; transition: opacity .15s; flex-shrink: 0; }
+.pk-combo-toggle:hover { opacity: 1; }
 [data-theme=light] .pk-live-hand-badge { background: linear-gradient(135deg, rgba(21,128,61,.12), rgba(22,163,74,.12)); border-color: rgba(22,163,74,.4); color: #15803d; text-shadow: none; }
 
 /* ── Action timer ────────────────────────────────────────────────────────────*/
