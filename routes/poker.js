@@ -82,9 +82,10 @@ router.post('/shop/buy', requireCoach, (req, res) => {
   if (!coach || !coach.team_id) return res.status(403).json({ error: 'Нет команды' });
   const already = db.prepare('SELECT id FROM coach_cosmetics WHERE coach_id=? AND item_key=?').get(coach.id, itemKey);
   if (already) return res.status(400).json({ error: 'Уже куплено' });
-  const team = db.prepare('SELECT budget FROM teams WHERE id=?').get(coach.team_id);
-  if (!team || team.budget < item.price) return res.status(400).json({ error: 'Недостаточно средств' });
-  db.prepare('UPDATE teams SET budget=budget-? WHERE id=?').run(item.price, coach.team_id);
+  const { availableBudget } = require('../services/betting');
+  const free = availableBudget(db, coach.team_id);
+  if (free < item.price) return res.status(400).json({ error: 'Недостаточно средств' });
+  db.prepare('UPDATE teams SET transfer_budget_spent=transfer_budget_spent+? WHERE id=?').run(item.price, coach.team_id);
   db.prepare('INSERT INTO coach_cosmetics (coach_id, item_key) VALUES (?,?)').run(coach.id, itemKey);
   res.json({ ok: true });
 });
