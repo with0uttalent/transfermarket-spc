@@ -8,7 +8,7 @@ const FormData = require('form-data');
 const TOKEN           = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID         = process.env.TELEGRAM_CHAT_ID;
 const LIVE_CHANNEL_ID = process.env.TELEGRAM_LIVE_CHANNEL_ID;
-const PROXY           = 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
+const PROXY           = process.env.TELEGRAM_PROXY || 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
 
 let agent = null;
 let _enabled = true; // master switch
