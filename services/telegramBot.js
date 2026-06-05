@@ -1,16 +1,13 @@
 'use strict';
 
 const { createCanvas, loadImage } = require('canvas');
-const { SocksProxyAgent } = require('socks-proxy-agent');
 const fetch  = require('node-fetch');
 const FormData = require('form-data');
 
 const TOKEN           = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID         = process.env.TELEGRAM_CHAT_ID;
 const LIVE_CHANNEL_ID = process.env.TELEGRAM_LIVE_CHANNEL_ID;
-const PROXY           = process.env.TELEGRAM_PROXY || 'socks5://l0x4hWRoT9:008xL8CEph@158.160.16.143:35665';
 
-let agent = null;
 let _enabled = true; // master switch
 
 // Per-type notification flags
@@ -36,7 +33,6 @@ function initBot() {
     console.log('[TelegramBot] No TOKEN/CHAT_ID — disabled.');
     return;
   }
-  agent = new SocksProxyAgent(PROXY);
   console.log('[TelegramBot] Ready.');
   startPolling();
 }
@@ -45,7 +41,7 @@ async function tgGetUpdates() {
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${TOKEN}/getUpdates?offset=${_updateOffset}&timeout=5`,
-      { agent }
+      {}
     );
     const data = await res.json();
     if (!data.ok || !data.result.length) return;
@@ -173,7 +169,6 @@ async function tgSendMessageTo(chatId, text) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-    agent,
   });
   return res.json();
 }
@@ -186,7 +181,7 @@ async function tgSendPhoto(photoBuffer, caption) {
   form.append('caption', caption);
   form.append('parse_mode', 'HTML');
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, {
-    method: 'POST', body: form, agent,
+    method: 'POST', body: form,
   });
   return res.json();
 }
@@ -196,7 +191,6 @@ async function tgSendMessage(text) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: 'HTML' }),
-    agent,
   });
   return res.json();
 }
@@ -360,31 +354,30 @@ function escTg(str) {
 
 // ── Live channel helpers ──────────────────────────────────────────────────────
 async function tgSendMessageToLive(text) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  if (!LIVE_CHANNEL_ID || !_enabled) return;
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: LIVE_CHANNEL_ID, text, parse_mode: 'HTML' }),
-    agent,
   });
   return res.json();
 }
 
 async function tgSendPhotoToLive(photoBuffer, caption) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  if (!LIVE_CHANNEL_ID || !_enabled) return;
   const form = new FormData();
   form.append('chat_id', LIVE_CHANNEL_ID);
   form.append('photo', photoBuffer, { filename: 'match.png', contentType: 'image/png' });
   form.append('caption', caption);
   form.append('parse_mode', 'HTML');
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, {
-    method: 'POST', body: form, agent,
+    method: 'POST', body: form,
   });
   return res.json();
 }
 
 async function sendMatchKickoff({ homeTeam, awayTeam, leagueName, matchday }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled) return;
+  if (!LIVE_CHANNEL_ID || !_enabled) return;
   try {
     const leagueLine = leagueName ? `\n🏆 <i>${escTg(leagueName)}</i>${matchday ? ` · Тур ${matchday}` : ''}` : '';
     const text = `🟢 <b>МАТЧ НАЧАЛСЯ!</b>${leagueLine}\n\n⚽ <b>${escTg(homeTeam)}</b> vs <b>${escTg(awayTeam)}</b>`;
@@ -400,7 +393,7 @@ const LIVE_EV_ICON = {
 };
 
 async function sendLiveEvent({ event, homeTeam, awayTeam, homeScore, awayScore, leagueName }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_events) return;
+  if (!LIVE_CHANNEL_ID || !_enabled || !_notif.channel_events) return;
   if (!LIVE_EV_ICON[event.event_type]) return;
   try {
     const icon = LIVE_EV_ICON[event.event_type];
@@ -415,7 +408,7 @@ async function sendLiveEvent({ event, homeTeam, awayTeam, homeScore, awayScore, 
 }
 
 async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, leagueName, leagueLogoUrl, goalEvents }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_results) return;
+  if (!LIVE_CHANNEL_ID || !_enabled || !_notif.channel_results) return;
   try {
     const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, 'finished', stadiumUrl, leagueName, leagueLogoUrl);
     const homeGoals = (goalEvents || []).filter(e => e.team_id === homeTeamId);
@@ -433,7 +426,7 @@ async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, a
 
 // ── Public API ────────────────────────────────────────────────────────────────
 async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, status, goalEvents, leagueName, leagueLogoUrl }) {
-  if (!agent || !_enabled || !_notif.group_results) return;
+  if (!_enabled || !_notif.group_results) return;
   try {
     const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl);
 
@@ -453,7 +446,7 @@ async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awaySco
 }
 
 async function sendCoachNews({ coachName, teamName, title, body }) {
-  if (!agent || !_enabled) return;
+  if (!_enabled) return;
   if (!_notif.group_coach_news && !_notif.channel_coach_news) return;
   try {
     const text = `📢 <b>Тренер ${escTg(teamName)}</b> — <i>${escTg(coachName)}</i> — заявил:\n\n<b>${escTg(title)}</b>\n\n${escTg(body)}`;
@@ -682,7 +675,7 @@ async function generateStandingsBanner(leagueName, leagueLogoUrl, matchday, stan
 }
 
 async function sendStandingsBanner({ leagueName, leagueLogoUrl, matchday, standings }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_standings) return;
+  if (!LIVE_CHANNEL_ID || !_enabled || !_notif.channel_standings) return;
   try {
     const imgBuf = await generateStandingsBanner(leagueName, leagueLogoUrl, matchday, standings);
     const caption = `📊 <b>${escTg(leagueName)}</b> · Тур ${matchday} завершён`;
@@ -693,7 +686,7 @@ async function sendStandingsBanner({ leagueName, leagueLogoUrl, matchday, standi
 }
 
 async function sendPlayerNews({ title, body, type }) {
-  if (!LIVE_CHANNEL_ID || !agent || !_enabled || !_notif.channel_player_news) return;
+  if (!LIVE_CHANNEL_ID || !_enabled || !_notif.channel_player_news) return;
   try {
     const icon = type === 'scandal' ? '🔥' : '📰';
     const text = `${icon} <b>${escTg(title)}</b>\n\n${escTg(body)}`;
