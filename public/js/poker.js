@@ -423,7 +423,6 @@
         </div>
         ${seat.betThisRound ? `<div class="pk-seat-bet">${fmtChips(seat.betThisRound)}</div>` : ''}
         ${seat.isAllIn ? '<div class="pk-seat-allin">ALL-IN</div>' : ''}
-        ${seat.stake && seat.stake.type !== 'cash' ? `<div class="pk-seat-stake">${seat.stake.type === 'team' ? '⚽ КОМАНДА' : '👤 ' + escHtml(seat.stake.playerName || 'игрок')}</div>` : ''}
         ${showCardsBtn}
       </div>`;
     }).join('');
@@ -554,12 +553,10 @@
     GET('/poker').then(d => { lobbyData = d; renderLobby(); }).catch(() => renderLobby());
   }
 
-  // ── sit-down modal (choose stake) ───────────────────────────────────────────
+  // ── sit-down modal ───────────────────────────────────────────────────────────
   function openSitModal(seatIndex) {
     const d = lobbyData || {};
     if (!d.me || !d.me.teamId) { toast('Нужна команда', 'error'); return; }
-    const players = (d.stakeable || []).map(p => `
-      <option value="${p.id}">${escHtml(p.name)} — ${fmtValue(p.market_value)}</option>`).join('');
     const modal = document.createElement('div');
     modal.className = 'pk-modal-overlay';
     modal.id = 'pk-sit-modal';
@@ -570,60 +567,24 @@
           <button class="pk-modal-close" onclick="PokerUI._closeSit()">×</button>
         </div>
         <div class="pk-modal-body">
-          <div class="pk-stake-tabs">
-            <button class="pk-stake-tab active" data-stake="cash" onclick="PokerUI._stakeTab('cash')">💰 Деньги</button>
-            <button class="pk-stake-tab" data-stake="player" onclick="PokerUI._stakeTab('player')">👤 Игрок</button>
-            <button class="pk-stake-tab" data-stake="team" onclick="PokerUI._stakeTab('team')">⚽ Команда</button>
-          </div>
-          <div class="pk-stake-pane" id="pk-pane-cash">
-            <label>Сумма из бюджета (доступно ${fmtValue(d.budget || 0)})</label>
-            <input type="number" id="pk-stake-cash" min="1000" step="1000" value="${Math.min(100000, d.budget || 0)}">
-          </div>
-          <div class="pk-stake-pane hidden" id="pk-pane-player">
-            <label>Игрок становится фишками по рыночной стоимости</label>
-            <select id="pk-stake-player">${players || '<option>Нет доступных игроков</option>'}</select>
-            <p class="pk-stake-warn">⚠ Если проиграете все фишки — игрок перейдёт победителю!</p>
-          </div>
-          <div class="pk-stake-pane hidden" id="pk-pane-team">
-            <label>Вся команда как ставка (${fmtValue(d.teamValue || 0)})</label>
-            <p class="pk-stake-warn">⚠⚠ Проигрыш всех фишек = потеря всей команды! Только для смелых.</p>
-          </div>
+          <label>💰 Сумма из трансферного бюджета (доступно ${fmtValue(d.budget || 0)})</label>
+          <input type="number" id="pk-stake-cash" min="1000" step="1000" value="${Math.min(100000, d.budget || 0)}">
           <button class="pk-sit-confirm" onclick="PokerUI._confirmSit(${seatIndex})">Сесть и купить фишки</button>
         </div>
       </div>`;
     document.body.appendChild(modal);
   }
-  let _stakeType = 'cash';
-  function stakeTab(type) {
-    _stakeType = type;
-    document.querySelectorAll('.pk-stake-tab').forEach(b => b.classList.toggle('active', b.dataset.stake === type));
-    ['cash', 'player', 'team'].forEach(t => {
-      const pane = document.getElementById('pk-pane-' + t);
-      if (pane) pane.classList.toggle('hidden', t !== type);
-    });
-  }
-  function closeSit() { const m = document.getElementById('pk-sit-modal'); if (m) m.remove(); _stakeType = 'cash'; }
+  function stakeTab() {}
+  function closeSit() { const m = document.getElementById('pk-sit-modal'); if (m) m.remove(); }
   function confirmSit(seatIndex) {
-    let stake;
-    if (_stakeType === 'cash') {
-      const amt = Number(document.getElementById('pk-stake-cash').value);
-      if (!amt || amt < 1000) { toast('Минимум 1000', 'error'); return; }
-      stake = { type: 'cash', amount: amt };
-    } else if (_stakeType === 'player') {
-      const pid = Number(document.getElementById('pk-stake-player').value);
-      if (!pid) { toast('Выберите игрока', 'error'); return; }
-      stake = { type: 'player', playerId: pid };
-    } else {
-      stake = { type: 'team' };
-    }
-    socket.emit('table:sit', { tableId: currentTableId, seatIndex, stake });
+    const amt = Number(document.getElementById('pk-stake-cash').value);
+    if (!amt || amt < 1000) { toast('Минимум 1000', 'error'); return; }
+    socket.emit('table:sit', { tableId: currentTableId, seatIndex, stake: { type: 'cash', amount: amt } });
     closeSit();
   }
 
   function announceCashout(summary) {
     if (!summary) return;
-    if (summary.lostPlayer) { toast('Вы проиграли игрока за столом!', 'error'); return; }
-    if (summary.lostTeam) { toast('Вы проиграли всю команду!', 'error'); return; }
     const sign = summary.delta >= 0 ? '+' : '';
     toast(`Результат: ${sign}${fmtChips(summary.delta)} 🪙`, summary.delta >= 0 ? 'success' : 'info');
   }

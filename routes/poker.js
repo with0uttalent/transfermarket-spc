@@ -32,7 +32,7 @@ router.get('/', optionalAuth, (req, res) => {
   const mgr = getPokerManager();
   const tables = mgr.listTables();
 
-  let me = null, stakeable = null, budget = null, teamValue = null;
+  let me = null, budget = null, teamValue = null;
   if (req.user) {
     const coach = myCoach(db, req.user.id);
     if (coach && coach.team_id) {
@@ -40,19 +40,11 @@ router.get('/', optionalAuth, (req, res) => {
       budget = Math.round(availableBudget(db, coach.team_id));
       const tv = db.prepare('SELECT COALESCE(SUM(market_value),0) AS v FROM players WHERE team_id=?').get(coach.team_id);
       teamValue = Math.round(tv.v);
-      stakeable = db.prepare(`
-        SELECT p.id, p.name, p.position, p.image_url, p.market_value
-        FROM players p
-        WHERE p.team_id = ? AND p.status='active'
-          AND p.id NOT IN (SELECT player_id FROM poker_player_locks)
-        ORDER BY p.market_value DESC
-        LIMIT 40
-      `).all(coach.team_id);
       me = { coachId: coach.id, name: coach.name, teamId: coach.team_id, avatarUrl: coach.avatar_url };
     }
   }
 
-  res.json({ tables, me, stakeable, budget, teamValue, room: mgr.roomList() });
+  res.json({ tables, me, budget, teamValue, room: mgr.roomList() });
 });
 
 // ── GET /shop ─────────────────────────────────────────────────────────────────
