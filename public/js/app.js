@@ -500,6 +500,18 @@ function isCoach() { return !!State.token && State.role === 'coach'; }
 
 function updateAuthUI() {
   const loggedIn = isLoggedIn();
+  // Auth gate: show full-screen login overlay when not logged in
+  document.body.classList.toggle('auth-locked', !loggedIn);
+  const loginModal = document.getElementById('login-modal');
+  if (loginModal) {
+    if (!loggedIn) {
+      loginModal.classList.remove('hidden');
+      loginModal.classList.add('auth-gate');
+    } else {
+      loginModal.classList.add('hidden');
+      loginModal.classList.remove('auth-gate');
+    }
+  }
   document.getElementById('btn-login').classList.toggle('hidden', loggedIn);
   document.getElementById('btn-logout').classList.toggle('hidden', !loggedIn);
 
@@ -819,8 +831,8 @@ document.getElementById('btn-login').addEventListener('click', () => {
   document.getElementById('login-username').focus();
   document.getElementById('login-error').style.display = 'none';
 });
-document.getElementById('login-modal-close').addEventListener('click', () => document.getElementById('login-modal').classList.add('hidden'));
-document.getElementById('login-modal').addEventListener('click', e => { if (e.target === document.getElementById('login-modal')) document.getElementById('login-modal').classList.add('hidden'); });
+document.getElementById('login-modal-close').addEventListener('click', () => { if (isLoggedIn()) document.getElementById('login-modal').classList.add('hidden'); });
+document.getElementById('login-modal').addEventListener('click', e => { if (isLoggedIn() && e.target === document.getElementById('login-modal')) document.getElementById('login-modal').classList.add('hidden'); });
 document.getElementById('btn-do-login').addEventListener('click', doLogin);
 document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 async function doLogin() {
@@ -1050,6 +1062,7 @@ const PAGE_TITLES = {
 };
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
+  if (!isLoggedIn()) { updateAuthUI(); return; }
   stopLiveMatchPoll(); // cancel live polling when navigating away
   if (_homeLivePollTimer) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; }
   if (window.PokerUI && window.PokerUI.teardown) window.PokerUI.teardown();
@@ -1551,6 +1564,21 @@ async function renderTeamDetail(app, id) {
           <div style="height:100%;width:${val}%;background:${color};border-radius:3px"></div>
         </div>
       </div>`;
+    // Fatigue for the starting XI
+    const starterStaminas = starterRows.map(l => players.find(p => p.id === l.player_id)?.stamina ?? 100);
+    const avgStamina = starterStaminas.length ? Math.round(starterStaminas.reduce((a,b)=>a+b,0)/starterStaminas.length) : null;
+    const staminaBg = avgStamina === null ? '#6b7280' : avgStamina >= 80 ? '#27ae60' : avgStamina >= 60 ? '#f39c12' : '#e74c3c';
+    const staminaDebuff = avgStamina !== null && avgStamina < 80 ? Math.round((1 - (0.65 + avgStamina/80*0.35))*100) : 0;
+    const staminaLabel = staminaDebuff > 0 ? `−${staminaDebuff}% сила` : 'Форма OK';
+    const fatigueHtml = avgStamina === null ? '' : `
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:7px 10px;background:rgba(0,0,0,.08);border-radius:8px">
+        <span style="font-size:15px">⚡</span>
+        <span style="font-size:12px;color:var(--text-muted)">Усталость стартового состава</span>
+        <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;background:${staminaBg};color:#fff;font-size:12px;font-weight:800;padding:2px 9px;border-radius:20px">
+          ${avgStamina}% <span style="font-weight:500;font-size:11px">${staminaLabel}</span>
+        </span>
+      </div>`;
+
     const ovrPanel = sqOvr===null ? '<div style="color:var(--text-muted);font-size:12px">Нет данных по навыкам</div>' : `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <div style="font-size:32px;font-weight:900;line-height:1;color:var(--green)">${sqOvr}</div>
@@ -1569,7 +1597,7 @@ async function renderTeamDetail(app, id) {
         <div><span style="display:inline-block;width:80px;color:var(--text-muted)">⚙ Полузащ.</span>${ovrBar(midOvr,'#8e44ad')}</div>
         <div><span style="display:inline-block;width:80px;color:var(--text-muted)">🛡 Защита</span>${ovrBar(defOvr,'#2980b9')}</div>
         <div><span style="display:inline-block;width:80px;color:var(--text-muted)">🧤 Вратарь</span>${ovrBar(gkOvr,'#27ae60')}</div>
-      </div>${penaltyReport}`;
+      </div>${fatigueHtml}${penaltyReport}`;
     const expense = transfers.filter(t=>t.to_team_id===team.id).reduce((s,t)=>s+(t.transfer_fee||0),0);
     const balance = income - expense;
     const balSign = balance>=0?'+':'';
@@ -3772,6 +3800,22 @@ async function renderAdmin(app) {
             </div>
           </div>
         </div>
+        <!-- Proxy settings -->
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px">🔒 SOCKS5 Прокси</div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <label class="toggle-switch"><input type="checkbox" id="tg-proxy-enabled" onchange="saveTgProxy()"><span class="toggle-slider"></span></label>
+            <div>
+              <div style="font-weight:600;font-size:14px">Использовать прокси</div>
+              <div style="font-size:12px;color:var(--text-muted)">Подключение к Telegram API через SOCKS5</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="tg-proxy-url" placeholder="socks5://user:pass@host:port"
+              style="flex:1;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <button class="btn btn-outline" onclick="saveTgProxy()">Сохранить</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -3821,6 +3865,10 @@ async function renderAdmin(app) {
       const el = document.getElementById(`tg-${key}`);
       if (el) el.checked = (s[key] !== undefined ? s[key] : def) !== '0';
     }
+    const proxyToggle = document.getElementById('tg-proxy-enabled');
+    const proxyInput  = document.getElementById('tg-proxy-url');
+    if (proxyToggle) proxyToggle.checked = s.tg_proxy_enabled === '1';
+    if (proxyInput && s.tg_proxy_url) proxyInput.value = s.tg_proxy_url;
   }).catch(()=>{});
 }
 
@@ -3949,6 +3997,15 @@ async function saveTgEnabled(checked) {
     const txt = document.getElementById('tg-status-text');
     if (txt) txt.textContent = checked ? 'Включено' : 'Выключено — все уведомления отключены';
     toast(checked ? 'Telegram включён' : 'Telegram выключен');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function saveTgProxy() {
+  const enabled = document.getElementById('tg-proxy-enabled')?.checked;
+  const url = document.getElementById('tg-proxy-url')?.value.trim();
+  try {
+    await PUT('/admin/settings', { tg_proxy_enabled: enabled, tg_proxy_url: url });
+    toast(enabled ? 'Прокси включён' : 'Прокси отключён');
   } catch(e) { toast(e.message, 'error'); }
 }
 

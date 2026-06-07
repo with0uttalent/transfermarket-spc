@@ -9,6 +9,35 @@ const CHAT_ID         = process.env.TELEGRAM_CHAT_ID;
 const LIVE_CHANNEL_ID = process.env.TELEGRAM_LIVE_CHANNEL_ID;
 
 let _enabled = true; // master switch
+let _proxyEnabled = false;
+let _proxyUrl = process.env.TELEGRAM_PROXY || '';
+let _agent = null;
+
+function _rebuildAgent() {
+  _agent = null;
+  if (!_proxyEnabled || !_proxyUrl) return;
+  try {
+    const { SocksProxyAgent } = require('socks-proxy-agent');
+    _agent = new SocksProxyAgent(_proxyUrl);
+  } catch (e) {
+    console.warn('[TelegramBot] Failed to create proxy agent:', e.message);
+  }
+}
+
+function setProxy(enabled, url) {
+  _proxyEnabled = !!enabled;
+  if (url !== undefined) _proxyUrl = url || '';
+  _rebuildAgent();
+  console.log(`[TelegramBot] Proxy ${_proxyEnabled ? 'enabled: ' + _proxyUrl : 'disabled'}`);
+}
+
+function getProxySettings() {
+  return { proxy_enabled: _proxyEnabled, proxy_url: _proxyUrl };
+}
+
+function _fetchOpts(extra) {
+  return _agent ? { agent: _agent, ...extra } : { ...extra };
+}
 
 // Per-type notification flags
 const _notif = {
@@ -41,7 +70,7 @@ async function tgGetUpdates() {
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${TOKEN}/getUpdates?offset=${_updateOffset}&timeout=5`,
-      {}
+      _fetchOpts({})
     );
     const data = await res.json();
     if (!data.ok || !data.result.length) return;
@@ -168,6 +197,7 @@ async function tgSendMessageTo(chatId, text) {
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ..._fetchOpts({}),
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
   });
   return res.json();
@@ -180,9 +210,7 @@ async function tgSendPhoto(photoBuffer, caption) {
   form.append('photo', photoBuffer, { filename: 'match.png', contentType: 'image/png' });
   form.append('caption', caption);
   form.append('parse_mode', 'HTML');
-  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, {
-    method: 'POST', body: form,
-  });
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, _fetchOpts({ method: 'POST', body: form }));
   return res.json();
 }
 
@@ -190,6 +218,7 @@ async function tgSendMessage(text) {
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ..._fetchOpts({}),
     body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: 'HTML' }),
   });
   return res.json();
@@ -358,6 +387,7 @@ async function tgSendMessageToLive(text) {
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ..._fetchOpts({}),
     body: JSON.stringify({ chat_id: LIVE_CHANNEL_ID, text, parse_mode: 'HTML' }),
   });
   return res.json();
@@ -370,9 +400,7 @@ async function tgSendPhotoToLive(photoBuffer, caption) {
   form.append('photo', photoBuffer, { filename: 'match.png', contentType: 'image/png' });
   form.append('caption', caption);
   form.append('parse_mode', 'HTML');
-  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, {
-    method: 'POST', body: form,
-  });
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, _fetchOpts({ method: 'POST', body: form }));
   return res.json();
 }
 
@@ -696,4 +724,4 @@ async function sendPlayerNews({ title, body, type }) {
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews, setEnabled, isEnabled, setNotifSettings, getNotifSettings, generateMatchBanner };
+module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews, setEnabled, isEnabled, setNotifSettings, getNotifSettings, setProxy, getProxySettings, generateMatchBanner };

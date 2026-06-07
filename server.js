@@ -88,7 +88,7 @@ server.listen(PORT, () => {
   }
   // Start Telegram bot
   try {
-    const { initBot, setEnabled, setNotifSettings } = require('./services/telegramBot');
+    const { initBot, setEnabled, setNotifSettings, setProxy } = require('./services/telegramBot');
     initBot();
     // Restore saved settings (seed defaults for any missing keys)
     const { getDb } = require('./database/db');
@@ -103,6 +103,8 @@ server.listen(PORT, () => {
     const rows = db.prepare('SELECT key, value FROM app_settings').all();
     const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
     if (map.telegram_enabled !== undefined) setEnabled(map.telegram_enabled === '1');
+    if (map.tg_proxy_enabled !== undefined || map.tg_proxy_url !== undefined)
+      setProxy(map.tg_proxy_enabled === '1', map.tg_proxy_url || '');
     setNotifSettings({
       channel_events:    map.tg_channel_events      !== '0',
       channel_results:   map.tg_channel_results     !== '0',

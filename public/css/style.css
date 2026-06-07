@@ -1755,3 +1755,20 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .notif-clear-row { padding: 6px 12px; border-top: 1px solid var(--border); display: flex; justify-content: center; }
 .notif-clear-btn { font-size: 11px; opacity: .7; }
 .notif-clear-btn:hover { opacity: 1; }
+
+/* ── Auth gate ────────────────────────────────────────────── */
+/* When not logged in, hide all page chrome and show only login modal */
+body.auth-locked #main-nav,
+body.auth-locked #topbar,
+body.auth-locked #app { display: none !important; }
+
+/* Make login modal cover the full screen when it's the auth gate */
+#login-modal.auth-gate {
+  background: var(--bg, #0f172a);
+  cursor: default;
+}
+#login-modal.auth-gate .modal-content {
+  margin-top: 0;
+  box-shadow: 0 24px 60px rgba(0,0,0,.6);
+}
+#login-modal.auth-gate .modal-close { display: none; }

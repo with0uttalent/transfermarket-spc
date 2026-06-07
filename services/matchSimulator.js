@@ -313,11 +313,12 @@ function simulateMatchCore(
     }
   }
 
-  // useSkillRate path: near-zero OFFSET so ratio dominates; capped to prevent absurd scores
-  const RATE        = useSkillRate ? 0.016  : 0.013;
-  const OFFSET      = useSkillRate ? 0.02   : 4.5;
-  const EXPONENT    = useSkillRate ? 1.5    : 1.0;
-  const GOAL_PROB_CAP = useSkillRate ? 0.055 : 999;
+  // Both modes: near-zero OFFSET so OVR ratio dominates; capped to prevent absurd scores.
+  // OVR mode uses exponent=2.0 so 80 vs 75 → ~65% win probability for stronger team.
+  const RATE        = useSkillRate ? 0.016 : 0.022;
+  const OFFSET      = useSkillRate ? 0.02  : 0.10;
+  const EXPONENT    = useSkillRate ? 1.5   : 2.0;
+  const GOAL_PROB_CAP = 0.055;
 
   function tryPenalty(minute, isHome) {
     const attackers = isHome ? activeHome : activeAway;

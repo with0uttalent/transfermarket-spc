@@ -56,6 +56,10 @@ router.get('/settings', requireAdmin, (req, res) => {
   for (const [k, def] of Object.entries(NOTIF_DEFAULTS)) {
     if (settings[k] === undefined) settings[k] = def;
   }
+  // Live proxy state from memory (may differ from DB if changed at runtime)
+  const proxy = telegramBot.getProxySettings();
+  settings.tg_proxy_enabled = proxy.proxy_enabled ? '1' : '0';
+  if (settings.tg_proxy_url === undefined) settings.tg_proxy_url = proxy.proxy_url || '';
   res.json(settings);
 });
 
@@ -63,7 +67,7 @@ router.put('/settings', requireAdmin, (req, res) => {
   const db = getDb();
   const save = db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)');
 
-  const { telegram_enabled, pack_delivery_time } = req.body;
+  const { telegram_enabled, pack_delivery_time, tg_proxy_enabled, tg_proxy_url } = req.body;
   if (telegram_enabled !== undefined) {
     const val = telegram_enabled ? '1' : '0';
     save.run('telegram_enabled', val);
@@ -74,6 +78,15 @@ router.put('/settings', requireAdmin, (req, res) => {
 
   for (const k of NOTIF_KEYS) {
     if (req.body[k] !== undefined) save.run(k, req.body[k] ? '1' : '0');
+  }
+
+  // Proxy settings — save and apply immediately
+  if (tg_proxy_enabled !== undefined || tg_proxy_url !== undefined) {
+    if (tg_proxy_enabled !== undefined) save.run('tg_proxy_enabled', tg_proxy_enabled ? '1' : '0');
+    if (tg_proxy_url !== undefined) save.run('tg_proxy_url', tg_proxy_url);
+    const proxyRow = db.prepare("SELECT value FROM app_settings WHERE key='tg_proxy_enabled'").get();
+    const urlRow   = db.prepare("SELECT value FROM app_settings WHERE key='tg_proxy_url'").get();
+    telegramBot.setProxy(proxyRow?.value === '1', urlRow?.value || '');
   }
 
   syncNotifSettings(db);
