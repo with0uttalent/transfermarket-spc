@@ -920,6 +920,10 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .match-card .mc-score { font-size: 22px; font-weight: 900; color: var(--gold); text-align: center; min-width: 80px; }
 .match-card .mc-score-val { font-size: 28px; font-weight: 900; margin-bottom: 4px; }
 .match-card .mc-date { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+/* Stadium-backdrop variant: force readable light text over the photo */
+.match-card--stadium { color: #fff; }
+.match-card--stadium .mc-team-name { color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.95); }
+.match-card--stadium .mc-date { color: rgba(255,255,255,.85); text-shadow: 0 1px 3px rgba(0,0,0,.9); }
 
 /* ─── Tournament bracket ─────────────────────────────────────── */
 .bracket-wrapper { overflow-x: auto; padding-bottom: 8px; }

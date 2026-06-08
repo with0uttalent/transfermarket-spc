@@ -2966,9 +2966,9 @@ function matchCardHtml(m) {
   const statusCls = m.status==='finished'?'match-status-finished':m.status==='in_progress'?'match-status-live':'match-status-scheduled';
   const scoreStr = m.status==='finished' ? `${m.home_score} – ${m.away_score}` : m.status==='in_progress' ? '🔴 LIVE' : 'vs';
   const stadiumBg = m.home_stadium_url
-    ? `background-image:linear-gradient(rgba(0,0,0,0.55),rgba(0,0,0,0.55)),url('${escHtml(m.home_stadium_url)}');background-size:cover;background-position:center;`
+    ? `background-image:linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url('${escHtml(m.home_stadium_url)}');background-size:cover;background-position:center;`
     : '';
-  return `<div class="match-card" onclick="navigate('/matches/${m.id}')" style="${stadiumBg}">
+  return `<div class="match-card${m.home_stadium_url ? ' match-card--stadium' : ''}" onclick="navigate('/matches/${m.id}')" style="${stadiumBg}">
     <div class="mc-team">
       ${teamLogoXL(m.home_logo,m.home_team_name)}
       <span class="mc-team-name">${escHtml(m.home_team_name)}</span>
