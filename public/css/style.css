@@ -104,13 +104,13 @@ img { max-width: 100%; display: block; }
   background: #1a2840;
   border-right-color: rgba(255,255,255,0.08);
 }
-[data-theme="light"] #sidebar .sidebar-logo,
+[data-theme="light"] #sidebar .sidebar-logo { color: #fff; }
 [data-theme="light"] #sidebar .nav-item,
-[data-theme="light"] #sidebar .sidebar-coach-name,
+[data-theme="light"] #sidebar .sidebar-coach-name { color: #fff; }
 [data-theme="light"] #sidebar .sidebar-coach-desc,
 [data-theme="light"] #sidebar .sidebar-coach-role,
 [data-theme="light"] #sidebar .sidebar-footer-link,
-[data-theme="light"] #sidebar .sidebar-coach-team { color: inherit; }
+[data-theme="light"] #sidebar .sidebar-coach-team { color: rgba(255,255,255,0.75); }
 [data-theme="light"] #sidebar .sidebar-footer { border-top-color: rgba(255,255,255,0.08); }
 [data-theme="light"] #sidebar .sidebar-coach { border-top-color: rgba(255,255,255,0.08); }
 [data-theme="light"] #sidebar #main-nav .nav-item { color: rgba(255,255,255,0.65); }
