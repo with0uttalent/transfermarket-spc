@@ -313,11 +313,11 @@ function simulateMatchCore(
     }
   }
 
-  // Both modes: near-zero OFFSET so OVR ratio dominates; capped to prevent absurd scores.
-  // OVR mode uses exponent=2.0 so 80 vs 75 → ~65% win probability for stronger team.
+  // RATE/OFFSET/EXPONENT: skill-mode uses lower rate + near-zero offset so OVR ratio drives goals.
+  // Exponent=2.0 in both modes gives ~65% win probability for 80 vs 75 (stronger team).
   const RATE        = useSkillRate ? 0.016 : 0.022;
   const OFFSET      = useSkillRate ? 0.02  : 0.10;
-  const EXPONENT    = useSkillRate ? 1.5   : 2.0;
+  const EXPONENT    = 2.0;
   const GOAL_PROB_CAP = 0.055;
 
   function tryPenalty(minute, isHome) {
