@@ -37,7 +37,7 @@ function teamStrengthFromOVR(players) {
   for (const p of players) {
     // Competitive floor at OVR 50: amplifies differences in the 65-90 range
     // without exploding for very large gaps (cap applied separately in the goal formula)
-    const rawOvr = Math.min(99, Math.max(50, p.ovr_fixed || 65));
+    const rawOvr = Math.min(99, Math.max(50, (p.ovr_fixed || 65) + (p.tournament_ovr_boost || 0)));
     const ovr = (rawOvr - 50) / 49;
     const pos = p.position || '';
     if (ATTACK_POSITIONS.has(pos)) { atkSum += ovr; na++; }
@@ -215,7 +215,7 @@ function simulateMatchCore(
     const scorer = fwd.length ? pick(fwd) : pick(outfield(attackers));
     const mids = attackers.filter(p => p.id !== scorer.id && (MID_POSITIONS.has(p.position||'') || ATTACK_POSITIONS.has(p.position||'')));
     const assister = mids.length ? (rand() < 0.7 ? pick(mids) : null) : null;
-    const isOwnGoal = rand() < 0.04;
+    const isOwnGoal = rand() < 0.015;
     const defenders = isHome ? activeAway : activeHome;
     const defTeam   = isHome ? awayTeamId : homeTeamId;
 
@@ -378,20 +378,24 @@ function simulateMatchCore(
     track(taker.id);
     addEvent(minute, 'free_kick', teamId, taker.id, null,
       `🟡 Штрафной: ${taker.name} готовится к удару`);
+    // Goal probability scales with attacker/defender strength ratio (base 18% at equal strength)
+    const atkStr = opponentIsHome ? homeStr.attack  : awayStr.attack;
+    const defStr = opponentIsHome ? awayStr.defense : homeStr.defense;
+    const fkGoalP = Math.min(0.32, Math.max(0.08, 0.18 * (atkStr / Math.max(defStr, 0.01))));
     const r = rand();
-    if (r < 0.18) {
+    if (r < fkGoalP) {
       stats[taker.id].goals++; stats[taker.id].rating += 1.3;
       opponentIsHome ? homeScore++ : awayScore++;
       addEvent(minute, 'goal', teamId, taker.id, null,
         `⚽ ГОЛ! ${taker.name} забивает со штрафного! ${commentaryGoal(taker.name, null)}`);
-    } else if (r < 0.30) {
+    } else if (r < fkGoalP + 0.12) {
       // GK save
       const gk = defenders.find(p => GK_POSITIONS.has(p.position||''));
       if (gk) { track(gk.id); stats[gk.id].rating += 0.4; }
       const saveMsg = FK_OUTCOMES_SAVE[Math.floor(rand() * FK_OUTCOMES_SAVE.length)];
       addEvent(minute, 'save', defTeamId, gk?.id || null, null,
         `🧤 ${saveMsg}${gk ? ` ${gk.name}` : ''}`);
-    } else if (r < 0.50) {
+    } else if (r < fkGoalP + 0.32) {
       addEvent(minute, 'near_miss', teamId, taker.id, null,
         `🎯 Штрафной: ${FK_OUTCOMES_MISS[Math.floor(rand() * FK_OUTCOMES_MISS.length)]}`);
     }
@@ -420,8 +424,12 @@ function simulateMatchCore(
     track(taker.id);
     addEvent(minute, 'corner_kick', teamId, taker.id, null,
       `🚩 Угловой: ${taker.name} подаёт в штрафную`);
+    // Corner goal probability scales with attacker/defender strength ratio (base 8% at equal strength)
+    const cAtkStr = isHome ? homeStr.attack  : awayStr.attack;
+    const cDefStr = isHome ? awayStr.defense : homeStr.defense;
+    const cornerGoalP = Math.min(0.15, Math.max(0.03, 0.08 * (cAtkStr / Math.max(cDefStr, 0.01))));
     const r = rand();
-    if (r < 0.08) {
+    if (r < cornerGoalP) {
       const headers = attackers.filter(p => DEF_POSITIONS.has(p.position||'') || ATTACK_POSITIONS.has(p.position||''));
       const scorer = headers.length ? pick(headers) : pick(outfield(attackers));
       track(scorer.id); stats[scorer.id].goals++; stats[scorer.id].rating += 1.3;
@@ -429,13 +437,13 @@ function simulateMatchCore(
       isHome ? homeScore++ : awayScore++;
       addEvent(minute, 'goal', teamId, scorer.id, taker.id,
         `⚽ ГОЛ с углового! ${scorer.name} замыкает подачу! (Ассист: ${taker.name})`);
-    } else if (r < 0.20) {
+    } else if (r < cornerGoalP + 0.12) {
       const headers = attackers.filter(p => ATTACK_POSITIONS.has(p.position||''));
       const shooter = headers.length ? pick(headers) : pick(outfield(attackers));
       track(shooter.id);
       addEvent(minute, 'near_miss', teamId, shooter.id, null,
         `🎯 Угловой: удар головой — мимо! ${shooter.name} — неточно`);
-    } else if (r < 0.32) {
+    } else if (r < cornerGoalP + 0.24) {
       // GK catch or defender clears
       const gk = defenders.find(p => GK_POSITIONS.has(p.position||''));
       if (gk) {
@@ -450,7 +458,7 @@ function simulateMatchCore(
 
   for (let m = 1; m <= 90; m++) {
     const hAtkEff = homeStr.attack  * Math.pow(0.88, homeRed) * 1.03;
-    const hDefEff = homeStr.defense * Math.pow(0.85, homeRed);
+    const hDefEff = homeStr.defense * Math.pow(0.85, homeRed) * 1.02;
     const aAtkEff = awayStr.attack  * Math.pow(0.88, awayRed);
     const aDefEff = awayStr.defense * Math.pow(0.85, awayRed);
 

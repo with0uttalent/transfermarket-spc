@@ -297,16 +297,8 @@ function advanceRound(db, tour) {
     for (const cp of champPl) {
       if (!participantIds.has(cp.id)) continue; // only participants get achievement + buff
       insertAch.run(cp.id, 'tournament_winner', `Выиграл ${tour.name}`, tour.id);
-      // OVR buff ~3.5% for tournament winners who participated
-      db.prepare(`
-        UPDATE player_skills SET
-          pace      = MIN(99, CAST(ROUND(pace      * 1.035) AS INTEGER)),
-          shooting  = MIN(99, CAST(ROUND(shooting  * 1.035) AS INTEGER)),
-          passing   = MIN(99, CAST(ROUND(passing   * 1.035) AS INTEGER)),
-          defending = MIN(99, CAST(ROUND(defending * 1.035) AS INTEGER)),
-          physical  = MIN(99, CAST(ROUND(physical  * 1.035) AS INTEGER))
-        WHERE player_id = ?
-      `).run(cp.id);
+      // Seasonal OVR boost (+3): resets at next season start, does not permanently alter skills.
+      db.prepare(`UPDATE players SET tournament_ovr_boost = MIN(10, tournament_ovr_boost + 3) WHERE id = ?`).run(cp.id);
       const pl = db.prepare(`SELECT market_value FROM players WHERE id=?`).get(cp.id);
       if (pl?.market_value > 0) {
         const nv = pl.market_value * 1.05;

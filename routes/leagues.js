@@ -636,9 +636,10 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     insertBudget.run(team.id, league.id, Math.round(base));
   }
 
-  // Reset transfer budgets for new season
+  // Reset transfer budgets and tournament OVR boosts for new season
   for (const tid of teamIds) {
     db.prepare(`UPDATE teams SET transfer_budget = 10000000, transfer_budget_spent = 0 WHERE id = ?`).run(tid);
+    db.prepare(`UPDATE players SET tournament_ovr_boost = 0 WHERE team_id = ?`).run(tid);
   }
 
   // Advance global season counter so trade bans from previous season expire

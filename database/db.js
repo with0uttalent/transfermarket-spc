@@ -572,6 +572,8 @@ function initSchema() {
       FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
       FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
     )`,
+    // Seasonal tournament OVR boost (resets each season).
+    `ALTER TABLE players ADD COLUMN tournament_ovr_boost INTEGER DEFAULT 0`,
     // Cosmetics shop: avatar accessories purchasable with team budget.
     `CREATE TABLE IF NOT EXISTS coach_cosmetics (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
