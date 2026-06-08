@@ -121,6 +121,93 @@
     repeating-linear-gradient(-45deg, rgba(255,255,255,.14) 0 4px, transparent 4px 8px); }
 .pk-card-deal { animation: pk-deal .35s cubic-bezier(.2,.9,.3,1.2) backwards; }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   CARD SKINS — purely cosmetic, only the buying coach sees their own skin.
+   Suits (♠♥♦♣) are never changed; skins only restyle face colour, the suit
+   ink colours, and the card back (рубашка) / its pattern.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* 🌌 Полночь — navy + gold/cyan */
+.pk-card.pk-skin_midnight:not(.pk-card-back) { background: linear-gradient(160deg, #1e2d4d, #0e1a32); }
+.pk-card.pk-skin_midnight.suit-red  .pk-card-rank, .pk-card.pk-skin_midnight.suit-red  .pk-card-center { color: #fbbf24; }
+.pk-card.pk-skin_midnight.suit-dark .pk-card-rank, .pk-card.pk-skin_midnight.suit-dark .pk-card-center { color: #67e8f9; }
+.pk-card-back.pk-skin_midnight { background: linear-gradient(135deg, #15233f, #0a1428); border-color: rgba(251,191,36,.4); }
+.pk-card-back.pk-skin_midnight .pk-card-back-inner { border-color: rgba(251,191,36,.5);
+  background-image: repeating-linear-gradient(45deg, rgba(251,191,36,.16) 0 4px, transparent 4px 8px),
+                    repeating-linear-gradient(-45deg, rgba(103,232,249,.12) 0 4px, transparent 4px 8px); }
+
+/* 💚 Изумруд — casino green felt */
+.pk-card.pk-skin_emerald:not(.pk-card-back) { background: linear-gradient(160deg, #0b6b4f, #03362a); }
+.pk-card.pk-skin_emerald.suit-red  .pk-card-rank, .pk-card.pk-skin_emerald.suit-red  .pk-card-center { color: #fca5a5; }
+.pk-card.pk-skin_emerald.suit-dark .pk-card-rank, .pk-card.pk-skin_emerald.suit-dark .pk-card-center { color: #ecfdf5; }
+.pk-card-back.pk-skin_emerald { background: linear-gradient(135deg, #065f46, #022c22); border-color: rgba(255,255,255,.35); }
+.pk-card-back.pk-skin_emerald .pk-card-back-inner {
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.12) 0 4px, transparent 4px 8px),
+                    repeating-linear-gradient(-45deg, rgba(255,255,255,.12) 0 4px, transparent 4px 8px); }
+
+/* 🥀 Багровый люкс — red velvet */
+.pk-card.pk-skin_crimson:not(.pk-card-back) { background: linear-gradient(160deg, #7f1d1d, #3f0a0a); }
+.pk-card.pk-skin_crimson.suit-red  .pk-card-rank, .pk-card.pk-skin_crimson.suit-red  .pk-card-center { color: #fecaca; }
+.pk-card.pk-skin_crimson.suit-dark .pk-card-rank, .pk-card.pk-skin_crimson.suit-dark .pk-card-center { color: #fde68a; }
+.pk-card-back.pk-skin_crimson { background: linear-gradient(135deg, #7f1d1d, #450a0a); border-color: rgba(253,230,138,.4); }
+.pk-card-back.pk-skin_crimson .pk-card-back-inner { border-color: rgba(253,230,138,.5);
+  background-image: repeating-linear-gradient(45deg, rgba(253,230,138,.14) 0 4px, transparent 4px 8px),
+                    repeating-linear-gradient(-45deg, rgba(253,230,138,.14) 0 4px, transparent 4px 8px); }
+
+/* 🏆 Чёрное золото — black + gold VIP */
+.pk-card.pk-skin_gold:not(.pk-card-back) { background: linear-gradient(160deg, #232323, #0a0a0a); }
+.pk-card.pk-skin_gold.suit-red  .pk-card-rank, .pk-card.pk-skin_gold.suit-red  .pk-card-center { color: #f59e0b; }
+.pk-card.pk-skin_gold.suit-dark .pk-card-rank, .pk-card.pk-skin_gold.suit-dark .pk-card-center { color: #fcd34d; }
+.pk-card.pk-skin_gold { box-shadow: 0 3px 10px rgba(0,0,0,.5), inset 0 0 0 1px rgba(252,211,77,.35); }
+.pk-card-back.pk-skin_gold { background: linear-gradient(135deg, #1a1a1a, #000); border-color: rgba(252,211,77,.5); }
+.pk-card-back.pk-skin_gold .pk-card-back-inner { border-color: rgba(252,211,77,.6);
+  background-image: repeating-linear-gradient(45deg, rgba(252,211,77,.18) 0 3px, transparent 3px 9px),
+                    repeating-linear-gradient(-45deg, rgba(252,211,77,.10) 0 3px, transparent 3px 9px); }
+
+/* 🌃 Неон — cyberpunk glow */
+.pk-card.pk-skin_neon:not(.pk-card-back) { background: linear-gradient(160deg, #141a30, #090d1c); }
+.pk-card.pk-skin_neon.suit-red  .pk-card-rank, .pk-card.pk-skin_neon.suit-red  .pk-card-center { color: #ff2d95; text-shadow: 0 0 6px rgba(255,45,149,.8); }
+.pk-card.pk-skin_neon.suit-dark .pk-card-rank, .pk-card.pk-skin_neon.suit-dark .pk-card-center { color: #22d3ee; text-shadow: 0 0 6px rgba(34,211,238,.8); }
+.pk-card.pk-skin_neon { box-shadow: 0 3px 12px rgba(34,211,238,.25), inset 0 0 0 1px rgba(255,45,149,.3); }
+.pk-card-back.pk-skin_neon { background: linear-gradient(135deg, #1a1040, #0a0620); border-color: rgba(34,211,238,.5); }
+.pk-card-back.pk-skin_neon .pk-card-back-inner { border-color: rgba(255,45,149,.5);
+  background-image: repeating-linear-gradient(45deg, rgba(34,211,238,.18) 0 4px, transparent 4px 8px),
+                    repeating-linear-gradient(-45deg, rgba(255,45,149,.18) 0 4px, transparent 4px 8px); }
+
+/* 🌊 Океан — deep sea blue */
+.pk-card.pk-skin_ocean:not(.pk-card-back) { background: linear-gradient(160deg, #0c4a6e, #082f49); }
+.pk-card.pk-skin_ocean.suit-red  .pk-card-rank, .pk-card.pk-skin_ocean.suit-red  .pk-card-center { color: #fda4af; }
+.pk-card.pk-skin_ocean.suit-dark .pk-card-rank, .pk-card.pk-skin_ocean.suit-dark .pk-card-center { color: #bae6fd; }
+.pk-card-back.pk-skin_ocean { background: linear-gradient(135deg, #0e5a85, #062338); border-color: rgba(186,230,253,.4); }
+.pk-card-back.pk-skin_ocean .pk-card-back-inner { border-color: rgba(186,230,253,.45);
+  background-image: repeating-linear-gradient(45deg, rgba(186,230,253,.14) 0 4px, transparent 4px 8px),
+                    repeating-linear-gradient(-45deg, rgba(186,230,253,.14) 0 4px, transparent 4px 8px); }
+
+/* 👑 Королевский — purple velvet */
+.pk-card.pk-skin_royal:not(.pk-card-back) { background: linear-gradient(160deg, #4c1d95, #2e1065); }
+.pk-card.pk-skin_royal.suit-red  .pk-card-rank, .pk-card.pk-skin_royal.suit-red  .pk-card-center { color: #fbcfe8; }
+.pk-card.pk-skin_royal.suit-dark .pk-card-rank, .pk-card.pk-skin_royal.suit-dark .pk-card-center { color: #fde68a; }
+.pk-card.pk-skin_royal { box-shadow: 0 3px 10px rgba(0,0,0,.45), inset 0 0 0 1px rgba(253,230,138,.3); }
+.pk-card-back.pk-skin_royal { background: linear-gradient(135deg, #4c1d95, #2e1065); border-color: rgba(253,230,138,.45); }
+.pk-card-back.pk-skin_royal .pk-card-back-inner { border-color: rgba(253,230,138,.5);
+  background-image: repeating-linear-gradient(0deg, rgba(253,230,138,.12) 0 2px, transparent 2px 7px),
+                    repeating-linear-gradient(90deg, rgba(251,207,232,.12) 0 2px, transparent 2px 7px); }
+
+/* Shop UI: tabs, skin grid + previews */
+.pk-shop-tabs { display: flex; gap: 8px; margin: 10px 0 14px; }
+.pk-shop-tab { flex: 1; padding: 9px 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.04); color: #cbd5e1; font-weight: 700; font-size: 13px; cursor: pointer; transition: all .15s; }
+.pk-shop-tab:hover { background: rgba(255,255,255,.09); }
+.pk-shop-tab-active { background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; border-color: transparent; }
+.pk-shop-hint { font-size: 12px; color: #94a3b8; margin: 0 0 12px; line-height: 1.4; }
+.pk-skin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.pk-skin-item { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
+  padding: 12px 10px; text-align: center; transition: all .15s; }
+.pk-skin-item-equipped { border-color: #f1c40f; box-shadow: 0 0 0 1px rgba(241,196,15,.5); }
+.pk-skin-preview { display: flex; justify-content: center; gap: 4px; margin-bottom: 8px; }
+.pk-skin-name { font-weight: 800; font-size: 14px; color: #f1f5f9; }
+.pk-skin-desc { font-size: 11px; color: #94a3b8; margin: 3px 0 6px; min-height: 28px; line-height: 1.3; }
+
 /* Showdown winning-combination highlight */
 .pk-card-hl { box-shadow: 0 0 0 3px #f1c40f, 0 0 18px rgba(241,196,15,.9); transform: translateY(-8px); z-index: 5; animation: pk-card-glow 1.1s ease-in-out infinite alternate; }
 .pk-card-dim { opacity: .42; filter: saturate(.6); }

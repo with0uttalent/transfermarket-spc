@@ -584,6 +584,9 @@ function initSchema() {
       UNIQUE(coach_id, item_key),
       FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE
     )`,
+    // Cosmetic category: 'avatar' (hats) vs 'cardskin' (poker card themes).
+    // Lets each category be equipped independently.
+    `ALTER TABLE coach_cosmetics ADD COLUMN category TEXT DEFAULT 'avatar'`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

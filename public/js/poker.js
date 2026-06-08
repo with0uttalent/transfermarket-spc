@@ -31,6 +31,7 @@
   const activeEmotes = new Map(); // seatIndex → { emoji, expiresAt }
   let _emotePickerOpen = false;
   let _comboHidden = false;
+  let _cardSkin = 'classic';      // my equipped poker card skin (client-side only)
 
   // ── Standard suits ─────────────────────────────────────────────────────────
   const SUIT = {
@@ -44,15 +45,23 @@
 
   const cardKey = c => c ? c.rank + c.suit : '';
 
+  // Skin theme class (only the buyer ever sees their own). opts.skin overrides
+  // the equipped skin (used for shop previews). 'classic' = no extra class.
+  function skinCls(opts) {
+    const skin = opts.skin || _cardSkin;
+    return skin && skin !== 'classic' ? ` pk-skin ${'pk-' + skin}` : '';
+  }
+
   function cardHtml(card, opts = {}) {
     const szCls = opts.xs ? ' pk-card-xs' : (opts.small ? ' pk-card-sm' : '');
+    const skn = skinCls(opts);
     if (!card || card.hidden) {
-      return `<div class="pk-card pk-card-back${szCls}"><div class="pk-card-back-inner"></div></div>`;
+      return `<div class="pk-card pk-card-back${szCls}${skn}"><div class="pk-card-back-inner"></div></div>`;
     }
     const s = SUIT[card.suit] || SUIT.s;
     const hl = opts.highlight ? ' pk-card-hl' : opts.liveHl ? ' pk-card-live-hl' : (opts.dim ? ' pk-card-dim' : '');
     const dealStyle = opts.deal && opts.dealDelay ? ` style="animation-delay:${opts.dealDelay}ms"` : '';
-    return `<div class="pk-card ${s.cls}${szCls}${opts.deal ? ' pk-card-deal' : ''}${hl}"${dealStyle}>
+    return `<div class="pk-card ${s.cls}${szCls}${skn}${opts.deal ? ' pk-card-deal' : ''}${hl}"${dealStyle}>
       <div class="pk-card-corner tl"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
       <div class="pk-card-center">${s.sym}</div>
       <div class="pk-card-corner br"><span class="pk-card-rank">${rankLabel(card.rank)}</span><span class="pk-card-suit">${s.sym}</span></div>
@@ -260,6 +269,7 @@
     }
     el.innerHTML = `<div class="empty-state"><p>Подключение к покер-серверу…</p></div>`;
     try { lobbyData = await GET('/poker'); } catch (e) { lobbyData = { tables: [], room: [] }; }
+    if (lobbyData.me && lobbyData.me.cardSkin) _cardSkin = lobbyData.me.cardSkin;
     await connect();
     view = 'lobby';
     renderLobby();
@@ -370,7 +380,7 @@
     // Helper: render a hole card with hover-to-reveal flip (for the local player's own cards).
     const renderFlipCard = (c, opts) => {
       const isHl = opts.liveHl;
-      const backHtml = `<div class="pk-card pk-card-back pk-card-sm"><div class="pk-card-back-inner"></div></div>`;
+      const backHtml = `<div class="pk-card pk-card-back pk-card-sm${skinCls({})}"><div class="pk-card-back-inner"></div></div>`;
       // strip liveHl from face card — glow is applied to the flip container instead
       const faceHtml = cardHtml(c, { ...opts, liveHl: false });
       return `<div class="pk-hole-flip${isHl ? ' pk-hole-flip-hl' : ''}">
@@ -550,7 +560,11 @@
   function backToLobby() {
     if (socket && currentTableId) socket.emit('table:unwatch', { tableId: currentTableId });
     currentTableId = null; view = 'lobby';
-    GET('/poker').then(d => { lobbyData = d; renderLobby(); }).catch(() => renderLobby());
+    GET('/poker').then(d => {
+      lobbyData = d;
+      if (d.me && d.me.cardSkin) _cardSkin = d.me.cardSkin;
+      renderLobby();
+    }).catch(() => renderLobby());
   }
 
   // ── sit-down modal ───────────────────────────────────────────────────────────
@@ -677,29 +691,66 @@
     const modal = document.createElement('div');
     modal.className = 'pk-modal-overlay';
     modal.id = 'pk-shop-modal';
+    // Mini preview of two cards (A♠ + K♥) rendered with the given skin.
+    const skinPreview = (key) =>
+      `<div class="pk-skin-preview">${cardHtml({ rank: 14, suit: 's' }, { small: true, skin: key })}${cardHtml({ rank: 13, suit: 'h' }, { small: true, skin: key })}${cardHtml(null, { small: true, skin: key })}</div>`;
+
+    const cardSkins = shopData.cardSkins || [];
     modal.innerHTML = `
       <div class="pk-modal pk-shop-modal">
         <div class="pk-modal-head">
-          <h3>🛍️ Магазин аксессуаров</h3>
+          <h3>🛍️ Магазин косметики</h3>
           <button class="pk-modal-close" onclick="document.getElementById('pk-shop-modal').remove()">×</button>
         </div>
         <div class="pk-modal-body">
           <div class="pk-shop-budget">Бюджет: <b>${fmtValue(shopData.budget)}</b></div>
-          <div class="pk-shop-grid">
-            ${shopData.catalog.map(item => `
-              <div class="pk-shop-item${item.equipped ? ' pk-shop-item-equipped' : ''}">
-                <div class="pk-shop-emoji">${item.emoji}</div>
-                <div class="pk-shop-name">${escHtml(item.name)}</div>
-                <div class="pk-shop-price">${item.owned ? (item.equipped ? '✓ Надет' : 'В наличии') : fmtValue(item.price)}</div>
-                ${item.owned
-                  ? `<button class="pk-shop-btn ${item.equipped ? 'pk-shop-unequip' : 'pk-shop-equip'}" onclick="PokerUI._shopEquip('${item.key}', ${item.equipped})">${item.equipped ? 'Снять' : 'Надеть'}</button>`
-                  : `<button class="pk-shop-btn pk-shop-buy" onclick="PokerUI._shopBuy('${item.key}', '${escHtml(item.name)}', ${item.price})"${item.price > shopData.budget ? ' disabled' : ''}>Купить</button>`
-                }
-              </div>`).join('')}
+
+          <div class="pk-shop-tabs">
+            <button class="pk-shop-tab pk-shop-tab-active" data-tab="hats" onclick="PokerUI._shopTab('hats')">🎩 Аксессуары</button>
+            <button class="pk-shop-tab" data-tab="skins" onclick="PokerUI._shopTab('skins')">🃏 Скины карт</button>
+          </div>
+
+          <div class="pk-shop-pane" data-pane="hats">
+            <div class="pk-shop-grid">
+              ${shopData.catalog.map(item => `
+                <div class="pk-shop-item${item.equipped ? ' pk-shop-item-equipped' : ''}">
+                  <div class="pk-shop-emoji">${item.emoji}</div>
+                  <div class="pk-shop-name">${escHtml(item.name)}</div>
+                  <div class="pk-shop-price">${item.owned ? (item.equipped ? '✓ Надет' : 'В наличии') : fmtValue(item.price)}</div>
+                  ${item.owned
+                    ? `<button class="pk-shop-btn ${item.equipped ? 'pk-shop-unequip' : 'pk-shop-equip'}" onclick="PokerUI._shopEquip('${item.key}', ${item.equipped})">${item.equipped ? 'Снять' : 'Надеть'}</button>`
+                    : `<button class="pk-shop-btn pk-shop-buy" onclick="PokerUI._shopBuy('${item.key}', '${escHtml(item.name)}', ${item.price})"${item.price > shopData.budget ? ' disabled' : ''}>Купить</button>`
+                  }
+                </div>`).join('')}
+            </div>
+          </div>
+
+          <div class="pk-shop-pane" data-pane="skins" style="display:none">
+            <p class="pk-shop-hint">🔒 Скин карт видите только вы. Масти не меняются — только цвет, рубашка и узор.</p>
+            <div class="pk-skin-grid">
+              ${cardSkins.map(item => `
+                <div class="pk-skin-item${item.equipped ? ' pk-skin-item-equipped' : ''}">
+                  ${skinPreview(item.key)}
+                  <div class="pk-skin-name">${escHtml(item.name)}</div>
+                  <div class="pk-skin-desc">${escHtml(item.desc || '')}</div>
+                  <div class="pk-shop-price">${item.owned ? (item.equipped ? '✓ Активен' : 'В наличии') : fmtValue(item.price)}</div>
+                  ${item.owned
+                    ? `<button class="pk-shop-btn ${item.equipped ? 'pk-shop-unequip' : 'pk-shop-equip'}" onclick="PokerUI._skinEquip('${item.key}', ${item.equipped})"${item.equipped ? ' disabled' : ''}>${item.equipped ? 'Активен' : 'Выбрать'}</button>`
+                    : `<button class="pk-shop-btn pk-shop-buy" onclick="PokerUI._shopBuy('${item.key}', '${escHtml(item.name)}', ${item.price})"${item.price > shopData.budget ? ' disabled' : ''}>Купить</button>`
+                  }
+                </div>`).join('')}
+            </div>
           </div>
         </div>
       </div>`;
     document.body.appendChild(modal);
+  }
+
+  function shopTab(tab) {
+    document.querySelectorAll('#pk-shop-modal .pk-shop-tab').forEach(b =>
+      b.classList.toggle('pk-shop-tab-active', b.dataset.tab === tab));
+    document.querySelectorAll('#pk-shop-modal .pk-shop-pane').forEach(p =>
+      p.style.display = p.dataset.pane === tab ? '' : 'none');
   }
 
   async function shopBuy(key, name, price) {
@@ -720,6 +771,20 @@
     } catch (e) { toast(e.message || 'Ошибка', 'error'); }
   }
 
+  // Select a card skin (or 'classic' to reset). Applies instantly client-side.
+  async function skinEquip(key, isEquipped) {
+    if (isEquipped) return;
+    try {
+      await POST('/poker/shop/equip', { itemKey: key, category: 'cardskin' });
+      _cardSkin = key;
+      if (lobbyData && lobbyData.me) lobbyData.me.cardSkin = key;
+      toast('Скин применён', 'success');
+      document.getElementById('pk-shop-modal')?.remove();
+      openShop();
+      if (view === 'table') renderTable(); else renderLobby();
+    } catch (e) { toast(e.message || 'Ошибка', 'error'); }
+  }
+
   // public API
   window.PokerUI = {
     render, teardown,
@@ -731,5 +796,6 @@
     _toggleCombo: toggleCombo,
     _sendEmote: sendEmote,
     _openShop: openShop, _shopBuy: shopBuy, _shopEquip: shopEquip,
+    _shopTab: shopTab, _skinEquip: skinEquip,
   };
 })();
