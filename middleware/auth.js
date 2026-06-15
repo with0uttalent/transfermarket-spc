@@ -26,7 +26,7 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' });
   }
   req.user = payload;
-  const role = payload.role || 'admin';
+  const role = payload.role || 'coach';
   if (role !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
   }
@@ -39,7 +39,7 @@ function requireCoach(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' });
   }
   req.user = payload;
-  const role = payload.role || 'admin';
+  const role = payload.role || 'coach';
   if (role !== 'coach' && role !== 'admin') {
     return res.status(403).json({ error: 'Coach or admin access required' });
   }

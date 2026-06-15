@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -45,7 +45,7 @@ router.get('/:id', (req, res) => {
   res.json(row);
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type, notes } = req.body;
   if (!player_id) return res.status(400).json({ error: 'player_id required' });
   const db = getDb();
@@ -70,7 +70,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
-router.put('/:id', requireAuth, (req, res) => {
+router.put('/:id', requireAdmin, (req, res) => {
   const { player_id, from_team_id, to_team_id, transfer_fee, transfer_date, transfer_type, notes } = req.body;
   if (!player_id) return res.status(400).json({ error: 'player_id required' });
   const db = getDb();
@@ -83,7 +83,7 @@ router.put('/:id', requireAuth, (req, res) => {
   res.json({ id: Number(req.params.id) });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const result = db.prepare('DELETE FROM transfers WHERE id=?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });

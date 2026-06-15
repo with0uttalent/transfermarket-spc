@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { name, code, flag_emoji } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
@@ -18,7 +18,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name, code, flag_emoji });
 });
 
-router.put('/:id', requireAuth, (req, res) => {
+router.put('/:id', requireAdmin, (req, res) => {
   const { name, code, flag_emoji } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
@@ -27,7 +27,7 @@ router.put('/:id', requireAuth, (req, res) => {
   res.json({ id: Number(req.params.id), name, code, flag_emoji });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   db.prepare('UPDATE teams SET country_id=NULL WHERE country_id=?').run(req.params.id);
   db.prepare('UPDATE players SET nationality_id=NULL WHERE nationality_id=?').run(req.params.id);

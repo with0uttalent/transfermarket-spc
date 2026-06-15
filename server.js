@@ -1,14 +1,33 @@
 require('dotenv').config();
+
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET env var is not set. Refusing to start.');
+  process.exit(1);
+}
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 
+app.use(helmet({
+  contentSecurityPolicy: false, // manage CSP via nginx in production
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут.' },
+});
 
 // Upload directory
 const uploadsDir = path.join(__dirname, 'public/images/uploads');
@@ -16,16 +35,24 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Image upload
 const multer = require('multer');
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const ALLOWED_EXT  = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 const storage = multer.diskStorage({
   destination: uploadsDir,
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (!['.jpg','.jpeg','.png','.gif','.webp','.svg'].includes(ext))
-      return cb(new Error('Invalid file type'));
+    if (!ALLOWED_EXT.has(ext)) return cb(new Error('Invalid file type'));
     cb(null, Date.now() + '-' + Math.round(Math.random() * 1e6) + ext);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_MIME.has(file.mimetype)) return cb(new Error('Invalid MIME type'));
+    cb(null, true);
+  },
+});
 const { requireAuth } = require('./middleware/auth');
 app.post('/api/upload', requireAuth, upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -33,6 +60,8 @@ app.post('/api/upload', requireAuth, upload.single('image'), (req, res) => {
 });
 
 // API routes
+app.use('/api/auth/login', loginLimiter);
+app.use('/api/auth/change-password', loginLimiter);
 app.use('/api/auth',         require('./routes/auth'));
 app.use('/api/countries',    require('./routes/countries'));
 app.use('/api/competitions', require('./routes/competitions'));

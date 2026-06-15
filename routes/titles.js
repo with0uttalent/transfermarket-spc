@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -37,7 +37,7 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { team_id, player_id, competition_id, title_name, season, year } = req.body;
   if (!title_name) return res.status(400).json({ error: 'title_name required' });
   const db = getDb();
@@ -48,7 +48,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, title_name });
 });
 
-router.put('/:id', requireAuth, (req, res) => {
+router.put('/:id', requireAdmin, (req, res) => {
   const { team_id, player_id, competition_id, title_name, season, year } = req.body;
   if (!title_name) return res.status(400).json({ error: 'title_name required' });
   const db = getDb();
@@ -60,7 +60,7 @@ router.put('/:id', requireAuth, (req, res) => {
   res.json({ id: Number(req.params.id), title_name });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const result = db.prepare('DELETE FROM titles WHERE id=?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });

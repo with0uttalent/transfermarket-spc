@@ -42,7 +42,7 @@ function authCoach(token) {
 }
 
 function initPokerSocket(httpServer) {
-  const io = new Server(httpServer, { path: '/socket.io', cors: { origin: '*' } });
+  const io = new Server(httpServer, { path: '/socket.io', cors: { origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000', credentials: true } });
   const mgr = getPokerManager();
   mgr.setIo(io);
 

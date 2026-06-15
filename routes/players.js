@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth, requireCoach } = require('../middleware/auth');
+const { requireAuth, requireAdmin, requireCoach } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -120,7 +120,7 @@ router.get('/:id', (req, res) => {
   res.json({ ...player, transfers, titles, market_value_history: marketHistory });
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status, ovr_fixed } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   if (shirt_number !== undefined && shirt_number !== null && shirt_number !== '') {
@@ -147,7 +147,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name });
 });
 
-router.put('/:id', requireAuth, (req, res) => {
+router.put('/:id', requireAdmin, (req, res) => {
   const { name, date_of_birth, nationality_id, position, sub_position, foot, height, team_id, shirt_number, market_value, image_url, status,
           contract_until, birthplace, national_team, national_caps, national_goals, ovr_fixed } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
@@ -224,7 +224,7 @@ router.patch('/:id', requireCoach, (req, res) => {
   res.json(updated);
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const result = db.prepare('DELETE FROM players WHERE id=?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });

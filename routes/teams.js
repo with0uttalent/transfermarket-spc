@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -91,7 +91,7 @@ router.get('/:id', (req, res) => {
   res.json({ ...team, players, titles, transfers });
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
@@ -103,7 +103,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name });
 });
 
-router.put('/:id', requireAuth, (req, res) => {
+router.put('/:id', requireAdmin, (req, res) => {
   const { name, short_name, country_id, competition_id, founded, stadium, logo_url, market_value, stadium_url, about_text, team_photo_url, color_primary, color_secondary, color_pattern, goal_banner_url, kit_home_url, kit_away_url, kit_third_url } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const db = getDb();
@@ -157,7 +157,7 @@ router.patch('/:id/visuals', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const id = req.params.id;
   if (!db.prepare('SELECT id FROM teams WHERE id=?').get(id)) {
@@ -173,7 +173,7 @@ router.delete('/:id', requireAuth, (req, res) => {
     res.json({ message: 'Deleted' });
   } catch (err) {
     console.error('Team delete error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

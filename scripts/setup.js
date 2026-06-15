@@ -6,7 +6,11 @@ async function setup() {
   const db = getDb();
 
   const username = process.env.ADMIN_USERNAME || 'admin';
-  const password = process.env.ADMIN_PASSWORD || 'changeme123';
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) {
+    console.error('FATAL: ADMIN_PASSWORD env var is not set. Set it before running setup.');
+    process.exit(1);
+  }
 
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (existing) {

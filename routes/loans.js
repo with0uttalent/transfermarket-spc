@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb, getCurrentSeason, isTradeBanned } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 
 function getActiveBudget(db, teamId) {
@@ -33,7 +33,7 @@ router.get('/', (req, res) => {
   res.json(db.prepare(q).all(...p));
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { player_id, from_team_id, to_team_id, loan_fee, start_date, end_date } = req.body;
   if (!player_id || !to_team_id) return res.status(400).json({ error: 'player_id and to_team_id required' });
   const db = getDb();
@@ -79,7 +79,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: r.lastInsertRowid });
 });
 
-router.put('/:id/end', requireAuth, (req, res) => {
+router.put('/:id/end', requireAdmin, (req, res) => {
   const db = getDb();
   const loan = db.prepare(`SELECT * FROM loans WHERE id=?`).get(req.params.id);
   if (!loan) return res.status(404).json({ error: 'Not found' });
@@ -102,7 +102,7 @@ router.put('/:id/end', requireAuth, (req, res) => {
   res.json({ message: 'Loan ended, player returned' });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const r = db.prepare(`DELETE FROM loans WHERE id=?`).run(req.params.id);
   if (!r.changes) return res.status(404).json({ error: 'Not found' });

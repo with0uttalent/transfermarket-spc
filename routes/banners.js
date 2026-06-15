@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 
 // Public: active banners grouped by position
@@ -18,7 +18,7 @@ router.get('/', requireAuth, (req, res) => {
   res.json(db.prepare(`SELECT * FROM banners ORDER BY position, sort_order, id`).all());
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { position, title, image_url, link_url, active, sort_order } = req.body;
   if (!position) return res.status(400).json({ error: 'position required' });
   const db = getDb();
@@ -28,7 +28,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ id: r.lastInsertRowid });
 });
 
-router.put('/:id', requireAuth, (req, res) => {
+router.put('/:id', requireAdmin, (req, res) => {
   const { position, title, image_url, link_url, active, sort_order } = req.body;
   const db = getDb();
   const r = db.prepare(
@@ -38,7 +38,7 @@ router.put('/:id', requireAuth, (req, res) => {
   res.json({ id: Number(req.params.id) });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const r = db.prepare(`DELETE FROM banners WHERE id=?`).run(req.params.id);
   if (!r.changes) return res.status(404).json({ error: 'Not found' });

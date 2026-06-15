@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { simulateMatch, simulateMatchWithLineup, simulateExtraTime } = require('../services/matchSimulator');
 const { applyMatchResults, generateMatchNews } = require('../services/scheduler');
 const router = express.Router();
@@ -33,7 +33,8 @@ router.get('/', (req, res) => {
   if (date)    { conds.push(`m.match_date=?`); p.push(date); }
   if (conds.length) q += ' WHERE ' + conds.join(' AND ');
   q += ' ORDER BY m.match_date DESC, m.id DESC';
-  if (limit) q += ' LIMIT ' + parseInt(limit);
+  const limitVal = parseInt(limit);
+  if (Number.isFinite(limitVal) && limitVal > 0) q += ' LIMIT ' + limitVal;
   const now = Date.now();
   const rows = db.prepare(q).all(...p).map(m => {
     if (m.status === 'in_progress') {
@@ -207,7 +208,7 @@ router.get('/:id', (req, res) => {
   res.json({ ...match, events: allEvents, stats: playerStats, fullStats, challengeMessage });
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAdmin, (req, res) => {
   const { home_team_id, away_team_id, match_date, tournament_id, tournament_round, is_friendly } = req.body;
   if (!home_team_id || !away_team_id) return res.status(400).json({ error: 'Both teams required' });
   if (home_team_id === away_team_id) return res.status(400).json({ error: 'Teams must be different' });
@@ -232,7 +233,7 @@ function getLineupInfo(db, teamId) {
   return { players };
 }
 
-router.post('/:id/simulate', requireAuth, (req, res) => {
+router.post('/:id/simulate', requireAdmin, (req, res) => {
   const db = getDb();
   const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(req.params.id);
   if (!match) return res.status(404).json({ error: 'Not found' });
@@ -390,7 +391,7 @@ function advanceTournamentWinner(match, homeScore, awayScore) {
 }
 
 // ─── Overtime resolution for tournament draws ─────────────────────────────────
-router.post('/:id/overtime', requireAuth, (req, res) => {
+router.post('/:id/overtime', requireAdmin, (req, res) => {
   const db = getDb();
   const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(req.params.id);
   if (!match) return res.status(404).json({ error: 'Not found' });
@@ -425,7 +426,7 @@ router.post('/:id/overtime', requireAuth, (req, res) => {
   return res.json({ drew: true, needs_classic: true });
 });
 
-router.post('/:id/penalties', requireAuth, (req, res) => {
+router.post('/:id/penalties', requireAdmin, (req, res) => {
   const db = getDb();
   const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(req.params.id);
   if (!match) return res.status(404).json({ error: 'Not found' });
@@ -449,7 +450,7 @@ router.post('/:id/penalties', requireAuth, (req, res) => {
   return res.json({ pen_home: penHome, pen_away: penAway, winner: homeWins ? match.home_team_id : match.away_team_id, home_score: match.home_score, away_score: match.away_score });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const r = db.prepare(`DELETE FROM matches WHERE id=?`).run(req.params.id);
   if (!r.changes) return res.status(404).json({ error: 'Not found' });
