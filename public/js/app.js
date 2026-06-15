@@ -345,9 +345,9 @@ function renderPitch(players, isAway = false) {
       const initials = (p.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
       const avatarHtml = p.image_url
         ? `<img src="${escHtml(p.image_url)}" alt="${escHtml(p.name)}" onerror="this.style.display='none'">`
-        : `<div class="pc-ini">${escHtml(initials)}</div>`;
+        : initials;
       dots += `<div class="pitch-player${isAway?' away':''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%" title="${escHtml(p.name)} (${p.position||'?'})">
-        <div class="pc-av">${avatarHtml}</div>
+        <div class="pc">${avatarHtml}</div>
         <div class="pl">${escHtml(firstName)}</div>
       </div>`;
     });
