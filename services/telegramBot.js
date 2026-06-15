@@ -225,7 +225,7 @@ async function tgSendMessage(text) {
 }
 
 // ── Image generation ──────────────────────────────────────────────────────────
-const W = 800, H = 360;
+const W = 1280, H = 640;
 
 async function tryLoadImage(url) {
   if (!url) return null;
@@ -246,113 +246,177 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl) {
+// homeGoals / awayGoals: array of { player_name, minute }
+async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl, homeGoals = [], awayGoals = []) {
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
 
-  // Background: stadium photo or gradient fallback
+  // ── 1. Background: stadium photo ──────────────────────────────────────────
   const stadiumImg = await tryLoadImage(stadiumUrl);
   if (stadiumImg) {
-    // Draw stadium covering full canvas
     const sx = stadiumImg.width, sy = stadiumImg.height;
     const scale = Math.max(W / sx, H / sy);
     const dw = sx * scale, dh = sy * scale;
-    ctx.drawImage(stadiumImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    // Dark overlay so text is readable
-    ctx.fillStyle = 'rgba(0,0,0,0.62)';
-    ctx.fillRect(0, 0, W, H);
+    // Anchor to bottom so the pitch/grass is visible
+    ctx.drawImage(stadiumImg, (W - dw) / 2, H - dh, dw, dh);
   } else {
-    const grad = ctx.createLinearGradient(0, 0, W, H);
-    grad.addColorStop(0,   '#0d1b2a');
-    grad.addColorStop(0.5, '#1a3350');
-    grad.addColorStop(1,   '#0d1b2a');
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#0a0f1a');
+    grad.addColorStop(1, '#1a2840');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
   }
 
-  // Subtle vignette
-  const vig = ctx.createRadialGradient(W/2, H/2, H*0.2, W/2, H/2, H*0.9);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = vig;
+  // Gradient overlay: very dark at top, lightens toward pitch, dark again at bottom
+  const overGrad = ctx.createLinearGradient(0, 0, 0, H);
+  overGrad.addColorStop(0,    'rgba(0,0,0,0.82)');
+  overGrad.addColorStop(0.38, 'rgba(0,0,0,0.45)');
+  overGrad.addColorStop(0.72, 'rgba(0,0,0,0.30)');
+  overGrad.addColorStop(1,    'rgba(0,0,0,0.70)');
+  ctx.fillStyle = overGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // Logo circles
-  const drawLogoCircle = async (img, cx, cy, r) => {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    if (img) { ctx.clip(); ctx.drawImage(img, cx - r, cy - r, r * 2, r * 2); }
-    ctx.restore();
-  };
-
-  const homeImg = await tryLoadImage(homeLogo);
-  const awayImg = await tryLoadImage(awayLogo);
-  await drawLogoCircle(homeImg, 160, H / 2 - 20, 80);
-  await drawLogoCircle(awayImg, W - 160, H / 2 - 20, 80);
-
-  // Team names
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.textAlign = 'center';
-  ctx.font = 'bold 22px sans-serif';
-  ctx.fillText(homeTeam, 160, H - 48);
-  ctx.fillText(awayTeam, W - 160, H - 48);
-
-  // Score
-  ctx.font = 'bold 88px sans-serif';
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(22,163,74,0.6)';
-  ctx.shadowBlur = 24;
-  ctx.fillText(`${homeScore}  –  ${awayScore}`, W / 2, H / 2 + 20);
-  ctx.shadowBlur = 0;
-
-  // Status badge
-  const badgeLabel = ({ finished: 'ЗАВЕРШЁН', overtime: 'ОВЕРТАЙМ', penalties: 'ПЕНАЛЬТИ' }[status] || 'ФИНАЛ').toUpperCase();
-  const badgeW = 130, badgeH = 28;
-  const bx = W / 2 - badgeW / 2, by = H / 2 + 38;
-  roundRect(ctx, bx, by, badgeW, badgeH, 14);
-  ctx.fillStyle = '#16a34a';
-  ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 13px sans-serif';
-  ctx.fillText(badgeLabel, W / 2, by + 19);
-
-  // League strip at top (if league info provided)
+  // ── 2. League badge at top-centre ─────────────────────────────────────────
   if (leagueName) {
-    const stripH = 36;
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(0, 0, W, stripH);
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(0, stripH - 1, W, 1);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.font = 'bold 14px sans-serif';
-
+    const pillH = 46, pillR = 23;
     const leagueImg = await tryLoadImage(leagueLogoUrl);
-    const logoSize = 22;
-    const gap = 8;
-    const textWidth = ctx.measureText(leagueName).width;
+    const logoSz = 28, gap = 10;
+    ctx.font = 'bold 17px sans-serif';
+    const textW = ctx.measureText(leagueName.toUpperCase()).width;
+    const totalInner = leagueImg ? logoSz + gap + textW : textW;
+    const pillW = totalInner + 56;
+    const px = (W - pillW) / 2, py = 28;
+
+    // Pill background
+    roundRect(ctx, px, py, pillW, pillH, pillR);
+    ctx.fillStyle = 'rgba(8,10,20,0.78)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const contentX = px + (pillW - totalInner) / 2;
+    const midY = py + pillH / 2;
 
     if (leagueImg) {
-      const totalWidth = logoSize + gap + textWidth;
-      const startX = (W - totalWidth) / 2;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(startX + logoSize / 2, stripH / 2, logoSize / 2, 0, Math.PI * 2);
+      ctx.arc(contentX + logoSz / 2, midY, logoSz / 2, 0, Math.PI * 2);
       ctx.clip();
-      ctx.drawImage(leagueImg, startX, (stripH - logoSize) / 2, logoSize, logoSize);
+      ctx.drawImage(leagueImg, contentX, midY - logoSz / 2, logoSz, logoSz);
       ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.textAlign = 'left';
-      ctx.fillText(leagueName, startX + logoSize + gap, stripH / 2 + 5);
-      ctx.textAlign = 'center';
+      ctx.font = 'bold 17px sans-serif';
+      ctx.fillText(leagueName.toUpperCase(), contentX + logoSz + gap, midY + 6);
     } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.textAlign = 'center';
-      ctx.fillText(leagueName, W / 2, stripH / 2 + 5);
+      ctx.font = 'bold 17px sans-serif';
+      ctx.fillText(leagueName.toUpperCase(), W / 2, midY + 6);
+    }
+  }
+
+  // ── 3. Main dark card ─────────────────────────────────────────────────────
+  // Card geometry
+  const GOALS_ROWS = Math.max(homeGoals.length, awayGoals.length, 1);
+  const GOALS_ROW_H = 28;
+  const SCORE_H = 200;
+  const BOTTOM_H = 34 + GOALS_ROWS * GOALS_ROW_H + 20; // padding + rows + padding
+  const CARD_H = SCORE_H + BOTTOM_H;
+  const CARD_W = W - 140;
+  const CARD_X = 70;
+  const CARD_Y = (H - CARD_H) / 2 + 10;
+  const CARD_R = 24;
+
+  // Outer card (dark)
+  roundRect(ctx, CARD_X, CARD_Y, CARD_W, CARD_H, CARD_R);
+  ctx.fillStyle = 'rgba(8,10,20,0.88)';
+  ctx.fill();
+
+  // Divider: lighter tinted section for goal scorers, clipped to card corners
+  const divY = CARD_Y + SCORE_H;
+  ctx.save();
+  roundRect(ctx, CARD_X, CARD_Y, CARD_W, CARD_H, CARD_R);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(240,244,248,0.10)';
+  ctx.fillRect(CARD_X, divY, CARD_W, BOTTOM_H);
+  ctx.restore();
+
+  // ── 4. Team logos (white rounded squares) ─────────────────────────────────
+  const homeImg = await tryLoadImage(homeLogo);
+  const awayImg = await tryLoadImage(awayLogo);
+  const LOGO_BOX = 120, LOGO_R = 18;
+  const logoY = CARD_Y + (SCORE_H - LOGO_BOX) / 2 - 10;
+  const homeLX = CARD_X + 54, awayLX = CARD_X + CARD_W - 54 - LOGO_BOX;
+
+  const drawLogoBox = (img, bx, by) => {
+    ctx.save();
+    roundRect(ctx, bx, by, LOGO_BOX, LOGO_BOX, LOGO_R);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    if (img) {
+      ctx.clip();
+      const pad = 8;
+      ctx.drawImage(img, bx + pad, by + pad, LOGO_BOX - pad * 2, LOGO_BOX - pad * 2);
+    }
+    ctx.restore();
+  };
+  drawLogoBox(homeImg, homeLX, logoY);
+  drawLogoBox(awayImg, awayLX, logoY);
+
+  // ── 5. Score ──────────────────────────────────────────────────────────────
+  const scoreY = CARD_Y + SCORE_H / 2 + 26;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 100px sans-serif';
+  ctx.fillText(`${homeScore}  –  ${awayScore}`, W / 2, scoreY);
+
+  // ── 6. Status badge (FT / OT / PEN) ──────────────────────────────────────
+  const badgeLabel = ({ finished: 'FT', overtime: 'OT', penalties: 'PEN' }[status] || 'FT');
+  const FTW = 64, FTH = 34, FTR = 10;
+  const ftx = W / 2 - FTW / 2, fty = divY + (BOTTOM_H - FTH) / 2;
+  roundRect(ctx, ftx, fty, FTW, FTH, FTR);
+  ctx.fillStyle = '#1a2840';
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText(badgeLabel, W / 2, fty + FTH / 2 + 5);
+
+  // ── 7. Goal scorers ───────────────────────────────────────────────────────
+  const goalStartY = divY + 18;
+  const COL_W = CARD_W / 2 - 50; // column width for each team
+
+  // Home goals (right-aligned, left half)
+  ctx.font = '500 16px sans-serif';
+  homeGoals.forEach((g, i) => {
+    const line = `${g.minute}' ${g.player_name || ''}`;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(line, W / 2 - 44, goalStartY + i * GOALS_ROW_H + 16);
+  });
+
+  // Away goals (left-aligned, right half)
+  awayGoals.forEach((g, i) => {
+    const line = `${g.minute}' ${g.player_name || ''}`;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(line, W / 2 + 44, goalStartY + i * GOALS_ROW_H + 16);
+  });
+
+  // ── 8. Advertising perimeter board strip ──────────────────────────────────
+  if (leagueName) {
+    const adH = 32;
+    const adY = H - adH;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(0, adY, W, adH);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    const repeat = leagueName.toUpperCase();
+    const step = 220;
+    for (let x = step / 2; x < W; x += step) {
+      ctx.fillText(`⬡ ${repeat}`, x, adY + adH / 2 + 5);
     }
   }
 
@@ -438,14 +502,11 @@ async function sendLiveEvent({ event, homeTeam, awayTeam, homeScore, awayScore, 
 async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, leagueName, leagueLogoUrl, goalEvents }) {
   if (!LIVE_CHANNEL_ID || !_enabled || !_notif.channel_results) return;
   try {
-    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, 'finished', stadiumUrl, leagueName, leagueLogoUrl);
     const homeGoals = (goalEvents || []).filter(e => e.team_id === homeTeamId);
     const awayGoals = (goalEvents || []).filter(e => e.team_id === awayTeamId);
-    const homeStr = homeGoals.map(g => `${escTg(g.player_name || '?')} ${g.minute}'`).join(', ');
-    const awayStr = awayGoals.map(g => `${g.minute}' ${escTg(g.player_name || '?')}`).join(', ');
-    const goalsLine = (homeStr || awayStr) ? `\n${homeStr}  ⚽  ${awayStr}` : '';
+    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, 'finished', stadiumUrl, leagueName, leagueLogoUrl, homeGoals, awayGoals);
     const leaguePrefix = leagueName ? `🏅 <i>${escTg(leagueName)}</i>\n` : '';
-    const caption = `${leaguePrefix}<b>МАТЧ ЗАВЕРШЁН\n${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>${goalsLine}`.slice(0, 1024);
+    const caption = `${leaguePrefix}<b>МАТЧ ЗАВЕРШЁН\n${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>`.slice(0, 1024);
     await tgSendPhotoToLive(imgBuf, caption);
   } catch(err) {
     console.warn('[TelegramBot] sendMatchResultToLive error:', err.message);
@@ -456,16 +517,12 @@ async function sendMatchResultToLive({ matchId, homeTeam, awayTeam, homeScore, a
 async function sendMatchResult({ matchId, homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, stadiumUrl, homeTeamId, awayTeamId, status, goalEvents, leagueName, leagueLogoUrl }) {
   if (!_enabled || !_notif.group_results) return;
   try {
-    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl);
-
     const homeGoals = (goalEvents || []).filter(e => e.team_id === homeTeamId);
     const awayGoals = (goalEvents || []).filter(e => e.team_id === awayTeamId);
-    const homeStr = homeGoals.map(g => `${escTg(g.player_name || '?')} ${g.minute}'`).join(', ');
-    const awayStr = awayGoals.map(g => `${g.minute}' ${escTg(g.player_name || '?')}`).join(', ');
-    const goalsLine = (homeStr || awayStr) ? `\n${homeStr}  ⚽  ${awayStr}` : '';
+    const imgBuf = await generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, homeLogo, awayLogo, status, stadiumUrl, leagueName, leagueLogoUrl, homeGoals, awayGoals);
 
     const leaguePrefix = leagueName ? `🏅 <i>${escTg(leagueName)}</i>\n` : '';
-    const caption = `${leaguePrefix}🏟 <b>${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>${goalsLine}`.slice(0, 1024);
+    const caption = `${leaguePrefix}🏟 <b>${escTg(homeTeam)} ${homeScore} – ${awayScore} ${escTg(awayTeam)}</b>`.slice(0, 1024);
     const photoResult = await tgSendPhoto(imgBuf, caption);
     if (!photoResult.ok) console.warn('[TelegramBot] sendPhoto failed:', photoResult.description);
   } catch (err) {
