@@ -158,6 +158,11 @@ router.post('/offers', requireAuth, (req, res) => {
     from_team_id = parseInt(target_team_id);
     to_team_id = coach.team_id;
     if (player.team_id !== from_team_id) return res.status(400).json({ error: 'Player does not belong to target team' });
+    // Trade ban: can't borrow a player who is banned from transfers this season
+    const currentSeason = getCurrentSeason(db);
+    if (isTradeBanned(player, currentSeason)) {
+      return res.status(400).json({ error: `Торговый бан — ${player.name} не может быть арендован в текущем сезоне` });
+    }
   } else {
     // Coach wants to send own player TO target_team
     from_team_id = coach.team_id;

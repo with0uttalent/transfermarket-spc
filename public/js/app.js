@@ -2285,9 +2285,12 @@ async function renderPlayerDetail(app, id) {
           </div>`
         : isOtherTeamPlayer
           ? `<div class="pp-actions">
-              <button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button>
+              ${playerTradeBanned(player)
+                ? `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.35);color:#e74c3c;font-size:13px;font-weight:600" title="Торговый бан: игрок не может быть продан или арендован в текущем сезоне">🔒 Торговый бан</span>`
+                : `<button class="btn btn-green" onclick="showQuickOffer(${playerJson})">📨 Предложить трансфер</button>
               <button class="btn btn-outline" onclick="showSwapOfferForm(${playerJson},${State.coachProfile?.team_id})">🔄 Обмен</button>
-              <button class="btn btn-outline" onclick="showLoanInForm(${playerJson})">🤝 Взять в аренду</button>
+              <button class="btn btn-outline" onclick="showLoanInForm(${playerJson})">🤝 Взять в аренду</button>`
+              }
             </div>`
           : '';
 

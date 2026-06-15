@@ -144,10 +144,10 @@ router.post('/', requireAuth, (req, res) => {
   }
 
   // Trade ban: player must have completed at least one full season with the selling team
-  if (!isAdmin && (offerType === 'buy' || offerType === 'swap')) {
+  if (!isAdmin && (offerType === 'buy' || offerType === 'swap' || offerType === 'loan')) {
     const currentSeason = getCurrentSeason(db);
     if (isTradeBanned(player, currentSeason)) {
-      return res.status(400).json({ error: `Игрок под торговым баном — ${player.name} должен отыграть минимум один сезон в текущей команде` });
+      return res.status(400).json({ error: `Игрок под торговым баном — ${player.name} не может быть продан или арендован в текущем сезоне` });
     }
   }
 
