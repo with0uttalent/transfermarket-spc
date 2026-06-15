@@ -235,6 +235,7 @@ router.post('/offers/:id/accept', requireAuth, (req, res) => {
 
     // Transfer loan fee: deduct from borrowing team (to_team), credit to lending team (from_team)
     if (offer.loan_fee > 0) {
+      // Borrowing team pays
       db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?')
         .run(offer.loan_fee, offer.to_team_id);
       const borrowBudget = getActiveBudget(db, offer.to_team_id);
@@ -242,6 +243,9 @@ router.post('/offers/:id/accept', requireAuth, (req, res) => {
         db.prepare('UPDATE season_budgets SET spent = spent + ? WHERE id=?')
           .run(offer.loan_fee, borrowBudget.id);
       }
+      // Lending team receives — increase transfer_budget so it shows in coach balance
+      db.prepare('UPDATE teams SET transfer_budget = transfer_budget + ? WHERE id=?')
+        .run(offer.loan_fee, offer.from_team_id);
       const lendBudget = getActiveBudget(db, offer.from_team_id);
       if (lendBudget) {
         db.prepare('UPDATE season_budgets SET income = income + ? WHERE id=?')

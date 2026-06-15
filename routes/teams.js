@@ -49,7 +49,8 @@ router.get('/:id', (req, res) => {
       pi.injury_type,
       CASE WHEN ln.id IS NOT NULL THEN 1 ELSE 0 END AS on_loan,
       ln.from_team_id AS loan_from_team_id,
-      ft.name AS loan_from_team_name
+      ft.name AS loan_from_team_name,
+      0 AS on_loan_out, NULL AS loan_to_team_id, NULL AS loan_to_team_name, NULL AS loan_to_team_logo
     FROM players p
     LEFT JOIN countries co ON p.nationality_id = co.id
     LEFT JOIN player_skills ps ON ps.player_id = p.id
@@ -59,6 +60,28 @@ router.get('/:id', (req, res) => {
     WHERE p.team_id = ?
     ORDER BY p.market_value DESC
   `).all(req.params.id);
+
+  // Players loaned OUT from this team (they moved to borrowing team but still "belong" here)
+  const loanedOut = db.prepare(`
+    SELECT p.*, co.name as nationality_name, co.flag_emoji,
+      ps.pace, ps.shooting, ps.passing, ps.defending, ps.physical,
+      pi.matches_remaining AS injury_matches_remaining,
+      pi.injury_type,
+      0 AS on_loan,
+      NULL AS loan_from_team_id, NULL AS loan_from_team_name,
+      1 AS on_loan_out,
+      tt.id AS loan_to_team_id, tt.name AS loan_to_team_name, tt.logo_url AS loan_to_team_logo
+    FROM loans ln
+    JOIN players p ON ln.player_id = p.id
+    LEFT JOIN countries co ON p.nationality_id = co.id
+    LEFT JOIN player_skills ps ON ps.player_id = p.id
+    LEFT JOIN player_injuries pi ON pi.player_id = p.id AND pi.matches_remaining > 0
+    JOIN teams tt ON tt.id = ln.to_team_id
+    WHERE ln.from_team_id = ? AND ln.status = 'active'
+    ORDER BY p.market_value DESC
+  `).all(req.params.id);
+
+  const allPlayers = [...players, ...loanedOut];
 
   // Group by competition/tournament so a tournament win shows as a single trophy,
   // even if older data stored one row per participating player.
@@ -88,7 +111,7 @@ router.get('/:id', (req, res) => {
     LIMIT 20
   `).all(req.params.id, req.params.id);
 
-  res.json({ ...team, players, titles, transfers });
+  res.json({ ...team, players: allPlayers, titles, transfers });
 });
 
 router.post('/', requireAdmin, (req, res) => {
