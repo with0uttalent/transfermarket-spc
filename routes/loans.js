@@ -233,6 +233,9 @@ router.post('/offers/:id/accept', requireAuth, (req, res) => {
     // Move player to to_team_id
     db.prepare('UPDATE players SET team_id=? WHERE id=?').run(offer.to_team_id, offer.player_id);
 
+    // Remove player from original team's lineup (they're on loan, can't play for from_team)
+    db.prepare('DELETE FROM team_lineups WHERE team_id=? AND player_id=?').run(offer.from_team_id, offer.player_id);
+
     // Transfer loan fee: deduct from borrowing team (to_team), credit to lending team (from_team)
     if (offer.loan_fee > 0) {
       // Borrowing team pays
