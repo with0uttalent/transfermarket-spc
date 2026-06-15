@@ -327,7 +327,7 @@ async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, hom
   const CARD_W = W - 120;
   const CARD_X = 60;
   const CARD_Y = (H - CARD_H) / 2 + 8;
-  const CARD_R = 22;
+  const CARD_R = 32;
   const divY = CARD_Y + SCORE_H;
 
   // ── 4. Black score panel (top half of card) ───────────────────────────────
@@ -355,7 +355,7 @@ async function generateMatchBanner(homeTeam, awayTeam, homeScore, awayScore, hom
   // ── 6. Team logos (white rounded squares inside the black panel) ──────────
   const homeImg = await tryLoadImage(homeLogo);
   const awayImg = await tryLoadImage(awayLogo);
-  const LOGO_BOX = 124, LOGO_PAD = 8, LOGO_R = 16;
+  const LOGO_BOX = 124, LOGO_PAD = 8, LOGO_R = 22;
   const logoY = CARD_Y + (SCORE_H - LOGO_BOX) / 2 - 8;
   const homeLX = CARD_X + 48;
   const awayLX = CARD_X + CARD_W - 48 - LOGO_BOX;
