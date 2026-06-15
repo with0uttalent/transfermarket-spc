@@ -2343,7 +2343,7 @@ async function renderPlayerDetail(app, id) {
         <button class="detail-tab" data-tab="achievements">Достижения (${achRows.length})</button>
         <button class="detail-tab" data-tab="market">История стоимости</button>
       </div>
-      <div id="tab-stats" class="tab-panel active"><div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">${renderPentagonChart(playerSkills, player.position)}<div style="flex:1;min-width:260px">${renderPlayerCareerStats(careerStats, player.position)}</div></div></div>
+      <div id="tab-stats" class="tab-panel active"><div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">${renderPentagonChart(playerSkills, player.position, player.ovr_fixed)}<div style="flex:1;min-width:260px">${renderPlayerCareerStats(careerStats, player.position)}</div></div></div>
       <div id="tab-transfers" class="tab-panel">${renderTransfersTab(player.transfers)}</div>
       <div id="tab-titles" class="tab-panel">${renderTitlesTab(player.titles,null,player.id)}</div>
       <div id="tab-achievements" class="tab-panel">${renderAchievementsTab(achRows)}</div>
@@ -2410,13 +2410,27 @@ function renderPlayerCareerStats(cs, position) {
   </div>`;
 }
 
-function renderPentagonChart(skills, position) {
+function renderPentagonChart(skills, position, ovrFixed) {
   if (!skills) return '<div class="empty-state"><p>Skills data not available</p></div>';
   const isGK = position === 'Goalkeeper';
   const labels = isGK
     ? ['Reflexes', 'Positioning', 'Kicking', 'Handling', 'Aerial']
     : ['Pace', 'Shooting', 'Passing', 'Defending', 'Physical'];
-  const values = [skills.pace, skills.shooting, skills.passing, skills.defending, skills.physical];
+  let values = [skills.pace, skills.shooting, skills.passing, skills.defending, skills.physical];
+
+  // When admin has manually set OVR, scale the pentagon proportionally to reflect it
+  if (ovrFixed != null && values.some(v => v)) {
+    const nz = posToZone(position);
+    const w = OVR_WEIGHTS[nz] || OVR_WEIGHTS.MID;
+    const naturalOvr = Math.round(
+      w[0]*(values[0]||50) + w[1]*(values[1]||50) + w[2]*(values[2]||50) +
+      w[3]*(values[3]||50) + w[4]*(values[4]||50)
+    );
+    if (naturalOvr > 0) {
+      const scale = ovrFixed / naturalOvr;
+      values = values.map(v => Math.min(99, Math.max(1, Math.round((v || 50) * scale))));
+    }
+  }
 
   const cx = 110, cy = 110, rMax = 80, rLabel = 100;
   const N = 5;
