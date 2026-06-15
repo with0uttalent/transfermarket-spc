@@ -1511,22 +1511,176 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .login-box .login-header h2 { font-size: 20px; font-weight: 800; }
 .login-box .login-body { padding: 28px; }
 
+/* ─── Hamburger button (hidden on desktop) ───────────────────── */
+.hamburger-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 38px;
+  height: 38px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  transition: background .15s;
+}
+.hamburger-btn:hover { background: rgba(255,255,255,.08); }
+.hamburger-btn span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: #fff;
+  border-radius: 2px;
+  transition: transform .25s, opacity .2s;
+}
+.hamburger-btn.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.hamburger-btn.open span:nth-child(2) { opacity: 0; }
+.hamburger-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* ─── Sidebar backdrop (mobile overlay) ─────────────────────── */
+#sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 498;
+  backdrop-filter: blur(2px);
+}
+#sidebar-backdrop.active { display: block; }
+
 /* ─── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 1100px) {
   #right-panel { display: none; }
   #app { max-width: none; }
 }
-@media (max-width: 700px) {
-  #sidebar { width: 56px; min-width: 56px; }
+
+/* ── Tablet (≤900px): slim sidebar ──────────────────────────── */
+@media (max-width: 900px) {
+  :root { --sidebar-w: 56px; }
   .sidebar-logo { padding: 16px 10px; font-size: 0; }
-  .sidebar-logo::after { content: 'TM'; font-size: 14px; font-weight: 800; color: #fff; }
-  .nav-label, .sidebar-coach-body, .btn-my-club, .sidebar-footer-link span, .sidebar-coach-name, .sidebar-coach-role, .sidebar-coach-team, .sidebar-coach-desc { display: none; }
+  .sidebar-logo::after { content: 'TM'; font-size: 13px; font-weight: 800; color: #fff; }
+  .nav-label,
+  .sidebar-coach-body,
+  .btn-my-club,
+  .sidebar-footer-link span,
+  #theme-toggle-label { display: none; }
   .nav-item { justify-content: center; padding: 10px 0; }
-  .sidebar-footer-link { justify-content: center; }
+  .sidebar-footer-link { justify-content: center; padding: 10px 0; }
   #main-nav { padding: 4px 6px; }
-  #app { padding: 16px 12px; }
-  #topbar { padding: 0 14px; }
-  .topbar-title { font-size: 16px; }
+  .sidebar-coach-av { margin: 0 auto; }
+  .sidebar-coach { flex-direction: column; align-items: center; padding: 10px 6px; }
+  .theme-toggle-btn { justify-content: center; padding: 10px 0; }
+}
+
+/* ── Mobile (≤640px): overlay sidebar + full-width layout ────── */
+@media (max-width: 640px) {
+  /* Layout: sidebar out of flow */
+  :root { --sidebar-w: 240px; }
+  #layout-root { flex-direction: column; }
+  #sidebar {
+    position: fixed;
+    left: calc(-1 * var(--sidebar-w) - 10px);
+    top: 0;
+    bottom: 0;
+    width: var(--sidebar-w) !important;
+    min-width: var(--sidebar-w) !important;
+    height: 100dvh;
+    z-index: 499;
+    transition: left .28s cubic-bezier(.4,0,.2,1);
+    overflow-y: auto;
+  }
+  #sidebar.mobile-open { left: 0; }
+  #layout-main { width: 100%; min-height: 100dvh; }
+
+  /* Restore sidebar content (was hidden in tablet) */
+  .nav-label,
+  .sidebar-footer-link span,
+  #theme-toggle-label { display: inline; }
+  .sidebar-logo { padding: 18px 18px 14px; font-size: 17px; }
+  .sidebar-logo::after { display: none; }
+  .nav-item { justify-content: flex-start; padding: 9px 10px; }
+  .sidebar-footer-link { justify-content: flex-start; padding: 8px 10px; }
+  #main-nav { padding: 4px 10px; }
+  .theme-toggle-btn { justify-content: flex-start; padding: 8px 10px; }
+  .sidebar-coach { flex-direction: row; padding: 12px 14px; }
+  .sidebar-coach-body { display: flex; flex-direction: column; }
+  .sidebar-coach-name,
+  .sidebar-coach-role,
+  .sidebar-coach-team,
+  .sidebar-coach-desc { display: block; }
+  .btn-my-club { display: block; }
+
+  /* Hamburger visible */
+  .hamburger-btn { display: flex; }
+
+  /* Topbar */
+  #topbar { padding: 0 10px; gap: 8px; }
+  .topbar-title { font-size: 15px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #search-global { width: 120px; font-size: 12px; padding: 7px 10px 7px 30px; }
+  #search-global:focus { width: 160px; }
+
+  /* Notification dropdown full-width */
+  .notif-dropdown { width: calc(100vw - 20px); right: -46px; max-height: 70vh; overflow-y: auto; }
+
+  /* App content */
+  #app { padding: 12px 10px; }
+
+  /* Cards & grids */
+  .match-card { grid-template-columns: 1fr auto 1fr; gap: 6px; padding: 12px 10px; }
+  .match-card .mc-score-val { font-size: 20px; }
+  .match-card .mc-score { min-width: 60px; }
+
+  /* Tables → scroll */
+  .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 480px; }
+
+  /* Form rows */
+  .form-row, .form-row-3 { grid-template-columns: 1fr !important; }
+
+  /* Hero match cards */
+  .hero-match-card { padding: 12px; }
+  .hero-match-teams { gap: 8px; }
+  .hero-team-name { font-size: 10px; }
+  .hero-score { font-size: 28px; }
+
+  /* Two-column sections */
+  .two-col { grid-template-columns: 1fr !important; }
+
+  /* Match card with stadium backdrop */
+  .match-card--stadium .mc-team-name { font-size: 11px; }
+
+  /* Scoreboard (match detail) */
+  .score-display { gap: 10px; }
+  .score-value { font-size: 36px; }
+  .score-team-name { font-size: 14px; }
+
+  /* Lineup */
+  .lineup-columns { flex-direction: column; }
+
+  /* Betting */
+  .bet-matches { grid-template-columns: 1fr !important; }
+
+  /* Player profile */
+  .pp-wrap { grid-template-columns: 1fr !important; }
+  .pp-photo-col { border-right: none; border-bottom: 1px solid var(--border); }
+  .pp-right-col { border-left: none; border-top: 1px solid var(--border); }
+
+  /* Kits grid */
+  .kits-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Home page grids */
+  .home-grid-3 { grid-template-columns: 1fr !important; }
+
+  /* Badges: wrap tightly */
+  .badge { font-size: 10px; padding: 2px 6px; }
+
+  /* Pagination */
+  .pagination { gap: 4px; }
+  .pagination button { padding: 5px 8px; font-size: 12px; }
 }
 
 /* ══════════════════════════════════════════════════════════

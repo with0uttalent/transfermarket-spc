@@ -1112,9 +1112,38 @@ window.addEventListener('load', async () => {
   setInterval(loadBanners, 30000); // refresh right panel every 30s
   startNotifPolling();
   router();
+  initMobileSidebar();
 });
 // Re-sync notifications immediately when user switches back to this tab
 document.addEventListener('visibilitychange', () => { if (!document.hidden && isLoggedIn()) loadNotifications(); });
+
+function initMobileSidebar() {
+  const hamburger = document.getElementById('hamburger-btn');
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!hamburger || !sidebar || !backdrop) return;
+
+  function openMobileSidebar() {
+    sidebar.classList.add('mobile-open');
+    backdrop.classList.add('active');
+    hamburger.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeMobileSidebar() {
+    sidebar.classList.remove('mobile-open');
+    backdrop.classList.remove('active');
+    hamburger.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  hamburger.addEventListener('click', () => {
+    sidebar.classList.contains('mobile-open') ? closeMobileSidebar() : openMobileSidebar();
+  });
+  backdrop.addEventListener('click', closeMobileSidebar);
+  document.querySelectorAll('#main-nav .nav-item').forEach(el =>
+    el.addEventListener('click', () => { if (window.innerWidth <= 640) closeMobileSidebar(); })
+  );
+}
 
 // ═══════════════════════════════════════════════════════════
 //  HOME
