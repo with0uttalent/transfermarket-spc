@@ -1368,8 +1368,8 @@ tbody td { padding: 10px 12px; vertical-align: middle; color: var(--text); }
 .pb-player-row.pb-selected { background: rgba(59,130,246,.15); border-left: 3px solid var(--accent); }
 .pb-slot { position: absolute; transform: translate(-50%,-50%); cursor: pointer; text-align: center; transition: all .15s; z-index: 2; }
 .pb-slot-filled { width: 54px; }
-.pb-slot-filled .pb-slot-av { width: 44px; height: 44px; border-radius: 50%; background: #1a6e3c; border: 2.5px solid rgba(255,255,255,0.92); margin: 0 auto; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.45); }
-.pb-slot-filled .pb-slot-av img { width: 44px; height: 44px; object-fit: cover; border-radius: 50%; min-width: 0; min-height: 0; flex-shrink: 0; }
+.pb-slot-filled .pb-slot-av { width: 44px; height: 44px; border-radius: 50%; background: #1a6e3c; border: 2.5px solid rgba(255,255,255,0.92); margin: 0 auto; overflow: visible; position: relative; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.45); }
+.pb-slot-filled .pb-slot-av img { width: 44px; height: 44px; object-fit: cover; border-radius: 50%; clip-path: circle(50% at 50% 50%); min-width: 0; min-height: 0; flex-shrink: 0; }
 .pb-slot-filled .pb-slot-name { font-size: 9.5px; color: #fff; font-weight: 700; margin-top: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 54px; text-shadow: 0 1px 0 rgba(0,0,0,1), 0 0 6px rgba(0,0,0,0.9); letter-spacing: 0.2px; }
 .pb-slot-empty { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.10); border: 1.5px solid rgba(255,255,255,.35); display: flex; align-items: center; justify-content: center; cursor: default; pointer-events: none; transition: all .15s; }
 .pb-slot-empty-label { font-size: 8px; font-weight: 700; color: rgba(255,255,255,.55); letter-spacing: .3px; pointer-events: none; }
