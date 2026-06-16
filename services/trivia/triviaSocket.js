@@ -9,7 +9,7 @@ const GRID_ROWS  = 6;
 const TOTAL_TERRITORIES = GRID_COLS * GRID_ROWS; // 36
 const CAPITAL_LIVES    = 3;
 const PHASE1_SAFETY_MS = 30000; // max wait for everyone to answer (no client timer shown)
-const PHASE2_MS        = 20000; // tiebreaker timer (shown to client)
+const PHASE2_MS        = 10000; // tiebreaker timer (shown to client)
 const SELECT_MS        = 20000;
 const RESET_DELAY_MS   = 30000;
 
@@ -139,6 +139,30 @@ function broadcast(io, room) {
 
 // ── player helpers ────────────────────────────────────────────────────────────
 function activePlayers(room) { return room.players.filter(p => !p.eliminated); }
+
+// Orthogonal neighbours of a cell on the 6×6 grid
+function getNeighbors(id) {
+  const row = Math.floor(id / GRID_COLS);
+  const col = id % GRID_COLS;
+  const res = [];
+  const deltas = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dr, dc] of deltas) {
+    const r = row + dr, c = col + dc;
+    if (r >= 0 && r < GRID_ROWS && c >= 0 && c < GRID_COLS) res.push(r * GRID_COLS + c);
+  }
+  return res;
+}
+
+// An enemy capital can only be attacked if the attacker already borders it
+// with one of their own cells. Ordinary territories can always be attacked.
+function canAttackTerritory(room, attackerId, targetId) {
+  const t = room.territories[targetId];
+  if (!t || !t.owner || t.owner === attackerId) return false;
+  if (t.isCapital) {
+    return getNeighbors(targetId).some(n => room.territories[n]?.owner === attackerId);
+  }
+  return true;
+}
 
 function advanceTurn(room) {
   const alive = activePlayers(room);
@@ -374,7 +398,8 @@ function promptAttack(io, room) {
 
   room.selectTimer = setTimeout(() => {
     if (room.awaitingTerritory?.playerId !== currentPlayer.id) return;
-    const enemyTerrs = Object.values(room.territories).filter(t => t.owner && t.owner !== currentPlayer.id);
+    const enemyTerrs = Object.values(room.territories)
+      .filter(t => canAttackTerritory(room, currentPlayer.id, t.id));
     if (enemyTerrs.length === 0) { nextWarTurn(io, room); return; }
     const target = enemyTerrs[Math.floor(Math.random() * enemyTerrs.length)];
     beginAttack(io, room, currentPlayer.id, target.id);
@@ -588,6 +613,10 @@ function initTriviaSocket(server) {
       } else if (room.awaitingTerritory.type === 'attack') {
         const t = room.territories[territoryId];
         if (!t || t.owner === user.id || !t.owner) { socket.emit('trivia:error', { message: 'Выберите вражескую территорию' }); return; }
+        if (t.isCapital && !canAttackTerritory(room, user.id, territoryId)) {
+          socket.emit('trivia:error', { message: 'Столицу можно атаковать, только когда вы граничите с ней своей территорией' });
+          return;
+        }
         beginAttack(io, room, user.id, territoryId);
       }
     });

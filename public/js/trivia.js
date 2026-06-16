@@ -12,11 +12,27 @@ const TriviaUI = (() => {
 
   const GRID_COLS = 6;
   const GRID_ROWS  = 6;
-  const PHASE2_MS  = 20000;
+  const PHASE2_MS  = 10000;
 
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function el(id) { return document.getElementById(id); }
   function getToken() { return localStorage.getItem('tm_token') || ''; }
+
+  // Orthogonal neighbours of a cell on the 6×6 grid
+  function getNeighbors(id) {
+    const row = Math.floor(id / GRID_COLS);
+    const col = id % GRID_COLS;
+    const res = [];
+    [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr, dc]) => {
+      const r = row + dr, c = col + dc;
+      if (r >= 0 && r < GRID_ROWS && c >= 0 && c < GRID_COLS) res.push(r * GRID_COLS + c);
+    });
+    return res;
+  }
+  // Does the given player border this cell with one of their own territories?
+  function bordersCell(id, playerId) {
+    return getNeighbors(id).some(n => state?.territories?.[n]?.owner === playerId);
+  }
 
   // ── connect ───────────────────────────────────────────────
   function connect() {
@@ -229,7 +245,8 @@ const TriviaUI = (() => {
 
       const canSelect = state.awaitingTerritory?.playerId === myId && (
         (state.awaitingTerritory.type === 'claim'  && isFree) ||
-        (state.awaitingTerritory.type === 'attack' && t?.owner && t.owner !== myId)
+        (state.awaitingTerritory.type === 'attack' && t?.owner && t.owner !== myId
+          && (!isCapital || bordersCell(i, myId)))
       );
 
       const livesDots = isCapital && owner
@@ -268,7 +285,7 @@ const TriviaUI = (() => {
           <div class="tv-action-icon">${type === 'claim' ? '🏳️' : '⚔️'}</div>
           <div class="tv-action-text">${type === 'claim'
             ? 'Выберите свободную территорию на карте'
-            : 'Выберите территорию противника для атаки'}</div>
+            : 'Выберите территорию противника для атаки. Столицу (♛) можно атаковать, только если вы граничите с ней своей территорией.'}</div>
         </div>
       `;
     } else {
