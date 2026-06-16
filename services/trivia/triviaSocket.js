@@ -222,8 +222,6 @@ function resolvePhase1(io, room) {
   if (!room.currentQuestion) return;
 
   const correct  = room.currentQuestion.correct_option;
-  const tbQ      = room.currentQuestion.tiebreaker_question;
-  const tbA      = room.currentQuestion.tiebreaker_answer;
   const qId      = room.currentQuestion.id;
   const answers  = room.questionAnswers;
 
@@ -234,25 +232,41 @@ function resolvePhase1(io, room) {
   const correctPlayers = correctEntries.map(([uid]) => uid);
   room.phase1CorrectPlayers = correctPlayers;
 
-  if (correctPlayers.length >= 2 && tbQ && tbA) {
-    // Multiple correct answers AND a tiebreaker exists → show phase-1 result briefly, then go phase 2
-    room.usedQuestionIds.push(qId);
-    room.currentQuestion  = null;
-    room.questionDeadline = null;
-    room.questionAnswers  = {};
-    room.lastResult = {
-      correct,
-      answers: Object.fromEntries(Object.entries(answers).map(([uid, a]) => [uid, a.option])),
-      winner: null,
-      questionId: qId,
-      tiebreakerComing: true,
-    };
-    broadcast(io, room);
-    setTimeout(() => askTiebreaker(io, room, correctPlayers, tbQ, tbA), 2000);
-    return;
+  if (correctPlayers.length >= 2) {
+    // Two or more correct — always go to tiebreaker
+    let tbQ = room.currentQuestion.tiebreaker_question;
+    let tbA = room.currentQuestion.tiebreaker_answer;
+
+    // If this question has no tiebreaker, fetch a random one from the DB
+    if (!tbQ || !tbA) {
+      const db = getDb();
+      const fallback = db.prepare(
+        `SELECT tiebreaker_question, tiebreaker_answer FROM trivia_questions
+         WHERE tiebreaker_question IS NOT NULL AND tiebreaker_answer IS NOT NULL
+         ORDER BY RANDOM() LIMIT 1`
+      ).get();
+      if (fallback) { tbQ = fallback.tiebreaker_question; tbA = fallback.tiebreaker_answer; }
+    }
+
+    if (tbQ && tbA) {
+      room.usedQuestionIds.push(qId);
+      room.currentQuestion  = null;
+      room.questionDeadline = null;
+      room.questionAnswers  = {};
+      room.lastResult = {
+        correct,
+        answers: Object.fromEntries(Object.entries(answers).map(([uid, a]) => [uid, a.option])),
+        winner: null,
+        questionId: qId,
+        tiebreakerComing: true,
+      };
+      broadcast(io, room);
+      setTimeout(() => askTiebreaker(io, room, correctPlayers, tbQ, tbA), 2000);
+      return;
+    }
   }
 
-  // 0 or 1 correct, or no tiebreaker for a tie → fastest correct wins
+  // 0 or 1 correct, or tie with no tiebreaker available → fastest correct wins
   const winner = correctPlayers.length > 0 ? correctPlayers[0] : null;
 
   room.usedQuestionIds.push(qId);
