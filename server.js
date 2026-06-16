@@ -105,6 +105,15 @@ try {
   console.warn('Poker socket failed to start:', e.message);
 }
 
+// Triviador (WebSocket)
+try {
+  const { initTriviaSocket } = require('./services/trivia/triviaSocket');
+  initTriviaSocket(server);
+  console.log('Triviador WebSocket initialized');
+} catch (e) {
+  console.warn('Triviador socket failed to start:', e.message);
+}
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`TransferMarket running on http://localhost:${PORT}`);

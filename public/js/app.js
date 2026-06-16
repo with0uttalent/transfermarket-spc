@@ -1058,7 +1058,7 @@ const PAGE_TITLES = {
   home:'Главная', teams:'Команды', players:'Игроки', competitions:'Соревнования',
   transfers:'Трансферы', matches:'Матчи', tournaments:'Турниры', leagues:'Лиги',
   'free-agents':'Свободные агенты', coach:'Мой клуб', admin:'Администратор',
-  news:'Новости', search:'Поиск', betting:'Ставки', poker:'Покер',
+  news:'Новости', search:'Поиск', betting:'Ставки', poker:'Покер', trivia:'Триадор',
 };
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
@@ -1066,6 +1066,7 @@ function router() {
   stopLiveMatchPoll(); // cancel live polling when navigating away
   if (_homeLivePollTimer) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; }
   if (window.PokerUI && window.PokerUI.teardown) window.PokerUI.teardown();
+  if (window.TriviaUI && window.TriviaUI.teardown) window.TriviaUI.teardown();
   const hash = window.location.hash.replace(/^#/,'') || '/';
   const [rawPath, qs = ''] = hash.split('?');
   const params = Object.fromEntries(new URLSearchParams(qs));
@@ -1092,6 +1093,10 @@ function router() {
   if (rawPath==='/matches') return renderMatches(app, params);
   if (rawPath==='/betting') return renderBettingPage(app);
   if (rawPath==='/poker') return (window.PokerUI && window.PokerUI.render(app));
+  if (rawPath==='/trivia') {
+    app.innerHTML = '<div id="trivia-root" style="min-height:100%"></div>';
+    return (window.TriviaUI && window.TriviaUI.render());
+  }
   if (parts[0]==='matches'&&parts[1]) return renderMatchDetail(app, parts[1]);
   if (rawPath==='/tournaments') return renderTournaments(app);
   if (parts[0]==='tournaments'&&parts[1]) return renderTournamentDetail(app, parts[1]);
