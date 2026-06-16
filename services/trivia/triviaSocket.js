@@ -101,6 +101,8 @@ function roomSnapshot(room) {
       option_c: room.currentQuestion.option_c,
       option_d: room.currentQuestion.option_d,
     } : null,
+    // Who may answer this question (all alive in claim phase, attacker+defender in war)
+    questionParticipants: [...room.questionParticipants],
     // How many players have answered (so UI can show N/M progress)
     answeredCount: Object.keys(room.questionAnswers).length,
     totalParticipants: room.questionParticipants.length,
