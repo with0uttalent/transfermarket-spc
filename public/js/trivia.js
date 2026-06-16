@@ -16,12 +16,18 @@ const TriviaUI = (() => {
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function el(id) { return document.getElementById(id); }
 
-  function getToken() { return localStorage.getItem('token'); }
+  function getToken() {
+    return localStorage.getItem('tm_token') || '';
+  }
 
   // ── connect ───────────────────────────────────────────────
   function connect() {
     if (socket && socket.connected) return;
-    socket = io({ path: '/trivia-socket', transports: ['websocket'] });
+    socket = io({ path: '/trivia-socket', auth: { token: getToken() }, transports: ['websocket', 'polling'] });
+
+    socket.on('connect_error', (err) => {
+      showToast('Триадор: нет связи с сервером (' + (err.message || 'ошибка') + ')', 'error');
+    });
 
     socket.on('connect', () => {
       socket.emit('trivia:auth', { token: getToken() });
