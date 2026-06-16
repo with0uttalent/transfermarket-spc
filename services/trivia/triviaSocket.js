@@ -1,3 +1,4 @@
+'use strict';
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../../database/db');
@@ -6,10 +7,11 @@ const COLORS = ['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#e67e22'];
 const GRID_COLS = 6;
 const GRID_ROWS  = 6;
 const TOTAL_TERRITORIES = GRID_COLS * GRID_ROWS; // 36
-const CAPITAL_LIVES  = 3;
-const QUESTION_MS    = 15000;
-const SELECT_MS      = 20000;
-const RESET_DELAY_MS = 30000; // after game ends, room auto-resets
+const CAPITAL_LIVES    = 3;
+const PHASE1_SAFETY_MS = 30000; // max wait for everyone to answer (no client timer shown)
+const PHASE2_MS        = 20000; // tiebreaker timer (shown to client)
+const SELECT_MS        = 20000;
+const RESET_DELAY_MS   = 30000;
 
 const GLOBAL_ROOM_CODE = 'MAIN';
 const rooms = new Map();
@@ -29,9 +31,15 @@ function createRoomObj(code) {
     players: [], territories: buildTerritories(),
     phase: 'claim', turnIndex: -1,
     claimsDone: 0, usedQuestionIds: [],
-    currentQuestion: null, questionAnswers: {},
+    currentQuestion: null,
+    questionAnswers: {},
     questionTimer: null, selectTimer: null,
-    questionDeadline: null, questionParticipants: [],
+    questionDeadline: null,
+    questionParticipants: [],
+    questionPhase: 1,
+    phase1CorrectPlayers: [],
+    tiebreakerQuestion: null, tiebreakerAnswer: null,
+    tiebreakerAnswers: {},
     awaitingTerritory: null, attackSource: null, attackTarget: null,
     lastResult: null, winner: null,
   };
@@ -44,21 +52,26 @@ function getGlobalRoom() {
 
 function resetRoom(room) {
   clearQuestionTimer(room);
-  room.status         = 'waiting';
-  room.territories    = buildTerritories();
-  room.phase          = 'claim';
-  room.turnIndex      = -1;
-  room.claimsDone     = 0;
-  room.usedQuestionIds = [];
-  room.currentQuestion = null;
-  room.questionAnswers = {};
-  room.questionDeadline = null;
+  room.status              = 'waiting';
+  room.territories         = buildTerritories();
+  room.phase               = 'claim';
+  room.turnIndex           = -1;
+  room.claimsDone          = 0;
+  room.usedQuestionIds     = [];
+  room.currentQuestion     = null;
+  room.questionAnswers     = {};
+  room.questionDeadline    = null;
   room.questionParticipants = [];
-  room.awaitingTerritory = null;
-  room.attackSource = null;
-  room.attackTarget = null;
-  room.lastResult = null;
-  room.winner = null;
+  room.questionPhase       = 1;
+  room.phase1CorrectPlayers = [];
+  room.tiebreakerQuestion  = null;
+  room.tiebreakerAnswer    = null;
+  room.tiebreakerAnswers   = {};
+  room.awaitingTerritory   = null;
+  room.attackSource        = null;
+  room.attackTarget        = null;
+  room.lastResult          = null;
+  room.winner              = null;
   for (const p of room.players) {
     p.ready = false;
     p.eliminated = false;
@@ -77,6 +90,7 @@ function getQuestion(db, usedIds) {
 
 // ── snapshot ──────────────────────────────────────────────────────────────────
 function roomSnapshot(room) {
+  const tb = room.questionPhase === 2;
   return {
     code: room.code,
     status: room.status,
@@ -91,8 +105,13 @@ function roomSnapshot(room) {
     awaitingTerritory: room.awaitingTerritory,
     attackSource: room.attackSource,
     attackTarget: room.attackTarget,
-    questionActive: !!room.currentQuestion,
-    questionDeadline: room.questionDeadline,
+    // questionActive = true when phase-1 MCQ is live OR phase-2 tiebreaker is live
+    questionActive: !!room.currentQuestion || tb,
+    questionPhase: room.questionPhase,
+    tiebreakerActive: tb,
+    tiebreakerQuestion: tb ? room.tiebreakerQuestion : null,
+    // Timer only shown in phase 2
+    questionDeadline: tb ? room.questionDeadline : null,
     question: room.currentQuestion ? {
       id: room.currentQuestion.id,
       question: room.currentQuestion.question,
@@ -101,12 +120,14 @@ function roomSnapshot(room) {
       option_c: room.currentQuestion.option_c,
       option_d: room.currentQuestion.option_d,
     } : null,
-    // Who may answer this question (all alive in claim phase, attacker+defender in war)
     questionParticipants: [...room.questionParticipants],
-    // How many players have answered (so UI can show N/M progress)
-    answeredCount: Object.keys(room.questionAnswers).length,
+    answeredCount: tb
+      ? Object.keys(room.tiebreakerAnswers).length
+      : Object.keys(room.questionAnswers).length,
     totalParticipants: room.questionParticipants.length,
-    answeredPlayers: Object.keys(room.questionAnswers),
+    answeredPlayers: tb
+      ? Object.keys(room.tiebreakerAnswers)
+      : Object.keys(room.questionAnswers),
     lastResult: room.lastResult || null,
     winner: room.winner || null,
   };
@@ -152,39 +173,133 @@ function clearQuestionTimer(room) {
   if (room.selectTimer)   { clearTimeout(room.selectTimer);   room.selectTimer = null; }
 }
 
-// ── question resolution ───────────────────────────────────────────────────────
-// Timer ALWAYS runs to completion before resolving — no early resolve.
-function resolveQuestion(io, room) {
+// ── PHASE 1: multiple-choice (no client timer, resolves when all answered) ────
+function askQuestion(io, room, participantIds) {
+  clearQuestionTimer(room);
+  const db = getDb();
+  const q = getQuestion(db, room.usedQuestionIds);
+  if (!q) return;
+
+  room.currentQuestion      = q;
+  room.questionAnswers      = {};
+  room.questionDeadline     = null; // no timer shown in phase 1
+  room.questionParticipants = participantIds;
+  room.questionPhase        = 1;
+  room.phase1CorrectPlayers = [];
+  room.tiebreakerAnswers    = {};
+  broadcast(io, room);
+
+  // Safety timeout — resolve even if some players haven't answered
+  room.questionTimer = setTimeout(() => resolvePhase1(io, room), PHASE1_SAFETY_MS);
+}
+
+function resolvePhase1(io, room) {
   clearQuestionTimer(room);
   if (!room.currentQuestion) return;
 
-  const correct = room.currentQuestion.correct_option;
-  const answers = room.questionAnswers;
+  const correct  = room.currentQuestion.correct_option;
+  const tbQ      = room.currentQuestion.tiebreaker_question;
+  const tbA      = room.currentQuestion.tiebreaker_answer;
+  const qId      = room.currentQuestion.id;
+  const answers  = room.questionAnswers;
 
-  // Fastest correct answer wins
   const correctEntries = Object.entries(answers)
     .filter(([, a]) => a.option === correct)
     .sort(([, a], [, b]) => a.ts - b.ts);
 
-  const winner = correctEntries.length > 0 ? correctEntries[0][0] : null;
+  const correctPlayers = correctEntries.map(([uid]) => uid);
+  room.phase1CorrectPlayers = correctPlayers;
 
-  // Build per-player answer map for display (reveal after timer)
+  if (correctPlayers.length >= 2 && tbQ && tbA) {
+    // Multiple correct answers AND a tiebreaker exists → show phase-1 result briefly, then go phase 2
+    room.usedQuestionIds.push(qId);
+    room.currentQuestion  = null;
+    room.questionDeadline = null;
+    room.questionAnswers  = {};
+    room.lastResult = {
+      correct,
+      answers: Object.fromEntries(Object.entries(answers).map(([uid, a]) => [uid, a.option])),
+      winner: null,
+      questionId: qId,
+      tiebreakerComing: true,
+    };
+    broadcast(io, room);
+    setTimeout(() => askTiebreaker(io, room, correctPlayers, tbQ, tbA), 2000);
+    return;
+  }
+
+  // 0 or 1 correct, or no tiebreaker for a tie → fastest correct wins
+  const winner = correctPlayers.length > 0 ? correctPlayers[0] : null;
+
+  room.usedQuestionIds.push(qId);
+  room.currentQuestion  = null;
+  room.questionAnswers  = {};
+  room.questionDeadline = null;
   room.lastResult = {
     correct,
     answers: Object.fromEntries(Object.entries(answers).map(([uid, a]) => [uid, a.option])),
     winner,
-    questionId: room.currentQuestion.id,
+    questionId: qId,
   };
-  room.usedQuestionIds.push(room.currentQuestion.id);
-  room.currentQuestion = null;
-  room.questionAnswers = {};
-  room.questionDeadline = null;
 
+  doAdvance(io, room, winner);
+}
+
+// ── PHASE 2: tiebreaker (numeric / year input, 20 s timer) ───────────────────
+function askTiebreaker(io, room, participants, tiebreakerQ, tiebreakerA) {
+  clearQuestionTimer(room);
+  room.questionPhase        = 2;
+  room.tiebreakerQuestion   = tiebreakerQ;
+  room.tiebreakerAnswer     = tiebreakerA;
+  room.tiebreakerAnswers    = {};
+  room.questionDeadline     = Date.now() + PHASE2_MS;
+  room.questionParticipants = participants;
+  broadcast(io, room);
+
+  room.questionTimer = setTimeout(() => resolveTiebreaker(io, room), PHASE2_MS);
+}
+
+function resolveTiebreaker(io, room) {
+  clearQuestionTimer(room);
+  if (room.questionPhase !== 2) return;
+
+  const correctAnswer = String(room.tiebreakerAnswer || '').trim().toLowerCase();
+  const entries = Object.entries(room.tiebreakerAnswers)
+    .filter(([, a]) => String(a.answer || '').trim().toLowerCase() === correctAnswer)
+    .sort(([, a], [, b]) => a.ts - b.ts);
+
+  const winner = entries.length > 0
+    ? entries[0][0]
+    : (room.phase1CorrectPlayers[0] || null); // fallback: fastest phase-1 correct
+
+  const tbAnswerMap = Object.fromEntries(
+    Object.entries(room.tiebreakerAnswers).map(([uid, a]) => [uid, a.answer])
+  );
+
+  room.lastResult = {
+    ...room.lastResult,
+    winner,
+    tiebreakerAnswers: tbAnswerMap,
+    tiebreakerCorrect: room.tiebreakerAnswer,
+    tiebreakerComing: false,
+  };
+
+  room.questionPhase        = 1;
+  room.tiebreakerQuestion   = null;
+  room.tiebreakerAnswer     = null;
+  room.tiebreakerAnswers    = {};
+  room.questionParticipants = [];
+  room.questionDeadline     = null;
+
+  doAdvance(io, room, winner);
+}
+
+// ── advance game after question fully resolved ────────────────────────────────
+function doAdvance(io, room, winner) {
   if (room.phase === 'claim') {
     if (winner) {
       room.awaitingTerritory = { playerId: winner, type: 'claim' };
       broadcast(io, room);
-      // Auto-pick if only one free territory left
       const free = Object.values(room.territories).filter(t => t.owner === null);
       if (free.length === 1) {
         setTimeout(() => claimTerritory(io, room, winner, free[0].id), 800);
@@ -201,17 +316,11 @@ function resolveQuestion(io, room) {
       setTimeout(() => nextClaimTurn(io, room), 2500);
     }
   } else {
-    // War phase: attacker is room.attackSource, defender owns room.attackTarget
+    // War phase
     const atk = room.attackSource;
-    const def = room.attackTarget !== null ? room.territories[room.attackTarget]?.owner : null;
-
     if (winner === atk) {
       applyAttackWin(io, room, atk, room.attackTarget);
-    } else if (winner === def) {
-      broadcast(io, room);
-      setTimeout(() => nextWarTurn(io, room), 2500);
     } else {
-      // Nobody (or 3rd player) answered correctly — attack fails
       broadcast(io, room);
       setTimeout(() => nextWarTurn(io, room), 2500);
     }
@@ -239,7 +348,7 @@ function claimTerritory(io, room, playerId, territoryId) {
 function nextClaimTurn(io, room) {
   const free = Object.values(room.territories).filter(t => t.owner === null);
   if (free.length === 0) { startWarPhase(io, room); return; }
-  // ALL active players answer claim questions — fastest correct answer claims a territory
+  // All active players answer claim questions simultaneously
   const allAlive = activePlayers(room).map(p => p.id);
   askQuestion(io, room, allAlive);
 }
@@ -277,7 +386,7 @@ function beginAttack(io, room, attackerId, targetId) {
   room.awaitingTerritory = null;
   room.attackTarget = targetId;
   const defOwner = room.territories[targetId]?.owner;
-  // War question: attacker + defender (others watch)
+  // War question: attacker + defender only (others watch)
   const participants = defOwner ? [attackerId, defOwner] : [attackerId];
   askQuestion(io, room, participants);
 }
@@ -296,11 +405,11 @@ function applyAttackWin(io, room, attackerId, targetId) {
   const territory = room.territories[targetId];
   if (!territory) return;
 
-  const prevOwner = territory.owner;
+  const prevOwner  = territory.owner;
   const prevPlayer = room.players.find(p => p.id === prevOwner);
 
-  territory.owner = attackerId;
-  territory.lives = 1;
+  territory.owner    = attackerId;
+  territory.lives    = 1;
   territory.isCapital = false;
 
   if (prevPlayer) {
@@ -312,7 +421,7 @@ function applyAttackWin(io, room, attackerId, targetId) {
         prevPlayer.capitalLives = 0;
         for (const tid of prevPlayer.territories) room.territories[tid].owner = null;
         prevPlayer.territories = [];
-        room.lastResult.eliminated = prevOwner;
+        if (room.lastResult) room.lastResult.eliminated = prevOwner;
       } else {
         if (prevPlayer.territories.length > 0) {
           const newCap = prevPlayer.territories[0];
@@ -334,30 +443,13 @@ function applyAttackWin(io, room, attackerId, targetId) {
   setTimeout(() => nextWarTurn(io, room), 2500);
 }
 
-// ── ask question ──────────────────────────────────────────────────────────────
-function askQuestion(io, room, participantIds) {
-  clearQuestionTimer(room);
-  const db = getDb();
-  const q = getQuestion(db, room.usedQuestionIds);
-  if (!q) return;
-
-  room.currentQuestion = q;
-  room.questionAnswers = {};
-  room.questionDeadline = Date.now() + QUESTION_MS;
-  room.questionParticipants = participantIds;
-  broadcast(io, room);
-
-  // Timer ALWAYS runs to completion — no early resolve
-  room.questionTimer = setTimeout(() => resolveQuestion(io, room), QUESTION_MS);
-}
-
 // ── capitals placement ────────────────────────────────────────────────────────
 function spreadCapitals(n) {
   const positions = { 1:[17], 2:[6,29], 3:[2,17,33], 4:[1,4,31,34], 5:[0,5,17,30,35], 6:[0,5,12,23,30,35] };
   return positions[n] || positions[6].slice(0, n);
 }
 
-// ── game start (extracted so auto-start can call it) ──────────────────────────
+// ── game start ────────────────────────────────────────────────────────────────
 function startGame(io, room) {
   const readyPlayers = room.players.filter(p => p.ready);
   if (readyPlayers.length < 2) return;
@@ -374,8 +466,8 @@ function startGame(io, room) {
     room.territories[capId].lives = CAPITAL_LIVES;
   });
 
-  room.status = 'playing';
-  room.phase = 'claim';
+  room.status    = 'playing';
+  room.phase     = 'claim';
   room.turnIndex = -1;
   broadcast(io, room);
   setTimeout(() => nextClaimTurn(io, room), 1500);
@@ -399,7 +491,7 @@ function initTriviaSocket(server) {
     socket.on('trivia:auth', ({ token }) => {
       const payload = authUser(token);
       if (!payload) { socket.emit('trivia:error', { message: 'Auth failed' }); return; }
-      const db = getDb();
+      const db    = getDb();
       const coach = db.prepare('SELECT * FROM coaches WHERE user_id=?').get(payload.id);
       const team  = coach ? db.prepare('SELECT name,logo_url FROM teams WHERE id=?').get(coach.team_id) : null;
       user = {
@@ -411,12 +503,10 @@ function initTriviaSocket(server) {
         teamLogo: team?.logo_url || null,
       };
       socket.emit('trivia:authed', { user });
-      // Send current room state so lobby can show player count
       const room = getGlobalRoom();
       socket.emit('trivia:room_preview', { playerCount: room.players.length, status: room.status });
     });
 
-    // Join the single global room
     socket.on('trivia:join', () => {
       if (!user) return;
       const room = getGlobalRoom();
@@ -440,28 +530,49 @@ function initTriviaSocket(server) {
       p.ready = !p.ready;
       broadcast(io, room);
 
-      // Auto-start when ALL players are ready (min 2)
       const allReady = room.players.length >= 2 && room.players.every(pp => pp.ready);
       if (allReady) {
         setTimeout(() => {
-          // Double-check still valid
           if (room.status === 'waiting' && room.players.length >= 2 && room.players.every(pp => pp.ready)) {
             startGame(io, room);
           }
-        }, 1000); // 1s countdown so players see "all ready"
+        }, 1000);
       }
     });
 
+    // Phase 1: multiple-choice answer
     socket.on('trivia:answer', ({ option }) => {
       if (!user) return;
       const room = findRoomByPlayer(user.id);
-      if (!room || !room.currentQuestion) return;
-      if (room.questionAnswers[user.id]) return; // already answered
-      // Only participants can answer (all alive in claim, attacker+defender in war)
+      if (!room || !room.currentQuestion || room.questionPhase !== 1) return;
+      if (room.questionAnswers[user.id]) return;
       if (room.questionParticipants.length > 0 && !room.questionParticipants.includes(user.id)) return;
+
       room.questionAnswers[user.id] = { option, ts: Date.now() };
-      // Broadcast so everyone sees the answered count going up — but NO early resolve
       broadcast(io, room);
+
+      // Resolve early once ALL participants have answered
+      const answered = Object.keys(room.questionAnswers).length;
+      if (room.questionParticipants.length > 0 && answered >= room.questionParticipants.length) {
+        resolvePhase1(io, room);
+      }
+    });
+
+    // Phase 2: tiebreaker text answer
+    socket.on('trivia:tiebreaker_answer', ({ answer }) => {
+      if (!user) return;
+      const room = findRoomByPlayer(user.id);
+      if (!room || room.questionPhase !== 2) return;
+      if (!room.questionParticipants.includes(user.id)) return;
+      if (room.tiebreakerAnswers[user.id]) return;
+
+      const isCorrect = String(answer || '').trim().toLowerCase() ===
+                        String(room.tiebreakerAnswer || '').trim().toLowerCase();
+      room.tiebreakerAnswers[user.id] = { answer, ts: Date.now(), correct: isCorrect };
+      broadcast(io, room);
+
+      // First correct answer wins immediately
+      if (isCorrect) resolveTiebreaker(io, room);
     });
 
     socket.on('trivia:select_territory', ({ territoryId }) => {

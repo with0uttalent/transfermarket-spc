@@ -1,17 +1,18 @@
 /* ════════════════════════════════════════════════════════════
-   ТРИАДОР — клиентская логика
+   ТРИАДОР — клиентская логика (два этапа вопросов)
    ════════════════════════════════════════════════════════════ */
 'use strict';
 
 const TriviaUI = (() => {
   let socket = null;
-  let state  = null;   // last room snapshot
+  let state  = null;
   let myId   = null;
-  let questionTimer = null;
-  let roomPreview = null; // { playerCount, status } before joining
+  let timerRaf = null;
+  let roomPreview = null;
 
   const GRID_COLS = 6;
   const GRID_ROWS  = 6;
+  const PHASE2_MS  = 20000;
 
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function el(id) { return document.getElementById(id); }
@@ -40,7 +41,7 @@ const TriviaUI = (() => {
     });
 
     socket.on('trivia:joined', () => {
-      // state will follow via trivia:state
+      // state will arrive via trivia:state
     });
 
     socket.on('trivia:state', snap => {
@@ -56,7 +57,7 @@ const TriviaUI = (() => {
   function disconnect() {
     if (socket) { socket.disconnect(); socket = null; }
     state = null; myId = null;
-    clearQuestionTimer();
+    clearTimer();
   }
 
   // ── main render router ────────────────────────────────────
@@ -86,9 +87,10 @@ const TriviaUI = (() => {
         }
 
         <div class="tv-rules">
-          <b>Правила:</b> Захватывайте территории, отвечая на вопросы быстрее всех.
-          В фазе атаки нападающий и защитник отвечают на вопрос — кто быстрее ответит правильно, тот побеждает.
-          Потеряйте столицу — выбываете. Последний выживший победитель!
+          <b>Как играть:</b> Захватывайте территории, отвечая на вопросы.
+          Если несколько игроков ответили правильно — запускается тайбрейкер: нужно ввести год или число.
+          В фазе войны атакующий и защитник соревнуются один на один.
+          Потеряйте столицу — выбываете. Последний выживший — победитель!
         </div>
       </div>
     `);
@@ -178,10 +180,20 @@ const TriviaUI = (() => {
       });
     });
 
-    if (state.questionActive && state.questionDeadline) {
-      startQuestionTimer(state.questionDeadline);
+    // Phase 2 tiebreaker: focus input + enter key
+    const tbInput = el('tv-tb-input');
+    if (tbInput) {
+      tbInput.addEventListener('keypress', e => {
+        if (e.key === 'Enter') TriviaUI.submitTiebreaker();
+      });
+      tbInput.focus();
+    }
+
+    // Timer canvas only appears in phase 2
+    if (state.tiebreakerActive && state.questionDeadline) {
+      startTimer(state.questionDeadline, PHASE2_MS);
     } else {
-      clearQuestionTimer();
+      clearTimer();
     }
   }
 
@@ -240,43 +252,13 @@ const TriviaUI = (() => {
   function renderActionPanel(me, currentPlayer) {
     if (!state) return '';
     let html = '';
-    const iAmParticipant = state.questionParticipants?.includes(myId);
-    const iHaveAnswered  = state.answeredPlayers?.includes(myId);
 
-    if (state.questionActive && state.question) {
-      const q = state.question;
-      const total = state.totalParticipants || 0;
-      const answered = state.answeredCount || 0;
-
-      html += `
-        <div class="tv-question-box">
-          <div class="tv-q-timer"><canvas id="tv-timer-canvas" width="60" height="60"></canvas></div>
-          <div class="tv-q-text">${esc(q.question)}</div>
-          ${!iAmParticipant
-            ? `<div class="tv-spectate-notice">👁 Наблюдаете — в этом вопросе отвечают только атакующий и защитник</div>`
-            : ''
-          }
-          <div class="tv-options">
-            ${['a','b','c','d'].map(opt => `
-              <button class="tv-option${iHaveAnswered && iAmParticipant ? ' tv-option-locked' : ''}"
-                      data-opt="${opt}"
-                      ${iHaveAnswered || !iAmParticipant ? 'disabled' : ''}
-                      onclick="TriviaUI.answer('${opt}')">
-                <span class="tv-opt-letter">${opt.toUpperCase()}</span>
-                <span class="tv-opt-text">${esc(q['option_'+opt])}</span>
-              </button>
-            `).join('')}
-          </div>
-          ${iHaveAnswered
-            ? `<div class="tv-answered-notice">✅ Ответ принят — ждём таймер…</div>`
-            : ''
-          }
-          ${total > 0
-            ? `<div class="tv-answered-count">${answered}/${total} ответили</div>`
-            : ''
-          }
-        </div>
-      `;
+    if (state.questionActive) {
+      if (state.tiebreakerActive) {
+        html += renderTiebreakerPanel();
+      } else {
+        html += renderPhase1Panel();
+      }
     } else if (state.lastResult && !state.questionActive) {
       html += renderLastResult();
     } else if (state.awaitingTerritory?.playerId === myId) {
@@ -305,12 +287,82 @@ const TriviaUI = (() => {
     return html;
   }
 
+  // Phase 1: multiple-choice, no timer shown
+  function renderPhase1Panel() {
+    const q = state.question;
+    if (!q) return '';
+    const total          = state.totalParticipants || 0;
+    const answered       = state.answeredCount || 0;
+    const iAmParticipant = state.questionParticipants?.includes(myId);
+    const iHaveAnswered  = state.answeredPlayers?.includes(myId);
+
+    return `
+      <div class="tv-question-box">
+        <div class="tv-q-phase-label">📋 Вопрос</div>
+        <div class="tv-q-text">${esc(q.question)}</div>
+        ${!iAmParticipant
+          ? `<div class="tv-spectate-notice">👁 Наблюдаете — в этом вопросе отвечают только атакующий и защитник</div>`
+          : ''
+        }
+        <div class="tv-options">
+          ${['a','b','c','d'].map(opt => `
+            <button class="tv-option${iHaveAnswered && iAmParticipant ? ' tv-option-locked' : ''}"
+                    data-opt="${opt}"
+                    ${iHaveAnswered || !iAmParticipant ? 'disabled' : ''}
+                    onclick="TriviaUI.answer('${opt}')">
+              <span class="tv-opt-letter">${opt.toUpperCase()}</span>
+              <span class="tv-opt-text">${esc(q['option_'+opt])}</span>
+            </button>
+          `).join('')}
+        </div>
+        ${iHaveAnswered
+          ? `<div class="tv-answered-notice">✅ Ответ принят — ждём остальных…</div>`
+          : ''
+        }
+        ${total > 0
+          ? `<div class="tv-answered-count">${answered}/${total} ответили</div>`
+          : ''
+        }
+      </div>
+    `;
+  }
+
+  // Phase 2: tiebreaker with text input and countdown timer
+  function renderTiebreakerPanel() {
+    const iAmTiebreaker  = state.questionParticipants?.includes(myId);
+    const iHaveAnswered  = state.answeredPlayers?.includes(myId);
+    const total          = state.totalParticipants || 0;
+    const answered       = state.answeredCount || 0;
+
+    return `
+      <div class="tv-question-box tv-tiebreaker-box">
+        <div class="tv-tb-header">⚡ Тайбрейкер</div>
+        <div class="tv-q-timer"><canvas id="tv-timer-canvas" width="60" height="60"></canvas></div>
+        <div class="tv-q-text">${esc(state.tiebreakerQuestion || '')}</div>
+        <div class="tv-tb-hint">Введите число или год</div>
+        ${iAmTiebreaker
+          ? iHaveAnswered
+            ? `<div class="tv-answered-notice">✅ Ответ отправлен — ждём таймер…</div>`
+            : `<div class="tv-tb-input-wrap">
+                 <input type="text" id="tv-tb-input" class="tv-tb-input"
+                        placeholder="Ваш ответ…" autocomplete="off" inputmode="numeric">
+                 <button class="tv-btn tv-btn-primary" onclick="TriviaUI.submitTiebreaker()">Ответить</button>
+               </div>`
+          : `<div class="tv-spectate-notice">👁 Тайбрейкер только для игроков, ответивших правильно</div>`
+        }
+        ${total > 0
+          ? `<div class="tv-answered-count">${answered}/${total} ответили</div>`
+          : ''
+        }
+      </div>
+    `;
+  }
+
   function renderLastResult() {
     if (!state?.lastResult) return '';
     const r = state.lastResult;
     const winner = state.players.find(p => p.id === r.winner);
 
-    // Per-player answer breakdown
     const answerRows = state.players
       .filter(p => r.answers && r.answers[p.id])
       .map(p => {
@@ -323,14 +375,37 @@ const TriviaUI = (() => {
         </div>`;
       }).join('');
 
+    const tiebreakerRows = r.tiebreakerAnswers
+      ? state.players
+          .filter(p => r.tiebreakerAnswers[p.id] !== undefined)
+          .map(p => {
+            const ans = r.tiebreakerAnswers[p.id];
+            const correct = String(ans || '').trim().toLowerCase() ===
+                            String(r.tiebreakerCorrect || '').trim().toLowerCase();
+            return `<div class="tv-answer-row">
+              <span class="tv-ar-dot" style="background:${esc(p.color)}"></span>
+              <span class="tv-ar-name">${esc(p.teamName || p.username)}</span>
+              <span class="tv-ar-opt tv-ar-opt-${correct ? 'ok' : 'bad'}">${esc(String(ans))} ${correct ? '✓' : '✗'}</span>
+            </div>`;
+          }).join('')
+      : '';
+
     return `
       <div class="tv-result-box">
-        ${winner
-          ? `<div class="tv-result-win" style="color:${esc(winner.color)}">⚡ ${esc(winner.teamName || winner.username)} быстрее всех!</div>`
-          : `<div class="tv-result-nowin">❌ Никто не ответил правильно</div>`
+        ${r.tiebreakerComing
+          ? `<div class="tv-result-tb-coming">🤝 Ничья! Сейчас тайбрейкер…</div>`
+          : winner
+            ? `<div class="tv-result-win" style="color:${esc(winner.color)}">⚡ ${esc(winner.teamName || winner.username)} победил!</div>`
+            : `<div class="tv-result-nowin">❌ Никто не ответил правильно</div>`
         }
         <div class="tv-correct-ans">Правильно: <b>${r.correct?.toUpperCase()}</b></div>
         ${answerRows ? `<div class="tv-answer-breakdown">${answerRows}</div>` : ''}
+        ${tiebreakerRows ? `
+          <div class="tv-tb-result">
+            <div class="tv-tb-result-label">Тайбрейкер (ответ: <b>${esc(String(r.tiebreakerCorrect || ''))}</b>):</div>
+            ${tiebreakerRows}
+          </div>` : ''
+        }
         ${r.eliminated ? `<div class="tv-result-elim">💀 ${esc(state.players.find(p=>p.id===r.eliminated)?.teamName||'')} выбывает!</div>` : ''}
       </div>
     `;
@@ -369,16 +444,15 @@ const TriviaUI = (() => {
     `);
   }
 
-  // ── timer canvas ──────────────────────────────────────────
-  function startQuestionTimer(deadline) {
-    clearQuestionTimer();
-    const total = 15000;
+  // ── countdown timer canvas ────────────────────────────────
+  function startTimer(deadline, totalMs) {
+    clearTimer();
     function tick() {
       const cvs = el('tv-timer-canvas');
       if (!cvs) return;
       const ctx = cvs.getContext('2d');
       const remaining = Math.max(0, deadline - Date.now());
-      const fraction = remaining / total;
+      const fraction = remaining / totalMs;
       const secs = Math.ceil(remaining / 1000);
 
       ctx.clearRect(0, 0, 60, 60);
@@ -392,13 +466,13 @@ const TriviaUI = (() => {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(secs, 30, 30);
 
-      if (remaining > 0) questionTimer = requestAnimationFrame(tick);
+      if (remaining > 0) timerRaf = requestAnimationFrame(tick);
     }
     tick();
   }
 
-  function clearQuestionTimer() {
-    if (questionTimer) { cancelAnimationFrame(questionTimer); questionTimer = null; }
+  function clearTimer() {
+    if (timerRaf) { cancelAnimationFrame(timerRaf); timerRaf = null; }
   }
 
   // ── helpers ───────────────────────────────────────────────
@@ -440,6 +514,17 @@ const TriviaUI = (() => {
         if (b.dataset.opt === option) b.classList.add('tv-option-selected');
       });
       socket.emit('trivia:answer', { option });
+    },
+
+    submitTiebreaker() {
+      if (!socket) return;
+      const input = el('tv-tb-input');
+      if (!input) return;
+      const answer = input.value.trim();
+      if (!answer) return;
+      input.disabled = true;
+      document.querySelectorAll('.tv-tb-input-wrap button').forEach(b => { b.disabled = true; });
+      socket.emit('trivia:tiebreaker_answer', { answer });
     },
 
     selectTerritory(id) {

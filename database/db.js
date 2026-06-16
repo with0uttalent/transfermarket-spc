@@ -601,6 +601,8 @@ function initSchema() {
       difficulty INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
+    `ALTER TABLE trivia_questions ADD COLUMN tiebreaker_question TEXT`,
+    `ALTER TABLE trivia_questions ADD COLUMN tiebreaker_answer TEXT`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }
@@ -611,13 +613,16 @@ function seedTriviaQuestions(db) {
   let bank;
   try { bank = require('./triviaQuestions'); } catch { bank = []; }
   if (!Array.isArray(bank) || bank.length === 0) return;
-  const insert = db.prepare(`INSERT INTO trivia_questions (question,option_a,option_b,option_c,option_d,correct_option,category,difficulty) VALUES (?,?,?,?,?,?,?,?)`);
+  const insert = db.prepare(
+    `INSERT INTO trivia_questions
+     (question,option_a,option_b,option_c,option_d,correct_option,category,difficulty,tiebreaker_question,tiebreaker_answer)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`
+  );
   // Additive seeding: only insert questions whose text isn't already present.
-  // This way existing databases pick up newly added questions on restart.
   const exists = db.prepare('SELECT 1 FROM trivia_questions WHERE question=?');
   const tx = db.transaction(() => {
     for (const q of bank) {
-      if (!exists.get(q[0])) insert.run(...q);
+      if (!exists.get(q[0])) insert.run(q[0],q[1],q[2],q[3],q[4],q[5],q[6],q[7],q[8]||null,q[9]||null);
     }
   });
   tx();

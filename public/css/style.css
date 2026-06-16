@@ -2114,3 +2114,20 @@ body.auth-locked #app { display: none !important; }
   .tv-map { grid-template-columns: repeat(6, 1fr); }
   .tv-action-panel { order: -1; }
 }
+
+/* ── Tiebreaker (Phase 2) ──────────────────────────────────── */
+.tv-tiebreaker-box { border: 2px solid #f1c40f44; }
+.tv-tb-header { font-size: 13px; font-weight: 800; color: #f1c40f; letter-spacing: 1px;
+  text-transform: uppercase; margin-bottom: 6px; }
+.tv-tb-hint { font-size: 11px; color: #6a8aaa; margin-bottom: 10px; }
+.tv-tb-input-wrap { display: flex; gap: 8px; margin-top: 10px; }
+.tv-tb-input { flex: 1; background: #131f2e; border: 1px solid #2a3f52; color: #e8eaf6;
+  border-radius: 8px; padding: 10px 14px; font-size: 15px; font-weight: 700;
+  outline: none; transition: border-color .2s; }
+.tv-tb-input:focus { border-color: #f1c40f; }
+.tv-tb-input:disabled { opacity: .5; }
+.tv-tb-result { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a3f52; }
+.tv-tb-result-label { font-size: 11px; color: #6a8aaa; margin-bottom: 4px; }
+.tv-result-tb-coming { font-size: 15px; font-weight: 800; color: #f1c40f; margin-bottom: 4px; }
+.tv-q-phase-label { font-size: 11px; color: #3498db; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 6px; }
