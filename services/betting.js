@@ -16,6 +16,15 @@ const MIN_ODD    = 1.05;
 const MAX_ODD    = 15.0;
 const HOME_ADV   = 3;         // home advantage, in OVR points
 const MIN_BET    = 50000;     // €50k minimum stake
+const VALID_OUTCOMES = ['home', 'draw', 'away'];
+
+// Bets open only once the coaches' lineups are locked — i.e. from
+// LINEUP_LOCK_HOURS before kickoff until the match starts. Must match the
+// value used in routes/lineups.js.
+const LINEUP_LOCK_HOURS = 12;
+
+// SQLite expression for a match's kickoff datetime (local wall-clock).
+const KICKOFF_SQL = `datetime(m.match_date || ' ' || COALESCE(substr(m.match_time,1,5),'16:00') || ':00')`;
 
 // ─── Positional model (mirrors the frontend / match engine) ───────────────────
 // A player fielded out of his natural zone is less effective. The penalty factor
@@ -151,6 +160,81 @@ function availableBudget(db, teamId) {
   return Math.max(0, available - committed);
 }
 
+// Matches currently open for betting, with live odds. Shared by the web
+// betting page (routes/bets.js) and the Telegram bot.
+function listBettableMatches(db) {
+  const matches = db.prepare(`
+    SELECT m.id, m.home_team_id, m.away_team_id, m.match_date, m.match_time, m.matchday, m.league_id,
+           ht.name AS home_team_name, ht.logo_url AS home_logo,
+           at.name AS away_team_name, at.logo_url AS away_logo,
+           lg.name AS league_name
+    FROM matches m
+    JOIN teams ht ON m.home_team_id = ht.id
+    JOIN teams at ON m.away_team_id = at.id
+    LEFT JOIN leagues lg ON m.league_id = lg.id
+    WHERE m.status = 'scheduled' AND m.league_id IS NOT NULL
+      AND ${KICKOFF_SQL} > datetime('now','localtime')
+      AND ${KICKOFF_SQL} <= datetime('now','localtime','+${LINEUP_LOCK_HOURS} hours')
+    ORDER BY m.match_date ASC, m.match_time ASC
+    LIMIT 60
+  `).all();
+  return matches.map(m => ({ ...m, odds: currentOdds(db, m) }));
+}
+
+// Validate and place a bet for a coach. Shared by the web betting route
+// (routes/bets.js) and the Telegram bot, so both enforce identical rules.
+function placeBet(db, coach, matchId, outcome, rawAmount) {
+  if (!coach.team_id) return { error: 'У вас нет команды для ставок' };
+  if (!VALID_OUTCOMES.includes(outcome)) return { error: 'Неверный исход' };
+
+  const amount = Math.round(Number(rawAmount));
+  if (!Number.isFinite(amount) || amount < MIN_BET) {
+    return { error: `Минимальная ставка — ${MIN_BET.toLocaleString()} €` };
+  }
+
+  const match = db.prepare(`SELECT * FROM matches WHERE id=?`).get(matchId);
+  if (!match) return { error: 'Матч не найден' };
+  if (match.status !== 'scheduled') return { error: 'Ставки на этот матч закрыты' };
+  if (!match.league_id) return { error: 'Ставки доступны только на матчи лиги' };
+
+  const kickoff = new Date(`${match.match_date}T${(match.match_time || '16:00').slice(0, 5)}:00`);
+  const now = new Date();
+  if (!isNaN(kickoff.getTime())) {
+    if (now >= kickoff) return { error: 'Матч уже начался — ставки закрыты' };
+    const opensAt = new Date(kickoff.getTime() - LINEUP_LOCK_HOURS * 3600 * 1000);
+    if (now < opensAt) {
+      const opens = opensAt.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      return { error: `Ставки откроются после блокировки составов — за ${LINEUP_LOCK_HOURS} ч до матча (с ${opens}).` };
+    }
+  }
+
+  // No arbitrage: can't bet on a different outcome of a match you've already
+  // bet on (only the same outcome may be topped up).
+  const existing = db.prepare(
+    `SELECT DISTINCT outcome FROM bets WHERE match_id=? AND coach_id=? AND status='open'`
+  ).all(matchId, coach.id);
+  if (existing.some(b => b.outcome !== outcome)) {
+    const label = { home: 'победу хозяев', draw: 'ничью', away: 'победу гостей' };
+    return { error: `Вы уже поставили на ${label[existing[0].outcome]} в этом матче. Ставить на другой исход нельзя.` };
+  }
+
+  const free = availableBudget(db, coach.team_id);
+  if (amount > free) {
+    return { error: `Недостаточно средств. Доступно: ${Math.round(free).toLocaleString()} €` };
+  }
+
+  const odds = currentOdds(db, match)[outcome];
+
+  db.transaction(() => {
+    db.prepare(`INSERT INTO bets (match_id, coach_id, team_id, outcome, amount, odds) VALUES (?,?,?,?,?,?)`)
+      .run(matchId, coach.id, coach.team_id, outcome, amount, odds);
+    db.prepare(`UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?`)
+      .run(amount, coach.team_id);
+  })();
+
+  return { ok: true, odds, potential_payout: Math.round(amount * odds), free_budget: availableBudget(db, coach.team_id) };
+}
+
 // Settle all open bets on a finished match. `match` needs id, team ids, scores.
 function settleBetsForMatch(db, match) {
   const open = db.prepare(`SELECT * FROM bets WHERE match_id=? AND status='open'`).all(match.id);
@@ -163,34 +247,40 @@ function settleBetsForMatch(db, match) {
 
   const outcomeLabel = { home: 'победу хозяев', draw: 'ничью', away: 'победу гостей' };
   const fmtV = v => v >= 1e6 ? '€' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '€' + Math.round(v / 1e3) + 'K' : '€' + Math.round(v);
+  const tgMessages = []; // sent after the transaction commits
 
   db.transaction(() => {
     for (const b of open) {
-      const coach = db.prepare('SELECT id FROM coaches WHERE id=?').get(b.coach_id);
+      const coach = db.prepare('SELECT id, telegram_chat_id FROM coaches WHERE id=?').get(b.coach_id);
       if (b.outcome === result) {
         const payout = Math.round(b.amount * b.odds);
         db.prepare(`UPDATE bets SET status='won', payout=?, settled_at=CURRENT_TIMESTAMP WHERE id=?`).run(payout, b.id);
         // Return stake + profit to the team's transfer budget.
         db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent - ? WHERE id=?').run(payout, b.team_id);
         if (coach) {
+          const text = `Ваша ставка на ${outcomeLabel[b.outcome]} (кэф ${b.odds}) принесла ${fmtV(payout)} (ставка ${fmtV(b.amount)}).`;
           db.prepare(`INSERT INTO coach_notifications (coach_id, title, body, type) VALUES (?,?,?,?)`).run(
-            b.coach_id, '✅ Ставка сыграла!',
-            `Ваша ставка на ${outcomeLabel[b.outcome]} (кэф ${b.odds}) принесла ${fmtV(payout)} (ставка ${fmtV(b.amount)}).`,
-            'success'
+            b.coach_id, '✅ Ставка сыграла!', text, 'success'
           );
+          if (coach.telegram_chat_id) tgMessages.push({ chatId: coach.telegram_chat_id, text: `✅ <b>Ставка сыграла!</b>\n${text}` });
         }
       } else {
         db.prepare(`UPDATE bets SET status='lost', payout=0, settled_at=CURRENT_TIMESTAMP WHERE id=?`).run(b.id);
         if (coach) {
+          const text = `Ваша ставка ${fmtV(b.amount)} на ${outcomeLabel[b.outcome]} не сыграла. Итог матча: ${outcomeLabel[result]}.`;
           db.prepare(`INSERT INTO coach_notifications (coach_id, title, body, type) VALUES (?,?,?,?)`).run(
-            b.coach_id, '❌ Ставка не сыграла',
-            `Ваша ставка ${fmtV(b.amount)} на ${outcomeLabel[b.outcome]} не сыграла. Итог матча: ${outcomeLabel[result]}.`,
-            'warning'
+            b.coach_id, '❌ Ставка не сыграла', text, 'warning'
           );
+          if (coach.telegram_chat_id) tgMessages.push({ chatId: coach.telegram_chat_id, text: `❌ <b>Ставка не сыграла</b>\n${text}` });
         }
       }
     }
   })();
+
+  if (tgMessages.length) {
+    const { sendDirectMessage } = require('./telegramBot');
+    for (const m of tgMessages) sendDirectMessage(m.chatId, m.text).catch(() => {});
+  }
 }
 
 // Safety-net sweeper: settle any open bets whose match is already finished but
@@ -214,5 +304,6 @@ function settleOrphanedBets(db) {
 
 module.exports = {
   currentOdds, quoteOdd, settleBetsForMatch, settleOrphanedBets, availableBudget, baseProbabilities,
-  MIN_BET, MIN_ODD, MAX_ODD,
+  listBettableMatches, placeBet,
+  MIN_BET, MIN_ODD, MAX_ODD, VALID_OUTCOMES, LINEUP_LOCK_HOURS,
 };

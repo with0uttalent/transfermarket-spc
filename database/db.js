@@ -603,6 +603,18 @@ function initSchema() {
     )`,
     `ALTER TABLE trivia_questions ADD COLUMN tiebreaker_question TEXT`,
     `ALTER TABLE trivia_questions ADD COLUMN tiebreaker_answer TEXT`,
+    // Telegram bot: link a coach's account to their personal chat so they can
+    // get notifications and place bets through the bot.
+    `ALTER TABLE coaches ADD COLUMN telegram_chat_id TEXT`,
+    `CREATE TABLE IF NOT EXISTS telegram_link_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      coach_id INTEGER NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE
+    )`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }

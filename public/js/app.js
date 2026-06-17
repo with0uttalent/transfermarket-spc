@@ -4568,6 +4568,10 @@ async function renderCoachDashboard(app) {
         <div class="form-group"><label>Новый пароль</label><input type="password" id="coach-pw-new" autocomplete="new-password"/></div>
         <div class="form-group"><label>Повторите новый пароль</label><input type="password" id="coach-pw-cf" autocomplete="new-password"/></div>
         <button class="btn btn-green" onclick="coachChangePassword()">Сохранить пароль</button>
+      </div>
+      <div class="card" style="padding:20px;max-width:480px;margin-top:16px">
+        <div class="card-header" style="margin:-20px -20px 16px;border-radius:10px 10px 0 0">📱 Telegram</div>
+        <div id="coach-tg-block">${renderTelegramLinkBlock(coach)}</div>
       </div>`;
 
   } catch(err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
@@ -5576,6 +5580,44 @@ async function coachChangePassword() {
     document.getElementById('coach-pw-cur').value = '';
     document.getElementById('coach-pw-new').value = '';
     document.getElementById('coach-pw-cf').value = '';
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function renderTelegramLinkBlock(coach) {
+  if (coach.telegram_chat_id) {
+    return `
+      <p style="margin:0 0 12px;color:var(--text-muted);font-size:13px">✅ Telegram-аккаунт привязан. В боте доступны команды /menu, /table, /schedule и ставки.</p>
+      <button class="btn btn-outline" onclick="coachUnlinkTelegram()">Отвязать Telegram</button>`;
+  }
+  return `
+    <p style="margin:0 0 12px;color:var(--text-muted);font-size:13px">Привяжите Telegram, чтобы получать уведомления и делать ставки через бота.</p>
+    <button class="btn btn-green" onclick="coachGenTelegramCode()">Сгенерировать код привязки</button>
+    <div id="coach-tg-code-box" style="margin-top:12px"></div>`;
+}
+
+async function coachGenTelegramCode() {
+  try {
+    const data = await POST('/coaches/me/telegram-code', {});
+    const box = document.getElementById('coach-tg-code-box');
+    if (box) {
+      const exp = new Date(data.expires_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      box.innerHTML = `
+        <div style="padding:12px;background:var(--bg-soft,#f4f6f8);border-radius:8px">
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px">Отправьте боту в Telegram:</div>
+          <code style="font-size:16px;font-weight:700">/start-coach ${escHtml(data.code)}</code>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Код действует до ${exp}</div>
+        </div>`;
+    }
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function coachUnlinkTelegram() {
+  try {
+    await DEL('/coaches/me/telegram-link');
+    State.coachProfile = await GET('/coaches/me');
+    const block = document.getElementById('coach-tg-block');
+    if (block) block.innerHTML = renderTelegramLinkBlock(State.coachProfile);
+    toast('Telegram отвязан');
   } catch(e) { toast(e.message,'error'); }
 }
 

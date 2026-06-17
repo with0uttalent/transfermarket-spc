@@ -57,6 +57,10 @@ function getNotifSettings()       { return { ..._notif }; }
 
 let _updateOffset = 0;
 
+// Per-chat conversation state for the coach betting flow (/start-coach link
+// step is stateless — only the bet-amount prompt needs a session).
+const _sessions = new Map(); // chatId -> { step: 'await_amount', matchId, outcome }
+
 function initBot() {
   if (!TOKEN || !CHAT_ID) {
     console.log('[TelegramBot] No TOKEN/CHAT_ID — disabled.');
@@ -76,15 +80,217 @@ async function tgGetUpdates() {
     if (!data.ok || !data.result.length) return;
     for (const upd of data.result) {
       _updateOffset = upd.update_id + 1;
-      const text = (upd.message?.text || '').trim().toLowerCase();
+      if (upd.callback_query) {
+        handleCallbackQuery(upd.callback_query).catch(e => console.warn('[Bot] callback error:', e.message));
+        continue;
+      }
+      if (!upd.message) continue;
+      const rawText = (upd.message.text || '').trim();
+      const text = rawText.toLowerCase();
       const replyTo = upd.message.chat.id;
       if (text === '/table' || text === 'table') {
         handleTableCommand(replyTo).catch(e => console.warn('[Bot] table cmd error:', e.message));
       } else if (text === '/schedule' || text === 'schedule') {
         handleScheduleCommand(replyTo).catch(e => console.warn('[Bot] schedule cmd error:', e.message));
+      } else if (text === '/start-coach' || text.startsWith('/start-coach ')) {
+        const code = rawText.split(/\s+/)[1] || '';
+        handleStartCoach(replyTo, code).catch(e => console.warn('[Bot] start-coach error:', e.message));
+      } else if (text === '/menu' || text === 'menu') {
+        handleCoachMenu(replyTo).catch(e => console.warn('[Bot] menu error:', e.message));
+      } else if (_sessions.has(replyTo)) {
+        handleSessionMessage(replyTo, rawText).catch(e => console.warn('[Bot] session msg error:', e.message));
       }
     }
   } catch { /* network errors are fine */ }
+}
+
+// ── Coach linking & betting flow ──────────────────────────────────────────
+function getCoachByChatId(db, chatId) {
+  return db.prepare('SELECT * FROM coaches WHERE telegram_chat_id=?').get(String(chatId));
+}
+
+async function handleStartCoach(chatId, code) {
+  const { getDb } = require('../database/db');
+  const db = getDb();
+
+  if (!code) {
+    await tgSendMessageTo(chatId, '🔑 Введите команду в формате:\n<code>/start-coach КОД</code>\n\nОдноразовый код можно получить в профиле тренера на платформе (раздел «Настройки» → «Telegram»).');
+    return;
+  }
+
+  const link = db.prepare(
+    `SELECT * FROM telegram_link_codes WHERE code=? AND used=0 AND expires_at > datetime('now')`
+  ).get(code.trim());
+  if (!link) {
+    await tgSendMessageTo(chatId, '❌ Код неверен или истёк. Сгенерируйте новый код в профиле тренера на платформе.');
+    return;
+  }
+
+  const coach = db.prepare('SELECT * FROM coaches WHERE id=?').get(link.coach_id);
+  if (!coach) {
+    await tgSendMessageTo(chatId, '❌ Профиль тренера не найден.');
+    return;
+  }
+
+  db.transaction(() => {
+    db.prepare('UPDATE telegram_link_codes SET used=1 WHERE id=?').run(link.id);
+    db.prepare('UPDATE coaches SET telegram_chat_id=? WHERE id=?').run(String(chatId), coach.id);
+  })();
+
+  await tgSendMessageTo(chatId, `✅ Аккаунт привязан, ${escTg(coach.name)}! Теперь вам доступно меню тренера.`);
+  await handleCoachMenu(chatId);
+}
+
+async function handleCoachMenu(chatId) {
+  const { getDb } = require('../database/db');
+  const db = getDb();
+  const coach = getCoachByChatId(db, chatId);
+  if (!coach) {
+    await tgSendMessageTo(chatId, '🔒 Сначала привяжите аккаунт: отправьте\n<code>/start-coach КОД</code>\n(код — в профиле тренера на платформе).');
+    return;
+  }
+  await tgSendMessageWithKeyboard(chatId, `👋 Меню тренера — ${escTg(coach.name)}`, [
+    [{ text: '📊 Таблица лиги', callback_data: 'menu_table' }],
+    [{ text: '📅 Расписание', callback_data: 'menu_schedule' }],
+    [{ text: '💰 Ставки', callback_data: 'menu_bets' }],
+  ]);
+}
+
+function fmtMoney(v) {
+  v = Number(v) || 0;
+  if (v >= 1e6) return '€' + (v / 1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return '€' + Math.round(v / 1e3) + 'K';
+  return '€' + Math.round(v);
+}
+
+async function handleBetsMenu(chatId) {
+  const { getDb } = require('../database/db');
+  const betting = require('./betting');
+  const db = getDb();
+  const coach = getCoachByChatId(db, chatId);
+  if (!coach) {
+    await tgSendMessageTo(chatId, '🔒 Сначала привяжите аккаунт командой /start-coach КОД.');
+    return;
+  }
+  if (!coach.team_id) {
+    await tgSendMessageTo(chatId, 'У вас нет команды — ставки недоступны.');
+    return;
+  }
+
+  const matches = betting.listBettableMatches(db);
+  const free = betting.availableBudget(db, coach.team_id);
+
+  if (!matches.length) {
+    await tgSendMessageTo(chatId, `💰 Доступно для ставок: <b>${fmtMoney(free)}</b>\n\nСейчас нет матчей, открытых для ставок.`);
+    return;
+  }
+
+  const rows = matches.map(m => {
+    const date = (m.match_date || '').slice(5).split('-').reverse().join('.');
+    const time = (m.match_time || '').slice(0, 5);
+    return [{
+      text: `${m.home_team_name} — ${m.away_team_name} · ${date} ${time}`,
+      callback_data: `bm_${m.id}`,
+    }];
+  });
+
+  await tgSendMessageWithKeyboard(chatId, `💰 Доступно для ставок: <b>${fmtMoney(free)}</b>\n\nВыберите матч:`, rows);
+}
+
+async function handleMatchDetail(chatId, matchId) {
+  const { getDb } = require('../database/db');
+  const betting = require('./betting');
+  const db = getDb();
+  const coach = getCoachByChatId(db, chatId);
+  if (!coach) return;
+
+  const match = db.prepare(`
+    SELECT m.*, ht.name AS home_team_name, at.name AS away_team_name
+    FROM matches m JOIN teams ht ON m.home_team_id=ht.id JOIN teams at ON m.away_team_id=at.id
+    WHERE m.id=?
+  `).get(matchId);
+  if (!match) {
+    await tgSendMessageTo(chatId, '❌ Матч не найден.');
+    return;
+  }
+
+  const odds = betting.currentOdds(db, match);
+  const bank = odds.total_pool > 0
+    ? `\n🏦 Банк: П1 ${fmtMoney(odds.pools.home)} · X ${fmtMoney(odds.pools.draw)} · П2 ${fmtMoney(odds.pools.away)}`
+    : '';
+
+  const text = `⚽ <b>${escTg(match.home_team_name)} — ${escTg(match.away_team_name)}</b>${bank}\n\nВыберите исход:`;
+  await tgSendMessageWithKeyboard(chatId, text, [
+    [
+      { text: `П1 (${odds.home})`, callback_data: `bo_${matchId}_home` },
+      { text: `X (${odds.draw})`,  callback_data: `bo_${matchId}_draw` },
+      { text: `П2 (${odds.away})`, callback_data: `bo_${matchId}_away` },
+    ],
+    [{ text: '« Назад к матчам', callback_data: 'menu_bets' }],
+  ]);
+}
+
+async function handleOutcomeSelect(chatId, matchId, outcome) {
+  const { getDb } = require('../database/db');
+  const betting = require('./betting');
+  const db = getDb();
+  const coach = getCoachByChatId(db, chatId);
+  if (!coach || !coach.team_id) return;
+
+  const free = betting.availableBudget(db, coach.team_id);
+  if (free < betting.MIN_BET) {
+    await tgSendMessageTo(chatId, `Недостаточно средств для ставки. Доступно: ${fmtMoney(free)}, минимум: ${fmtMoney(betting.MIN_BET)}.`);
+    return;
+  }
+
+  _sessions.set(chatId, { step: 'await_amount', matchId: Number(matchId), outcome });
+  const label = { home: 'победу хозяев (П1)', draw: 'ничью (X)', away: 'победу гостей (П2)' };
+  await tgSendMessageTo(chatId,
+    `Ставка на <b>${label[outcome]}</b>.\nДоступно: ${fmtMoney(free)}, минимум ${fmtMoney(betting.MIN_BET)}.\n\nВведите сумму ставки числом (например 500000):`);
+}
+
+async function handleSessionMessage(chatId, text) {
+  const session = _sessions.get(chatId);
+  if (!session || session.step !== 'await_amount') return;
+  _sessions.delete(chatId);
+
+  const { getDb } = require('../database/db');
+  const betting = require('./betting');
+  const db = getDb();
+  const coach = getCoachByChatId(db, chatId);
+  if (!coach) return;
+
+  const amount = Number(String(text).replace(/[^\d.]/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    await tgSendMessageTo(chatId, '❌ Не удалось распознать сумму. Введите число, например 500000.');
+    return;
+  }
+
+  const result = betting.placeBet(db, coach, session.matchId, session.outcome, amount);
+  if (result.error) {
+    await tgSendMessageTo(chatId, `❌ ${escTg(result.error)}`);
+    return;
+  }
+  await tgSendMessageTo(chatId,
+    `✅ Ставка принята! Кэф ${result.odds}, возможный выигрыш ${fmtMoney(result.potential_payout)}.\nОстаток доступного бюджета: ${fmtMoney(result.free_budget)}.`);
+}
+
+async function handleCallbackQuery(cb) {
+  const chatId = cb.message?.chat?.id;
+  const data = cb.data || '';
+  if (!chatId) return;
+
+  await tgAnswerCallbackQuery(cb.id).catch(() => {});
+
+  if (data === 'menu_table') return handleTableCommand(chatId);
+  if (data === 'menu_schedule') return handleScheduleCommand(chatId);
+  if (data === 'menu_bets') return handleBetsMenu(chatId);
+
+  let m = data.match(/^bm_(\d+)$/);
+  if (m) return handleMatchDetail(chatId, Number(m[1]));
+
+  m = data.match(/^bo_(\d+)_(home|draw|away)$/);
+  if (m) return handleOutcomeSelect(chatId, Number(m[1]), m[2]);
 }
 
 function startPolling() {
@@ -199,6 +405,29 @@ async function tgSendMessageTo(chatId, text) {
     headers: { 'Content-Type': 'application/json' },
     ..._fetchOpts({}),
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+  });
+  return res.json();
+}
+
+async function tgSendMessageWithKeyboard(chatId, text, inlineKeyboard) {
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ..._fetchOpts({}),
+    body: JSON.stringify({
+      chat_id: chatId, text, parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: inlineKeyboard },
+    }),
+  });
+  return res.json();
+}
+
+async function tgAnswerCallbackQuery(callbackQueryId, text) {
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ..._fetchOpts({}),
+    body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
   });
   return res.json();
 }
@@ -785,4 +1014,4 @@ async function sendPlayerNews({ title, body, type }) {
   }
 }
 
-module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews, setEnabled, isEnabled, setNotifSettings, getNotifSettings, setProxy, getProxySettings, generateMatchBanner };
+module.exports = { initBot, sendMatchResult, sendCoachNews, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews, setEnabled, isEnabled, setNotifSettings, getNotifSettings, setProxy, getProxySettings, generateMatchBanner, sendDirectMessage: tgSendMessageTo };

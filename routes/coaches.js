@@ -191,4 +191,31 @@ router.post('/me/news', requireCoach, (req, res) => {
   });
 });
 
+// ─── POST /me/telegram-code — generate a one-time code to link Telegram ──────
+router.post('/me/telegram-code', requireCoach, (req, res) => {
+  const db = getDb();
+  const coach = db.prepare('SELECT * FROM coaches WHERE user_id=?').get(req.user.id);
+  if (!coach) return res.status(404).json({ error: 'No coach profile found for your account' });
+
+  // Invalidate any previous unused codes for this coach
+  db.prepare('DELETE FROM telegram_link_codes WHERE coach_id=? AND used=0').run(coach.id);
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO telegram_link_codes (code, coach_id, expires_at) VALUES (?,?,?)')
+    .run(code, coach.id, expiresAt);
+
+  res.json({ code, expires_at: expiresAt });
+});
+
+// ─── DELETE /me/telegram-link — unlink Telegram from my coach account ────────
+router.delete('/me/telegram-link', requireCoach, (req, res) => {
+  const db = getDb();
+  const coach = db.prepare('SELECT * FROM coaches WHERE user_id=?').get(req.user.id);
+  if (!coach) return res.status(404).json({ error: 'No coach profile found for your account' });
+
+  db.prepare('UPDATE coaches SET telegram_chat_id=NULL WHERE id=?').run(coach.id);
+  res.json({ ok: true });
+});
+
 module.exports = router;
