@@ -548,6 +548,15 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     }
   }
 
+  // Get teams in this league
+  const teamRows = db.prepare(`
+    SELECT t.* FROM league_standings ls
+    JOIN teams t ON ls.team_id = t.id
+    WHERE ls.league_id = ?
+  `).all(league.id);
+
+  const teamIds = teamRows.map(t => t.id);
+
   // Return all active loans for teams in this league before new season starts
   const loanTeamIds = teamIds.join(',');
   if (loanTeamIds) {
@@ -581,15 +590,6 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
 
   // Increment season number
   const newSeason = league.season + 1;
-
-  // Get teams in this league
-  const teamRows = db.prepare(`
-    SELECT t.* FROM league_standings ls
-    JOIN teams t ON ls.team_id = t.id
-    WHERE ls.league_id = ?
-  `).all(league.id);
-
-  const teamIds = teamRows.map(t => t.id);
 
   // Reset standings
   db.prepare(`
