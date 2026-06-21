@@ -490,7 +490,7 @@ function renderPitchFromLineup(lineupSlots, isAway = false) {
 }
 function ratingColor(r) { return r >= 7.5 ? 'high' : r >= 6 ? 'mid' : 'low'; }
 function achIcon(type) {
-  return {hat_trick:'🎩',brace:'⚽⚽',man_of_the_match:'🌟',clean_sheet:'🧤',tournament_winner:'🏆'}[type]||'🏅';
+  return {hat_trick:'🎩',brace:'⚽⚽',man_of_the_match:'🌟',clean_sheet:'🧤',tournament_winner:'🏆',league_winner:'🏆'}[type]||'🏅';
 }
 
 // ─── Auth ─────────────────────────────────────────────────────
@@ -2363,7 +2363,7 @@ async function renderPlayerDetail(app, id) {
 
 function renderAchievementsTab(achievements) {
   if (!achievements.length) return `<div class="empty-state"><div class="empty-icon">🏅</div><p>No achievements yet</p></div>`;
-  const typeLabel = { hat_trick:'Hat-trick', brace:'Brace', man_of_the_match:'Man of the Match', clean_sheet:'Clean Sheet', tournament_winner:'Tournament Winner' };
+  const typeLabel = { hat_trick:'Hat-trick', brace:'Brace', man_of_the_match:'Man of the Match', clean_sheet:'Clean Sheet', tournament_winner:'Tournament Winner', league_winner:'League Champion' };
   return `<div class="card"><div class="card-header">Career Achievements</div>
     ${achievements.map(a=>`
       <div class="achievement-item">

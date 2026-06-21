@@ -39,15 +39,18 @@ function awardLeagueChampion(db, league) {
   const season = `Season ${league.season}`;
   const trophyUrl = league.trophy_url || null;
 
-  // Team title
+  // ONE team-level title (player_id NULL). Like tournaments, individual squad
+  // members get a player_achievement instead of a per-player title row — a
+  // per-player title would make the team's trophy count balloon to the squad
+  // size on the club page.
   db.prepare(`INSERT INTO titles (team_id, title_name, season, year, trophy_url) VALUES (?,?,?,?,?)`)
     .run(champion.team_id, titleName, season, year, trophyUrl);
 
-  // Individual titles for the current squad
+  // Achievement for each current squad member
   const champPlayers = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(champion.team_id);
-  const insertPlayerTitle = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, trophy_url) VALUES (?,?,?,?,?,?)`);
+  const insertAch = db.prepare(`INSERT INTO player_achievements (player_id, achievement_type, description) VALUES (?,?,?)`);
   for (const cp of champPlayers) {
-    insertPlayerTitle.run(champion.team_id, cp.id, titleName, season, year, trophyUrl);
+    insertAch.run(cp.id, 'league_winner', `Чемпион ${league.name} (сезон ${league.season})`);
   }
 
   // Season-ended / champion news
