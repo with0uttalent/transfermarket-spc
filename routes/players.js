@@ -104,10 +104,14 @@ router.get('/:id', (req, res) => {
              SELECT 1 FROM player_achievements pa
              WHERE pa.player_id = ? AND pa.tournament_id = ti.tournament_id
            ))
+       OR (ti.player_id IS NULL AND ti.league_id IS NOT NULL AND EXISTS (
+             SELECT 1 FROM player_achievements pa
+             WHERE pa.player_id = ? AND pa.league_id = ti.league_id
+           ))
        OR (ti.player_id IS NULL AND ti.competition_id IS NOT NULL AND ti.team_id = ?)
-    GROUP BY COALESCE(ti.competition_id, ti.tournament_id, 0), ti.title_name, ti.year
+    GROUP BY COALESCE(ti.competition_id, ti.tournament_id, ti.league_id, 0), ti.title_name, ti.year
     ORDER BY ti.year DESC
-  `).all(req.params.id, req.params.id, player.team_id || 0);
+  `).all(req.params.id, req.params.id, req.params.id, player.team_id || 0);
 
   const marketHistory = db.prepare(`
     SELECT market_value, recorded_at

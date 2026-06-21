@@ -1,20 +1,18 @@
 'use strict';
 
-// One-off cleanup for the league-champion titles created before the fixes:
-//   1. The /next-season crash (e881edc) re-awarded titles on every retry with
-//      no idempotency check -> dozens of identical team titles.
-//   2. Leagues used to insert a per-player title row for every squad member,
-//      which (all carrying team_id) made the club's trophy count balloon to
-//      the squad size. Tournaments only ever create ONE team-level title and
-//      give players an achievement instead — leagues now match that.
+// One-off cleanup that brings existing league-champion data in line with the
+// tournament-style model:
+//   - Exactly ONE team-level title per league win (player_id NULL, league_id set).
+//   - Each squad member gets a 'league_winner' player_achievement (league_id set),
+//     which surfaces that same team trophy on the player's profile.
 //
-// This script brings existing data in line with the new behaviour:
-//   - Converts each per-player league-champion title into a 'league_winner'
-//     player_achievement (skipping players that already have one).
-//   - Deletes all per-player league-champion title rows.
-//   - Dedupes the remaining team-level titles to one row per
-//     (team_id, title_name, season), keeping the lowest id.
-//   - Backfills trophy_url from the owning league.
+// Historically leagues stored a per-player title row for every squad member
+// (all carrying team_id), and the /next-season crash (e881edc) re-awarded on
+// every retry, so a champion accumulated dozens of identical title rows. This
+// script repairs that:
+//   1. Per-player league-champion titles -> league_winner achievements, rows deleted.
+//   2. Team-level league titles deduped to one per (team, title, season).
+//   3. league_id + trophy_url backfilled on the kept team title and achievements.
 //
 // Safe to run multiple times. Usage: node scripts/dedupe-league-titles.js
 
@@ -22,32 +20,30 @@ const { getDb } = require('../database/db');
 
 const db = getDb();
 const leagues = db.prepare('SELECT id, name, trophy_url FROM leagues').all();
-const isLeagueTitle = (name) => leagues.some(l => name.startsWith(`${l.name} Champion Season`));
+const leagueFor = (name) => leagues.find(l => name.startsWith(`${l.name} Champion Season`));
 
 const tx = db.transaction(() => {
   // 1. Per-player league-champion titles -> achievements, then delete the rows.
   const playerTitles = db.prepare(`
     SELECT id, player_id, title_name, season FROM titles
     WHERE title_name LIKE '%Champion Season%' AND player_id IS NOT NULL
-  `).all().filter(t => isLeagueTitle(t.title_name));
+  `).all().filter(t => leagueFor(t.title_name));
 
   const hasAch = db.prepare(`
     SELECT 1 FROM player_achievements
-    WHERE player_id=? AND achievement_type='league_winner' AND description=? LIMIT 1
+    WHERE player_id=? AND achievement_type='league_winner' AND league_id=? LIMIT 1
   `);
   const insAch = db.prepare(`
-    INSERT INTO player_achievements (player_id, achievement_type, description) VALUES (?,?,?)
+    INSERT INTO player_achievements (player_id, achievement_type, description, league_id) VALUES (?,?,?,?)
   `);
   const delTitle = db.prepare('DELETE FROM titles WHERE id=?');
 
   let achCreated = 0, playerRowsRemoved = 0;
-  const seenAch = new Set();
   for (const t of playerTitles) {
-    const desc = `Чемпион ${t.title_name.replace(/ Champion Season \d+$/, '')} (сезон ${t.season.replace(/^Season /, '')})`;
-    const dedupeKey = `${t.player_id}|${desc}`;
-    if (!seenAch.has(dedupeKey) && !hasAch.get(t.player_id, desc)) {
-      insAch.run(t.player_id, 'league_winner', desc);
-      seenAch.add(dedupeKey);
+    const lg = leagueFor(t.title_name);
+    if (lg && !hasAch.get(t.player_id, lg.id)) {
+      const seasonNum = String(t.season || '').replace(/^Season /, '');
+      insAch.run(t.player_id, 'league_winner', `Чемпион ${lg.name} (сезон ${seasonNum})`, lg.id);
       achCreated++;
     }
     delTitle.run(t.id);
@@ -55,39 +51,27 @@ const tx = db.transaction(() => {
   }
   console.log(`Created ${achCreated} league_winner achievement(s); removed ${playerRowsRemoved} per-player title row(s).`);
 
-  // 2. Dedupe remaining team-level titles to one per (team, title, season).
-  const dupes = db.prepare(`
-    SELECT title_name, season, team_id, COUNT(*) AS cnt, MIN(id) AS keep_id
+  // 2. Dedupe team-level titles to one per (team, title, season); set league_id + trophy_url.
+  const groups = db.prepare(`
+    SELECT title_name, season, team_id, MIN(id) AS keep_id, COUNT(*) AS cnt
     FROM titles
     WHERE title_name LIKE '%Champion Season%' AND player_id IS NULL
     GROUP BY title_name, season, team_id
-    HAVING cnt > 1
-  `).all().filter(g => isLeagueTitle(g.title_name));
+  `).all().filter(g => leagueFor(g.title_name));
 
   const delDup = db.prepare(`
     DELETE FROM titles
     WHERE title_name=? AND season=? AND team_id=? AND player_id IS NULL AND id<>?
   `);
-  let removed = 0;
-  for (const g of dupes) {
-    const r = delDup.run(g.title_name, g.season, g.team_id, g.keep_id);
-    removed += r.changes;
-    console.log(`  ${g.title_name} (season ${g.season}, team ${g.team_id}): removed ${r.changes} duplicate(s)`);
-  }
-  console.log(`Removed ${removed} duplicate team-title row(s) across ${dupes.length} group(s).`);
+  const updKept = db.prepare('UPDATE titles SET league_id=?, trophy_url=COALESCE(trophy_url, ?) WHERE id=?');
 
-  // 3. Backfill trophy_url from the owning league.
-  const need = db.prepare(`
-    SELECT id, title_name FROM titles
-    WHERE title_name LIKE '%Champion Season%' AND (trophy_url IS NULL OR trophy_url='')
-  `).all();
-  const updTrophy = db.prepare('UPDATE titles SET trophy_url=? WHERE id=?');
-  let backfilled = 0;
-  for (const t of need) {
-    const league = leagues.find(l => t.title_name.startsWith(`${l.name} Champion Season`));
-    if (league && league.trophy_url) { updTrophy.run(league.trophy_url, t.id); backfilled++; }
+  let removed = 0;
+  for (const g of groups) {
+    const lg = leagueFor(g.title_name);
+    removed += delDup.run(g.title_name, g.season, g.team_id, g.keep_id).changes;
+    updKept.run(lg.id, lg.trophy_url || null, g.keep_id);
   }
-  console.log(`Backfilled trophy_url on ${backfilled} title row(s).`);
+  console.log(`Deduped ${groups.length} team-title group(s); removed ${removed} duplicate row(s); set league_id + trophy_url on kept rows.`);
 });
 
 tx();

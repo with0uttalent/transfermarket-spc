@@ -93,7 +93,7 @@ router.get('/:id', (req, res) => {
     FROM titles ti
     LEFT JOIN competitions comp ON ti.competition_id = comp.id
     WHERE ti.team_id = ?
-    GROUP BY COALESCE(ti.competition_id, ti.tournament_id, ti.id), ti.title_name, ti.year
+    GROUP BY COALESCE(ti.competition_id, ti.tournament_id, ti.league_id, ti.id), ti.title_name, ti.year
     ORDER BY ti.year DESC
   `).all(req.params.id);
 

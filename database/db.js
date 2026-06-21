@@ -615,6 +615,11 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (coach_id) REFERENCES coaches(id) ON DELETE CASCADE
     )`,
+    // League champion linkage — mirrors titles.tournament_id so a league win
+    // shows as one team trophy that also surfaces on each squad member's
+    // profile (via their matching league_winner achievement).
+    `ALTER TABLE titles ADD COLUMN league_id INTEGER`,
+    `ALTER TABLE player_achievements ADD COLUMN league_id INTEGER`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }
