@@ -6,6 +6,7 @@ const { requireAdmin } = require('../middleware/auth');
 const { simulateMatch } = require('../services/matchSimulator');
 const { applyMatchResults, generateMatchNews } = require('../services/scheduler');
 const { settleBetsForMatch } = require('../services/betting');
+const { enterTransferWindow, awardLeagueChampion } = require('../services/leagueSeason');
 
 const router = express.Router();
 
@@ -477,9 +478,9 @@ router.post('/:id/simulate-matchday', requireAdmin, (req, res) => {
   `).get(league.id);
 
   if (remaining.cnt === 0) {
-    const windowEnd = dateAddDays(today, 7);
-    db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`)
-      .run(windowEnd, league.id);
+    // Last round just finished → open the transfer window and crown the champion
+    // (title, season-ended news, homepage banner, coach notification).
+    enterTransferWindow(db, league.id);
   }
 
   res.json({ matchday, results, remaining: remaining.cnt });
@@ -495,7 +496,11 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Can only advance to next season after transfer window (status must be transfer_window)' });
   }
 
-  // Award title to champion (highest points)
+  // The champion is normally crowned the moment the league enters the transfer
+  // window (right after the last round). Award defensively here too — it's
+  // idempotent, so this only acts for leagues that entered the window before
+  // this behaviour existed. Read the champion for the response either way.
+  awardLeagueChampion(db, league);
   const champion = db.prepare(`
     SELECT ls.team_id, t.name AS team_name, ls.points
     FROM league_standings ls
@@ -504,49 +509,6 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     ORDER BY ls.points DESC, (ls.goals_for - ls.goals_against) DESC, ls.goals_for DESC
     LIMIT 1
   `).get(league.id);
-
-  if (champion) {
-    const titleName = `${league.name} Champion Season ${league.season}`;
-    const year = new Date().getFullYear();
-    const season = `Season ${league.season}`;
-    db.prepare(`
-      INSERT INTO titles (team_id, title_name, season, year)
-      VALUES (?,?,?,?)
-    `).run(champion.team_id, titleName, season, year);
-
-    // Award individual titles to all current squad members
-    const champPlayers = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(champion.team_id);
-    const insertPlayerTitle = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year) VALUES (?,?,?,?,?)`);
-    for (const cp of champPlayers) {
-      insertPlayerTitle.run(champion.team_id, cp.id, titleName, season, year);
-    }
-
-    db.prepare(`INSERT INTO news (title, body, type) VALUES (?,?,?)`).run(
-      `${champion.team_name} — чемпион ${league.name}!`,
-      `${champion.team_name} завоевали титул ${league.name} в сезоне ${league.season}, набрав ${champion.points} очков. Поздравляем команду и тренерский штаб!`,
-      'transfer'
-    );
-
-    // Save champion to app_settings for banner
-    const champTeam = db.prepare('SELECT logo_url FROM teams WHERE id=?').get(champion.team_id);
-    const champData = {
-      team_id: champion.team_id,
-      team_name: champion.team_name,
-      league_name: league.name,
-      season: league.season,
-      points: champion.points,
-      logo_url: champTeam ? champTeam.logo_url : null,
-    };
-    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('league_champion', ?)`)
-      .run(JSON.stringify(champData));
-
-    // Notify champion's coach
-    const champCoach = db.prepare('SELECT id FROM coaches WHERE team_id=?').get(champion.team_id);
-    if (champCoach) {
-      db.prepare(`INSERT INTO coach_notifications (coach_id, title, body, type) VALUES (?,?,?,?)`)
-        .run(champCoach.id, '🏆 Вы чемпион!', `${champion.team_name} завоевали титул ${league.name} в сезоне ${league.season} с ${champion.points} очками!`, 'champion');
-    }
-  }
 
   // Get teams in this league
   const teamRows = db.prepare(`

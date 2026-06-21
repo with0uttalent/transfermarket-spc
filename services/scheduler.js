@@ -4,6 +4,7 @@ const { getDb } = require('../database/db');
 const { simulateMatch, simulateMatchWithLineup } = require('./matchSimulator');
 const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, sendMatchResultToLive, sendStandingsBanner, sendPlayerNews } = require('./telegramBot');
 const { settleBetsForMatch, settleOrphanedBets } = require('./betting');
+const { enterTransferWindow } = require('./leagueSeason');
 
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
@@ -541,10 +542,7 @@ function simulateLeagueMatchday(leagueId) {
   `).get(leagueId);
 
   if (remaining.cnt === 0) {
-    const windowEnd = new Date();
-    windowEnd.setDate(windowEnd.getDate() + 7);
-    db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`)
-      .run(windowEnd.toISOString().slice(0, 10), leagueId);
+    enterTransferWindow(db, leagueId);
     console.log(`[Scheduler] League ${leagueId}: all matchdays completed, entering transfer window`);
   }
 }
@@ -967,8 +965,7 @@ function simulateSingleLeagueMatch(db, league, srow) {
 
   const remaining = db.prepare(`SELECT COUNT(*) as cnt FROM league_schedule WHERE league_id=? AND match_id IS NULL`).get(league.id);
   if (remaining.cnt === 0) {
-    const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 7);
-    db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`).run(windowEnd.toISOString().slice(0,10), league.id);
+    enterTransferWindow(db, league.id);
     console.log(`[Scheduler] League ${league.id}: all matchdays done, entering transfer window`);
   }
 
@@ -1048,9 +1045,7 @@ function reconcileUnrecordedLeagueMatches() {
 
       const remaining = db.prepare('SELECT COUNT(*) as cnt FROM league_schedule WHERE league_id=? AND match_id IS NULL').get(m.league_id);
       if (remaining.cnt === 0) {
-        const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 7);
-        db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`)
-          .run(windowEnd.toISOString().slice(0, 10), m.league_id);
+        enterTransferWindow(db, m.league_id);
       }
       console.log(`[Scheduler] Reconciled unrecorded league match ${m.id} (MD${m.matchday}) into standings`);
     }

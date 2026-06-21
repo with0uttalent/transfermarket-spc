@@ -3,6 +3,7 @@ const { getDb } = require('../database/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { simulateMatch, simulateMatchWithLineup, simulateExtraTime } = require('../services/matchSimulator');
 const { applyMatchResults, generateMatchNews } = require('../services/scheduler');
+const { enterTransferWindow } = require('../services/leagueSeason');
 const router = express.Router();
 
 const BASE = `
@@ -358,12 +359,11 @@ function applyLeagueBookkeeping(db, match, result) {
   db.prepare('UPDATE leagues SET current_matchday=? WHERE id=? AND current_matchday < ?')
     .run(match.matchday, match.league_id, match.matchday);
 
-  // If this was the last unplayed fixture, open the transfer window.
+  // If this was the last unplayed fixture, open the transfer window and crown
+  // the champion (idempotent).
   const remaining = db.prepare('SELECT COUNT(*) as cnt FROM league_schedule WHERE league_id=? AND match_id IS NULL').get(match.league_id);
   if (remaining.cnt === 0) {
-    const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 7);
-    db.prepare(`UPDATE leagues SET status='transfer_window', transfer_window_end=? WHERE id=?`)
-      .run(windowEnd.toISOString().slice(0, 10), match.league_id);
+    enterTransferWindow(db, match.league_id);
   }
 }
 
