@@ -37,16 +37,17 @@ function awardLeagueChampion(db, league) {
 
   const year = new Date().getFullYear();
   const season = `Season ${league.season}`;
+  const trophyUrl = league.trophy_url || null;
 
   // Team title
-  db.prepare(`INSERT INTO titles (team_id, title_name, season, year) VALUES (?,?,?,?)`)
-    .run(champion.team_id, titleName, season, year);
+  db.prepare(`INSERT INTO titles (team_id, title_name, season, year, trophy_url) VALUES (?,?,?,?,?)`)
+    .run(champion.team_id, titleName, season, year, trophyUrl);
 
   // Individual titles for the current squad
   const champPlayers = db.prepare(`SELECT id FROM players WHERE team_id=?`).all(champion.team_id);
-  const insertPlayerTitle = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year) VALUES (?,?,?,?,?)`);
+  const insertPlayerTitle = db.prepare(`INSERT INTO titles (team_id, player_id, title_name, season, year, trophy_url) VALUES (?,?,?,?,?,?)`);
   for (const cp of champPlayers) {
-    insertPlayerTitle.run(champion.team_id, cp.id, titleName, season, year);
+    insertPlayerTitle.run(champion.team_id, cp.id, titleName, season, year, trophyUrl);
   }
 
   // Season-ended / champion news
