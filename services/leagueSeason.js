@@ -61,6 +61,7 @@ function awardLeagueChampion(db, league) {
   const champData = {
     team_id: champion.team_id,
     team_name: champion.team_name,
+    league_id: league.id,
     league_name: league.name,
     season: league.season,
     points: champion.points,

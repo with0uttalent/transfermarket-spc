@@ -616,6 +616,19 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
     WHERE id=?
   `).run(newSeason, totalMatchdays, today, league.id);
 
+  // Clear the champion banner now that this league's new season has begun.
+  // Only remove it if the banner belongs to this league (legacy banners
+  // without a league_id are cleared too), so ending one league never wipes
+  // another league's banner.
+  const bannerRow = db.prepare("SELECT value FROM app_settings WHERE key='league_champion'").get();
+  if (bannerRow) {
+    let banner = null;
+    try { banner = JSON.parse(bannerRow.value); } catch { /* malformed → clear */ }
+    if (!banner || banner.league_id == null || banner.league_id === league.id) {
+      db.prepare("DELETE FROM app_settings WHERE key='league_champion'").run();
+    }
+  }
+
   res.json({
     message: `Season ${newSeason} started`,
     champion: champion ? champion.team_name : null,
