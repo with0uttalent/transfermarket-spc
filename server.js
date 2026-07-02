@@ -29,9 +29,13 @@ const loginLimiter = rateLimit({
   message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут.' },
 });
 
-// Upload directory
-const uploadsDir = path.join(__dirname, 'public/images/uploads');
+// Upload directory. Overridable so containerised deployments can keep user
+// uploads on a mounted volume (e.g. UPLOADS_DIR=/data/uploads); the explicit
+// static mount keeps '/images/uploads/…' URLs working when the directory
+// lives outside public/.
+const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, 'public/images/uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+app.use('/images/uploads', express.static(uploadsDir));
 
 // Image upload
 const multer = require('multer');
@@ -58,6 +62,9 @@ app.post('/api/upload', requireAuth, upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({ url: '/images/uploads/' + req.file.filename });
 });
+
+// Liveness probe for Docker/monitoring
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // API routes
 app.use('/api/auth/login', loginLimiter);

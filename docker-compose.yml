@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    image: transfermarket-spc
+    container_name: transfermarket
+    restart: unless-stopped
+    # Bind only to localhost — nginx (or another reverse proxy) terminates
+    # public traffic, same as the old systemd setup.
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      # SQLite DB + user uploads. A bind mount (not a named volume) so the
+      # data sits next to the repo and is trivial to back up.
+      - ./data:/data
