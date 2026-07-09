@@ -3122,7 +3122,11 @@ async function renderMatchDetail(app, id) {
       ${isFinished?`<div id="tab-m-formations" class="tab-panel"><div id="match-formations-panel"><div class="empty-state"><p>Loading formations…</p></div></div></div>`:''}
     `;
     setupTabs(app);
-    initMatchViz(match, isFinished).catch(()=>{});
+    // Boot the pitch, THEN start live polling — so early events aren't fed to
+    // MatchViz before it has initialised (they'd be dropped).
+    initMatchViz(match, isFinished)
+      .then(() => { if (isLive) startLiveMatchPoll(id); })
+      .catch(() => { if (isLive) startLiveMatchPoll(id); });
     // Lazy-load formations tab
     if (isFinished) {
       app.querySelector('[data-tab="m-formations"]')?.addEventListener('click', async () => {
@@ -3142,17 +3146,50 @@ async function renderMatchDetail(app, id) {
         } catch { panel.innerHTML = '<div class="empty-state"><p>Ошибка загрузки составов</p></div>'; }
       }, { once: true });
     }
-    // Auto-start live polling for anyone watching an in-progress match
-    if (isLive) {
-      startLiveMatchPoll(id);
-    }
+    // (live polling is started above, after the pitch initialises)
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
 }
 
 // ── Pitch visualization glue ─────────────────────────────────────────────────
 // Loads both line-ups, maps each starter to a tactical zone and boots MatchViz.
-// For finished matches wires the replay button; live events are fed from the
-// poll loop in startLiveMatchPoll.
+// The feed line + scoreboard for an event are emitted by MatchViz *after* its
+// animation plays (onEvent), so the picture always leads the caption.
+let _vizFeed = null; // { match, sh, sa } — shared by live poll & replay
+
+function vizFeedEvent(ev) {
+  const st = _vizFeed;
+  if (!st) return;
+  const m = st.match;
+  const logEl = document.getElementById('event-log');
+  if (logEl) {
+    if (ev.minute > 45 && ev.minute <= 90 && !logEl.querySelector('.halftime-divider')) {
+      const d = document.createElement('div'); d.className = 'halftime-divider'; d.textContent = '⏸ Перерыв'; logEl.insertBefore(d, logEl.firstChild);
+    }
+    if (ev.minute > 90 && ev.minute <= 120 && !logEl.querySelector('.ot-divider')) {
+      const d = document.createElement('div'); d.className = 'halftime-divider ot-divider'; d.textContent = '⏱ Дополнительное время'; logEl.insertBefore(d, logEl.firstChild);
+    }
+    if (ev.minute > 120 && !logEl.querySelector('.pen-divider')) {
+      const d = document.createElement('div'); d.className = 'halftime-divider pen-divider'; d.textContent = '🎯 Серия пенальти'; logEl.insertBefore(d, logEl.firstChild);
+    }
+    const isBuild = ev.event_type === 'buildup';
+    const item = document.createElement('div');
+    item.className = `event-log-item event-${ev.event_type}${isBuild ? ' ev-buildup' : ''}`;
+    item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${descText(ev.description)}</span>`;
+    logEl.insertBefore(item, logEl.firstChild);
+  }
+  const clock = document.getElementById('match-clock');
+  if (clock && ev.minute) clock.textContent = `⏱ ${ev.minute}'`;
+  if (ev.event_type === 'goal' || ev.event_type === 'own_goal') {
+    const scoringHome = ev.event_type === 'own_goal' ? ev.team_id !== m.home_team_id : ev.team_id === m.home_team_id;
+    if (scoringHome) st.sh++; else st.sa++;
+    const sh = document.getElementById('score-home'), sa = document.getElementById('score-away');
+    if (sh) sh.textContent = st.sh; if (sa) sa.textContent = st.sa;
+    if (ev.event_type !== 'own_goal') triggerGoalCelebration(scoringHome ? 'home' : 'away', m, ev);
+    const scoreboard = document.getElementById('scoreboard');
+    if (scoreboard) { scoreboard.classList.add('sb-goal-flash'); setTimeout(() => scoreboard.classList.remove('sb-goal-flash'), 700); }
+  }
+}
+
 async function initMatchViz(match, isFinished) {
   const box = document.getElementById('match-viz');
   if (!box || !window.MatchViz) return;
@@ -3167,12 +3204,14 @@ async function initMatchViz(match, isFinished) {
     shirt_number: s.shirt_number || null,
     zone: ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(s.position),
   }));
+  _vizFeed = { match, sh: 0, sa: 0 };
   MatchViz.init(box, {
     homeId: match.home_team_id, awayId: match.away_team_id,
     homeColor: match.home_color_primary || '#2e7d32',
     awayColor: match.away_color_primary || '#c62828',
     homePlayers: toViz(homeLineup.lineup),
     awayPlayers: toViz(awayLineup.lineup),
+    onEvent: vizFeedEvent,
   });
 
   const replayBtn = document.getElementById('mviz-replay');
@@ -3180,11 +3219,12 @@ async function initMatchViz(match, isFinished) {
     replayBtn.onclick = () => {
       const sh = document.getElementById('score-home'), sa = document.getElementById('score-away');
       const clock = document.getElementById('match-clock');
+      const logEl = document.getElementById('event-log');
       replayBtn.disabled = true; replayBtn.textContent = '⏸ Идёт повтор…';
       if (sh) sh.textContent = '0'; if (sa) sa.textContent = '0';
+      if (logEl) logEl.innerHTML = '';           // rebuild feed in step with the replay
+      _vizFeed = { match, sh: 0, sa: 0 };         // reset the running score
       MatchViz.replay(match.events || [], {
-        onMinute: m => { if (clock) clock.textContent = `⏱ ${m}'`; },
-        onScore: (h,a) => { if (sh) sh.textContent = h; if (sa) sa.textContent = a; },
         onDone: () => {
           if (sh) sh.textContent = match.home_score; if (sa) sa.textContent = match.away_score;
           if (clock) clock.textContent = `⏱ 90'`;
@@ -3382,68 +3422,39 @@ function startLiveMatchPoll(matchId) {
     const sa = document.getElementById('score-away');
 
     if (data.status === 'in_progress') {
-      if (clockEl) clockEl.textContent = `⏱ ${data.live_minute}'`;
-      if (sh) sh.textContent = data.home_score;
-      if (sa) sa.textContent = data.away_score;
-
-      // Show newly revealed events
+      // Feed newly revealed events to the pitch. Scoreboard, clock and the feed
+      // line are driven by MatchViz.onEvent AFTER each animation plays, so the
+      // picture leads the caption — we deliberately do NOT set score/clock from
+      // the poll data here (that would race ahead of the animation).
       for (const ev of (data.events || [])) {
         if (seenIds.has(ev.id)) continue;
         seenIds.add(ev.id);
-
-        // Act the event out on the pitch (queued, plays in order)
         if (window.MatchViz) MatchViz.playEvent(ev);
-
-        if (ev.event_type === 'goal' || ev.event_type === 'own_goal') {
-          const isOwnGoal = ev.event_type === 'own_goal';
-          const scoringHome = isOwnGoal
-            ? ev.team_id !== data.home_team_id
-            : ev.team_id === data.home_team_id;
-          if (!isOwnGoal) triggerGoalCelebration(scoringHome ? 'home' : 'away', data, ev);
-          const scoreboard = document.getElementById('scoreboard');
-          if (scoreboard) { scoreboard.classList.add('sb-goal-flash'); setTimeout(()=>scoreboard.classList.remove('sb-goal-flash'),700); }
-        }
-
-        const logEl2 = document.getElementById('event-log');
-        if (logEl2) {
-          if (ev.minute > 45 && ev.minute <= 90 && !logEl2.querySelector('.halftime-divider')) {
-            const ht = document.createElement('div');
-            ht.className = 'halftime-divider'; ht.textContent = '⏸ Перерыв';
-            logEl2.insertBefore(ht, logEl2.firstChild);
-          }
-          if (ev.minute > 90 && ev.minute <= 120 && !logEl2.querySelector('.ot-divider')) {
-            const ot = document.createElement('div');
-            ot.className = 'halftime-divider ot-divider'; ot.textContent = '⏱ Дополнительное время';
-            logEl2.insertBefore(ot, logEl2.firstChild);
-          }
-          if (ev.minute > 120 && !logEl2.querySelector('.pen-divider')) {
-            const pd = document.createElement('div');
-            pd.className = 'halftime-divider pen-divider'; pd.textContent = '🎯 Серия пенальти';
-            logEl2.insertBefore(pd, logEl2.firstChild);
-          }
-          const isBuild = ev.event_type === 'buildup';
-          const item = document.createElement('div');
-          item.className = `event-log-item event-${ev.event_type}${isBuild?' ev-buildup':''}`;
-          item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${descText(ev.description)}</span>`;
-          logEl2.insertBefore(item, logEl2.firstChild);
-        }
+        else vizFeedEvent(ev); // fallback if the pitch failed to load
       }
       lastMatch = data;
     } else {
-      // Match finished (or overtime)
+      // Match finished: let the pitch drain its queued animations first so the
+      // final events are actually shown before we swap to the finished view.
       stopLiveMatchPoll();
-      if (clockEl) clockEl.textContent = `⏱ 90'`;
-      if (sh) sh.textContent = data.home_score;
-      if (sa) sa.textContent = data.away_score;
-      const badgeEl = document.getElementById('match-status-badge');
-      if (badgeEl) {
-        badgeEl.textContent = data.status === 'overtime' ? 'OVERTIME' : 'FINISHED';
-        badgeEl.className = 'match-status-badge match-status-finished';
-      }
-      toast(`Финальный свисток: ${data.home_team_name} ${data.home_score}–${data.away_score} ${data.away_team_name}`);
-      // Re-render the full finished match in-place (shows stats, ratings, formations tabs)
-      const app = document.getElementById('app');
-      if (app) setTimeout(() => renderMatchDetail(app, data.id), 800);
+      const finalData = data;
+      const showFinal = () => {
+        if (window.MatchViz && MatchViz.isBusy()) { setTimeout(showFinal, 400); return; }
+        const c = document.getElementById('match-clock');
+        const shE = document.getElementById('score-home'), saE = document.getElementById('score-away');
+        if (c) c.textContent = `⏱ 90'`;
+        if (shE) shE.textContent = finalData.home_score;
+        if (saE) saE.textContent = finalData.away_score;
+        const badgeEl = document.getElementById('match-status-badge');
+        if (badgeEl) {
+          badgeEl.textContent = finalData.status === 'overtime' ? 'OVERTIME' : 'FINISHED';
+          badgeEl.className = 'match-status-badge match-status-finished';
+        }
+        toast(`Финальный свисток: ${finalData.home_team_name} ${finalData.home_score}–${finalData.away_score} ${finalData.away_team_name}`);
+        const app = document.getElementById('app');
+        if (app) setTimeout(() => renderMatchDetail(app, finalData.id), 800);
+      };
+      showFinal();
     }
   }
 
