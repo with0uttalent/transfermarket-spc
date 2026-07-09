@@ -450,6 +450,76 @@ router.post('/:id/penalties', requireAdmin, (req, res) => {
   return res.json({ pen_home: penHome, pen_away: penAway, winner: homeWins ? match.home_team_id : match.away_team_id, home_score: match.home_score, away_score: match.away_score });
 });
 
+// ─── POST /cleanup — bulk-delete junk matches (admin) ─────────────────────────
+// Criteria (combine freely); pass dry_run:true to only count:
+//   orphaned: true                — matches whose league no longer exists
+//   league_id + league_scope      — 'past_seasons' (season < current; safe any
+//                                   time) or 'all' (only when the league is not
+//                                   active: deleting a current fixture would
+//                                   reopen its slot and the auto-sim would
+//                                   replay it)
+//   friendlies_before: YYYY-MM-DD — friendlies older than the date
+// Related rows (events, stats, bets) go via FK cascade; schedule slots that
+// pointed at a deleted match are set NULL by FK.
+router.post('/cleanup', requireAdmin, (req, res) => {
+  const db = getDb();
+  const { dry_run, orphaned, league_id, league_scope, friendlies_before } = req.body || {};
+  const jobs = [];
+
+  if (orphaned) {
+    jobs.push({
+      label: 'матчи удалённых лиг',
+      where: `league_id IS NOT NULL AND league_id NOT IN (SELECT id FROM leagues)`,
+      params: [],
+    });
+  }
+
+  if (league_id) {
+    const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(league_id);
+    if (!league) return res.status(400).json({ error: 'League not found' });
+    if (league_scope === 'all') {
+      if (league.status === 'active') {
+        return res.status(400).json({ error: 'Нельзя удалить все матчи активной лиги — освободившиеся слоты расписания будут сыграны заново. Удалите прошлые сезоны или дождитесь конца сезона.' });
+      }
+      jobs.push({ label: `все матчи лиги «${league.name}»`, where: `league_id = ?`, params: [league.id] });
+    } else {
+      jobs.push({
+        label: `прошлые сезоны лиги «${league.name}»`,
+        where: `league_id = ? AND (season IS NULL OR season < ?)`,
+        params: [league.id, league.season],
+      });
+    }
+  }
+
+  if (friendlies_before) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(friendlies_before)) {
+      return res.status(400).json({ error: 'friendlies_before must be YYYY-MM-DD' });
+    }
+    jobs.push({
+      label: `товарищеские до ${friendlies_before}`,
+      where: `is_friendly = 1 AND (match_date IS NULL OR match_date < ?)`,
+      params: [friendlies_before],
+    });
+  }
+
+  if (!jobs.length) return res.status(400).json({ error: 'Не выбран ни один критерий очистки' });
+
+  const results = [];
+  const tx = db.transaction(() => {
+    for (const job of jobs) {
+      const count = db.prepare(`SELECT COUNT(*) AS c FROM matches WHERE ${job.where}`).get(...job.params).c;
+      let deleted = 0;
+      if (!dry_run && count > 0) {
+        deleted = db.prepare(`DELETE FROM matches WHERE ${job.where}`).run(...job.params).changes;
+      }
+      results.push({ label: job.label, count, deleted });
+    }
+  });
+  tx();
+
+  res.json({ ok: true, dry_run: !!dry_run, results, total: results.reduce((s, r) => s + (dry_run ? r.count : r.deleted), 0) });
+});
+
 router.delete('/:id', requireAdmin, (req, res) => {
   const db = getDb();
   const r = db.prepare(`DELETE FROM matches WHERE id=?`).run(req.params.id);

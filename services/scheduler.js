@@ -6,6 +6,15 @@ const { sendMatchResult, sendMatchPreview, sendMatchKickoff, sendLiveEvent, send
 const { settleBetsForMatch, settleOrphanedBets } = require('./betting');
 const { enterTransferWindow } = require('./leagueSeason');
 
+// Local (server-TZ) calendar date as YYYY-MM-DD. The scheduler compares dates
+// against local wall-clock times (scheduled_time), so the date must be local
+// too — toISOString() is UTC and lags the local date until 3am in UTC+3,
+// which silently delayed after-midnight fixtures.
+function localDateStr(d = new Date()) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 function initPlayerSkills(db, player) {
   const mv  = player.market_value || 500000;
   const base = Math.min(88, Math.max(38, Math.round(52 + (Math.log10(Math.max(mv, 100000)) - 5) * 13)));
@@ -288,7 +297,7 @@ function getLineupInfo(db, teamId) {
 
 function simulateScheduledMatches() {
   const db = getDb();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
   const scheduled = db.prepare(`
     SELECT m.*, ht.name as home_name, at.name as away_name
     FROM matches m
@@ -325,7 +334,7 @@ function generateRandomMatch() {
   if (teams.length < 2) return;
   const shuffled = [...teams].sort(() => Math.random() - 0.5);
   const homeTeam = shuffled[0], awayTeam = shuffled[1];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
 
   const matchR = db.prepare(`INSERT INTO matches (home_team_id, away_team_id, match_date, status) VALUES (?,?,?,'scheduled')`).run(homeTeam.id, awayTeam.id, today);
   const matchId = matchR.lastInsertRowid;
@@ -381,7 +390,7 @@ function simulateLeagueMatchday(leagueId) {
   if (!league) throw new Error(`League ${leagueId} not found`);
   if (league.status !== 'active') throw new Error(`League ${leagueId} is not active`);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
 
   // Find next unplayed matchday with scheduled_date <= today
   const nextRow = db.prepare(`
@@ -924,8 +933,10 @@ function simulateSingleLeagueMatch(db, league, srow) {
 
   const now = new Date();
   const pad2 = n => String(n).padStart(2, '0');
-  const matchTimeStr = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-  const today = now.toISOString().slice(0, 10);
+  // Record the PLANNED kick-off (slot schedule), not the simulation instant —
+  // this is what the bot announces, so plan and record must agree.
+  const matchTimeStr = srow.scheduled_time || `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const today = (srow.scheduled_date || '').slice(0, 10) || localDateStr(now);
 
   // Reuse the match row pre-created for betting (status 'scheduled'), if present,
   // so existing bets stay attached. Otherwise create the match row now (legacy).
@@ -976,10 +987,14 @@ function simulateSingleLeagueMatch(db, league, srow) {
 // Pre-create league match rows (status 'scheduled') up to a day before kickoff
 // so coaches can place bets on them. The league_schedule.match_id is left NULL
 // until the match is actually simulated, preserving the "unplayed" invariant.
+// Runs every minute and also HEALS drift: league_schedule is the single source
+// of truth for kick-off date/time, so any pre-created match whose
+// match_date/match_time differs from its slot (e.g. after a reschedule) is
+// re-synced — this is what keeps the Telegram announcements truthful.
 function precreateUpcomingLeagueMatches() {
   try {
     const db = getDb();
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const tomorrow = localDateStr(new Date(Date.now() + 86400000));
 
     const slots = db.prepare(`
       SELECT ls.*, l.season AS league_season
@@ -989,20 +1004,32 @@ function precreateUpcomingLeagueMatches() {
         AND ls.match_id IS NULL
         AND ls.scheduled_date <= ?
         AND ls.scheduled_time IS NOT NULL
+      ORDER BY ls.league_id, ls.matchday, ls.id
     `).all(tomorrow);
 
     const findExisting = db.prepare(`
-      SELECT id FROM matches
+      SELECT id, match_date, match_time FROM matches
       WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND status='scheduled'
     `);
     const insertMatch = db.prepare(`
       INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, season)
       VALUES (?,?,?,?,'scheduled',?,?,?)
     `);
+    const healMatch = db.prepare(`
+      UPDATE matches SET match_date=?, match_time=?, notified_preview=NULL WHERE id=?
+    `);
 
     for (const s of slots) {
-      if (findExisting.get(s.league_id, s.matchday, s.home_team_id, s.away_team_id)) continue;
-      insertMatch.run(s.home_team_id, s.away_team_id, s.scheduled_date, s.scheduled_time, s.league_id, s.matchday, s.league_season);
+      const slotDate = (s.scheduled_date || '').slice(0, 10);
+      const existing = findExisting.get(s.league_id, s.matchday, s.home_team_id, s.away_team_id);
+      if (existing) {
+        if ((existing.match_date || '').slice(0, 10) !== slotDate || existing.match_time !== s.scheduled_time) {
+          healMatch.run(slotDate, s.scheduled_time, existing.id);
+          console.log(`[Scheduler] Re-synced match ${existing.id} to its slot: ${slotDate} ${s.scheduled_time}`);
+        }
+        continue;
+      }
+      insertMatch.run(s.home_team_id, s.away_team_id, slotDate, s.scheduled_time, s.league_id, s.matchday, s.league_season);
     }
   } catch(e) {
     console.warn('[Scheduler] precreateUpcomingLeagueMatches error:', e.message);
@@ -1066,13 +1093,14 @@ function checkAndRunLeagueMatchdays() {
   try {
     const db = getDb();
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const today = localDateStr(now);
     const pad2 = n => String(n).padStart(2, '0');
     const currentTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 
     // Find individual schedule slots whose scheduled_time has arrived
     const dueSlots = db.prepare(`
       SELECT ls.id, ls.matchday, ls.home_team_id, ls.away_team_id,
+             ls.scheduled_date, ls.scheduled_time,
              ht.name AS home_name, at.name AS away_name,
              l.id AS league_id, l.name AS league_name,
              l.match_start_time, l.match_interval_minutes
@@ -1114,7 +1142,7 @@ async function checkAndRunTournamentRounds() {
   if (!activeTours.length) return;
 
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = localDateStr(now);
   const pad2 = n => String(n).padStart(2, '0');
   const nowTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 

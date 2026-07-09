@@ -620,16 +620,25 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
   // Without this they could be "reused" as pre-created matches next season.
   db.prepare(`DELETE FROM matches WHERE league_id=? AND status='scheduled'`).run(league.id);
 
+  // Stagger kick-off times within each matchday, same as /start — without
+  // scheduled_time the auto-sim never fires and the season silently stalls.
+  const nsStartTime = league.match_start_time || '16:00';
+  const nsIntervalMin = league.match_interval_minutes || 15;
+  const [nsH, nsM] = nsStartTime.split(':').map(Number);
+  const nsPad2 = n => String(n).padStart(2, '0');
+
   const insertSchedule = db.prepare(`
-    INSERT INTO league_schedule (league_id, matchday, home_team_id, away_team_id, scheduled_date)
-    VALUES (?,?,?,?,?)
+    INSERT INTO league_schedule (league_id, matchday, home_team_id, away_team_id, scheduled_date, scheduled_time)
+    VALUES (?,?,?,?,?,?)
   `);
 
   for (let i = 0; i < roundsData.length; i++) {
     const scheduledDate = dateAddDays(today, i * daysPerMatchday);
-    for (const { home, away } of roundsData[i]) {
-      insertSchedule.run(league.id, i + 1, home, away, scheduledDate);
-    }
+    roundsData[i].forEach(({ home, away }, j) => {
+      const tot = nsH * 60 + nsM + j * nsIntervalMin;
+      const slotTime = `${nsPad2(Math.floor(tot / 60) % 24)}:${nsPad2(tot % 60)}`;
+      insertSchedule.run(league.id, i + 1, home, away, scheduledDate, slotTime);
+    });
   }
 
   // Recalculate budgets
@@ -710,13 +719,6 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
     startDate = req.body.start_date;
   }
 
-  const matches = db.prepare(`
-    SELECT m.id, m.matchday, m.status, m.match_date
-    FROM matches m
-    WHERE m.league_id = ? AND m.status IN ('scheduled','in_progress')
-    ORDER BY m.matchday ASC, m.id ASC
-  `).all(league.id);
-
   // Update scheduled_time on not-yet-played league_schedule slots
   const slots = db.prepare(`
     SELECT id, matchday, scheduled_date FROM league_schedule
@@ -768,35 +770,27 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
     }
   }
 
-  // Also fix match_time on already-created unfinished matches
-  const byMatchday = {};
-  for (const m of matches) {
-    if (!byMatchday[m.matchday]) byMatchday[m.matchday] = [];
-    byMatchday[m.matchday].push(m);
-  }
-  let updated = 0;
-  for (const [md, dayMatches] of Object.entries(byMatchday)) {
-    dayMatches.forEach((m, idx) => {
-      const totalMin = sh * 60 + sm + idx * intervalMin;
-      const h = Math.floor(totalMin / 60) % 24;
-      const min = totalMin % 60;
-      const timeStr = `${pad2(h)}:${pad2(min)}`;
-      // Move the match's date too when the schedule was shifted (don't touch
-      // an in-progress match's date — only its kickoff time is refreshed).
-      const newDate = dateByMatchday[md];
-      if (m.status === 'in_progress') {
-        const kickoff = new Date();
-        kickoff.setHours(h, min, 0, 0);
-        db.prepare(`UPDATE matches SET match_time=?, started_at=?, tg_kickoff_sent=0 WHERE id=?`)
-          .run(timeStr, kickoff.toISOString(), m.id);
-      } else if (newDate) {
-        db.prepare(`UPDATE matches SET match_time=?, match_date=? WHERE id=?`).run(timeStr, newDate, m.id);
-      } else {
-        db.prepare(`UPDATE matches SET match_time=? WHERE id=?`).run(timeStr, m.id);
-      }
-      updated++;
-    });
-  }
+  // Sync the pre-created betting matches to their slot's (possibly new)
+  // date/time — matched BY FIXTURE (matchday + teams), never by array index:
+  // index pairing silently mismatched times between the slot the auto-sim
+  // fires on and the match row the Telegram bot announces.
+  const updated = db.prepare(`
+    UPDATE matches SET
+      match_time = (SELECT ls.scheduled_time FROM league_schedule ls
+                    WHERE ls.league_id = matches.league_id AND ls.matchday = matches.matchday
+                      AND ls.home_team_id = matches.home_team_id AND ls.away_team_id = matches.away_team_id
+                      AND ls.match_id IS NULL LIMIT 1),
+      match_date = (SELECT ls.scheduled_date FROM league_schedule ls
+                    WHERE ls.league_id = matches.league_id AND ls.matchday = matches.matchday
+                      AND ls.home_team_id = matches.home_team_id AND ls.away_team_id = matches.away_team_id
+                      AND ls.match_id IS NULL LIMIT 1),
+      notified_preview = NULL
+    WHERE league_id = ? AND status = 'scheduled'
+      AND EXISTS (SELECT 1 FROM league_schedule ls
+                  WHERE ls.league_id = matches.league_id AND ls.matchday = matches.matchday
+                    AND ls.home_team_id = matches.home_team_id AND ls.away_team_id = matches.away_team_id
+                    AND ls.match_id IS NULL)
+  `).run(league.id).changes;
 
   res.json({ ok: true, slots: slots.length, matches: updated, start_date: startDate || null });
 });

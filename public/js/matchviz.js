@@ -277,6 +277,27 @@
       const shooter = actor(ev);
       const gx = own ? ownGoalX(ev.team_id) : attackedGoalX(ev.team_id);
       const gy = CY + (Math.random() * 2 - 1) * (GOAL_HALF - 14);
+      // A converted penalty arrives as a plain 'goal' event right after
+      // 'penalty_awarded' (and its description says so) — stage it from the
+      // spot, not as open play.
+      const isPen = !own && (S.penaltyPending || /пенальти/i.test(ev.description || ''));
+      S.penaltyPending = false;
+      if (isPen) {
+        const dir = goalSide(gx) === 'left' ? 1 : -1;
+        const spotX = gx + dir * 88;
+        // shooter walks up, ball placed on the spot, everyone waits…
+        await Promise.all([moveBall({ x: spotX, y: CY }, dur(360), 8), moveTo(shooter, spotX + dir * 26, CY, dur(420))]);
+        highlight(shooter, 'mv-glow');
+        await sleep(dur(600)); // the run-up pause — penalty tension
+        const corner = CY + (Math.random() < 0.5 ? -1 : 1) * (GOAL_HALF - 18);
+        await moveBall({ x: gx + (dir === 1 ? -8 : 8), y: corner }, dur(240), 10);
+        shakeGoal(goalSide(gx));
+        confetti(gx, corner, isHomeTeam(ev.team_id) ? S.homeColor : S.awayColor);
+        overlay(`<div class="mv-goal-txt pen">⚽ ПЕНАЛЬТИ ЗАБИТ!</div><div class="mv-goal-sub">${esc(shooter.name || '')}</div>`, 'mv-ov-goal', dur(1700));
+        await sleep(dur(1150));
+        await moveBall({ x: CX, y: CY }, dur(420), 30);
+        return;
+      }
       const assister = player(ev.player2_id);
       if (!own && assister && assister !== shooter) {
         await moveBall(at(assister), dur(300), 10); highlight(assister, 'mv-glow');
@@ -339,6 +360,7 @@
     }
 
     if (t === 'penalty_awarded') {
+      S.penaltyPending = true; // the next goal/penalty_miss is taken from the spot
       const gx = attackedGoalX(ev.team_id), dir = gx === LEFT_GOAL_X ? 1 : -1;
       await moveBall({ x: gx + dir * 88, y: CY }, dur(480), 18);
       overlay(`<div class="mv-mini">🚨 Пенальти!</div>`, 'mv-ov-mini', dur(1100));
@@ -347,6 +369,7 @@
     }
 
     if (t === 'penalty_miss') {
+      S.penaltyPending = false;
       const gx = attackedGoalX(ev.team_id), dir = gx === LEFT_GOAL_X ? 1 : -1, shooter = actor(ev);
       await moveBall({ x: gx + dir * 88, y: CY }, dur(300), 8); highlight(shooter, 'mv-glow-red');
       const missY = CY + (GOAL_HALF + 30) * (Math.random() < 0.5 ? -1 : 1);
@@ -414,7 +437,7 @@
   window.MatchViz = {
     init(container, cfg) {
       this.destroy();
-      Object.assign(S, { dead: false, queue: [], players: new Map(), pumping: false, eventActive: false, possTeam: 'home', speed: 1 });
+      Object.assign(S, { dead: false, queue: [], players: new Map(), pumping: false, eventActive: false, possTeam: 'home', speed: 1, penaltyPending: false });
       S.homeId = Number(cfg.homeId); S.awayId = Number(cfg.awayId);
       S.homeColor = cfg.homeColor || '#2e7d32';
       S.awayColor = cfg.awayColor || '#c62828';

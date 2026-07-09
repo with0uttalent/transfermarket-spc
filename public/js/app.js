@@ -2995,7 +2995,10 @@ async function renderMatches(app, params) {
     app.innerHTML=`
       <div class="page-header">
         <h1 class="page-title">Matches</h1>
-        ${isAdmin()?`<button class="btn btn-green" onclick="showMatchForm()">+ Schedule Match</button>`:''}
+        <div style="display:flex;gap:8px">
+          ${isAdmin()?`<button class="btn btn-outline" onclick="showMatchCleanup()">🧹 Очистка</button>`:''}
+          ${isAdmin()?`<button class="btn btn-green" onclick="showMatchForm()">+ Schedule Match</button>`:''}
+        </div>
       </div>
       <div class="filters">
         <select id="m-status-filter"><option value="">All Status</option><option value="scheduled">Scheduled</option><option value="finished">Finished</option></select>
@@ -3474,6 +3477,61 @@ function startLiveMatchPoll(matchId) {
 
   poll();
   _liveMatchTimer = setInterval(poll, 1500);
+}
+
+// ── Bulk match cleanup (admin) ────────────────────────────────────────────────
+// Dry-runs the selected criteria first, shows the counts and asks for a final
+// confirmation before actually deleting.
+async function showMatchCleanup() {
+  let leagues = [];
+  try { leagues = await GET('/leagues'); } catch {}
+  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  mkModal('🧹 Очистка матчей', `
+    <div class="form-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="mc-orphaned" checked style="width:auto"/>
+      <label for="mc-orphaned" style="margin:0">Матчи удалённых лиг (лиги больше нет)</label>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="mc-friendlies" style="width:auto"/>
+      <label for="mc-friendlies" style="margin:0">Товарищеские старше</label>
+      <input type="date" id="mc-friendlies-date" value="${monthAgo}" style="width:auto"/>
+    </div>
+    <div class="form-group">
+      <label>Матчи лиги</label>
+      <div style="display:flex;gap:8px">
+        <select id="mc-league" style="flex:1"><option value="">— не трогать —</option>${leagues.map(l => `<option value="${l.id}">${escHtml(l.name)} (сезон ${l.season}, ${l.status})</option>`).join('')}</select>
+        <select id="mc-league-scope" style="width:auto">
+          <option value="past_seasons">прошлые сезоны</option>
+          <option value="all">вся лига</option>
+        </select>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+        «Вся лига» доступна только для неактивных лиг — иначе слоты расписания освободятся и матчи сыграются заново.
+      </div>
+    </div>
+    <div id="mc-preview" style="font-size:13px;color:var(--text-muted);min-height:18px"></div>
+  `, async () => {
+    const payload = {
+      orphaned: document.getElementById('mc-orphaned').checked || undefined,
+      friendlies_before: document.getElementById('mc-friendlies').checked
+        ? document.getElementById('mc-friendlies-date').value : undefined,
+      league_id: document.getElementById('mc-league').value || undefined,
+      league_scope: document.getElementById('mc-league-scope').value,
+    };
+    if (!payload.orphaned && !payload.friendlies_before && !payload.league_id) {
+      toast('Выберите хотя бы один критерий', 'error'); return false;
+    }
+    // 1) dry run — count what would be removed
+    const preview = await POST('/matches/cleanup', { ...payload, dry_run: true });
+    const lines = preview.results.map(r => `${r.label}: ${r.count}`).join('\n');
+    if (preview.total === 0) { toast('Нечего удалять по выбранным критериям'); return true; }
+    if (!confirm(`Будет удалено матчей: ${preview.total}\n\n${lines}\n\nУдалить безвозвратно?`)) return false;
+    // 2) actually delete
+    const r = await POST('/matches/cleanup', payload);
+    toast(`Удалено матчей: ${r.total}`);
+    navigate('/matches'); router();
+    return true;
+  });
 }
 
 async function showMatchForm() {
