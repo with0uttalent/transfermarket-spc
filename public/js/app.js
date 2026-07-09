@@ -4299,14 +4299,71 @@ async function renderLeagueDetail(app, id) {
         <button class="detail-tab" data-tab="schedule">Расписание</button>
         <button class="detail-tab" data-tab="scorers">Бомбардиры</button>
         <button class="detail-tab" data-tab="assists">Ассистенты</button>
+        ${isAdmin() ? `<button class="detail-tab" data-tab="teams">Команды</button>` : ''}
       </div>
       <div id="tab-standings" class="tab-panel active">${renderLeagueStandings(lg.standings)}</div>
       <div id="tab-schedule" class="tab-panel">${renderLeagueSchedule(lg.schedule, lg.match_start_time, lg.match_interval_minutes)}</div>
       <div id="tab-scorers" class="tab-panel">${renderLeagueTopScorers(lg.top_scorers)}</div>
       <div id="tab-assists" class="tab-panel">${renderLeagueTopAssists(lg.top_assists)}</div>
+      ${isAdmin() ? `<div id="tab-teams" class="tab-panel">${renderLeagueTeamsAdmin(lg)}</div>` : ''}
     `;
     setupTabs(app);
   } catch(err) { app.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`; }
+}
+
+// ── League roster management (admin) ─────────────────────────────────────────
+function renderLeagueTeamsAdmin(lg) {
+  const locked = lg.status === 'active';
+  const rows = (lg.standings || []).map(s => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <div class="flex-center gap-2" style="cursor:pointer" onclick="navigate('/teams/${s.team_id}')">
+        ${teamLogoEl(s.logo_url, s.team_name)}<span class="font-bold">${escHtml(s.team_name || '–')}</span>
+      </div>
+      ${locked ? '' : `<button class="btn btn-sm btn-outline" style="color:var(--red,#e74c3c);border-color:var(--red,#e74c3c)"
+        onclick="leagueRemoveTeam(${lg.id}, ${s.team_id}, '${escHtml(s.team_name || '')}')">✕ Убрать</button>`}
+    </div>`).join('');
+  return `<div class="card" style="padding:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px">
+      <div class="font-bold">Команды лиги (${(lg.standings || []).length})</div>
+      ${locked
+        ? `<span style="font-size:12px;color:var(--text-muted)">Состав можно менять только между сезонами (в трансферное окно)</span>`
+        : `<button class="btn btn-sm btn-green" onclick="leagueAddTeamModal(${lg.id})">+ Добавить команду</button>`}
+    </div>
+    ${rows}
+    ${locked ? '' : `<div style="padding:10px 14px;font-size:11px;color:var(--text-muted)">
+      Изменения состава попадут в расписание при старте ${lg.status === 'setup' ? 'сезона' : 'следующего сезона'}.
+    </div>`}
+  </div>`;
+}
+
+async function leagueAddTeamModal(leagueId) {
+  try {
+    const [lg, teams] = await Promise.all([GET('/leagues/' + leagueId), GET('/teams')]);
+    const inLeague = new Set((lg.standings || []).map(s => s.team_id));
+    const candidates = teams.filter(t => !inLeague.has(t.id));
+    if (!candidates.length) { toast('Нет команд вне лиги', 'error'); return; }
+    mkModal('Добавить команду в лигу', `
+      <div class="form-group">
+        <label>Команда</label>
+        <select id="lat-team">${candidates.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted)">Команда попадёт в расписание при старте ${lg.status === 'setup' ? 'сезона' : 'следующего сезона'}.</div>
+    `, async () => {
+      const teamId = Number(document.getElementById('lat-team').value);
+      const r = await POST('/leagues/' + leagueId + '/teams', { team_id: teamId });
+      toast(r.note || 'Команда добавлена');
+      navigate('/leagues/' + leagueId);
+    });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function leagueRemoveTeam(leagueId, teamId, teamName) {
+  if (!confirm(`Убрать «${teamName}» из лиги? История матчей и титулы сохранятся.`)) return;
+  try {
+    await DEL('/leagues/' + leagueId + '/teams/' + teamId);
+    toast('Команда убрана из лиги');
+    navigate('/leagues/' + leagueId);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 function renderLeagueStandings(standings) {

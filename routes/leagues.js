@@ -236,6 +236,52 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ message: 'League deleted' });
 });
 
+// ─── POST /:id/teams — add a team to the league ──────────────────────────────
+// Roster changes are only allowed between seasons (setup / transfer_window):
+// the schedule is a fixed double round-robin, so joiners take effect when the
+// next season's schedule is generated (/start or /next-season).
+router.post('/:id/teams', requireAdmin, (req, res) => {
+  const db = getDb();
+  const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(req.params.id);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  if (league.status === 'active') {
+    return res.status(400).json({ error: 'Нельзя менять состав лиги во время сезона. Добавьте команду в трансферное окно — она попадёт в расписание со следующего сезона.' });
+  }
+
+  const teamId = Number(req.body.team_id);
+  const team = db.prepare('SELECT id, name FROM teams WHERE id=?').get(teamId);
+  if (!team) return res.status(400).json({ error: 'Team not found' });
+
+  const exists = db.prepare('SELECT 1 FROM league_standings WHERE league_id=? AND team_id=?').get(league.id, teamId);
+  if (exists) return res.status(400).json({ error: 'Команда уже в лиге' });
+
+  db.prepare('INSERT INTO league_standings (league_id, team_id) VALUES (?,?)').run(league.id, teamId);
+  res.status(201).json({ ok: true, team_id: teamId, team_name: team.name,
+    note: league.status === 'transfer_window' ? 'Команда вступит в лигу со следующего сезона' : null });
+});
+
+// ─── DELETE /:id/teams/:teamId — remove a team from the league ───────────────
+router.delete('/:id/teams/:teamId', requireAdmin, (req, res) => {
+  const db = getDb();
+  const league = db.prepare('SELECT * FROM leagues WHERE id=?').get(req.params.id);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  if (league.status === 'active') {
+    return res.status(400).json({ error: 'Нельзя убрать команду во время сезона. Дождитесь трансферного окна.' });
+  }
+
+  const teamId = Number(req.params.teamId);
+  const row = db.prepare('SELECT 1 FROM league_standings WHERE league_id=? AND team_id=?').get(league.id, teamId);
+  if (!row) return res.status(404).json({ error: 'Команды нет в этой лиге' });
+
+  const count = db.prepare('SELECT COUNT(*) AS c FROM league_standings WHERE league_id=?').get(league.id).c;
+  if (count <= 2) return res.status(400).json({ error: 'В лиге должно остаться минимум 2 команды' });
+
+  db.prepare('DELETE FROM league_standings WHERE league_id=? AND team_id=?').run(league.id, teamId);
+  db.prepare('DELETE FROM season_budgets WHERE league_id=? AND team_id=?').run(league.id, teamId);
+  // Match history and titles stay — only future participation is affected.
+  res.json({ ok: true });
+});
+
 // ─── POST /:id/start — start season ─────────────────────────────────────────
 router.post('/:id/start', requireAdmin, (req, res) => {
   const db = getDb();
