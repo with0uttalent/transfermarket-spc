@@ -3177,8 +3177,10 @@ function vizFeedEvent(ev) {
     item.innerHTML = `<span class="ev-min">${ev.minute}'</span><span class="ev-icon">${eventIcon(ev.event_type)}</span><span class="ev-desc">${descText(ev.description)}</span>`;
     logEl.insertBefore(item, logEl.firstChild);
   }
+  // During a live match a dedicated 1-second ticker owns the clock (see
+  // startLiveMatchPoll); only drive it from events during replay (no ticker).
   const clock = document.getElementById('match-clock');
-  if (clock && ev.minute) clock.textContent = `⏱ ${ev.minute}'`;
+  if (clock && ev.minute && !_liveClockTimer) clock.textContent = `⏱ ${ev.minute}'`;
   if (ev.event_type === 'goal' || ev.event_type === 'own_goal') {
     const scoringHome = ev.event_type === 'own_goal' ? ev.team_id !== m.home_team_id : ev.team_id === m.home_team_id;
     if (scoringHome) st.sh++; else st.sa++;
@@ -3393,8 +3395,10 @@ async function startMatchSimulation(matchId) {
 
 // Live polling — shared by the initiating coach AND any other user watching the match page
 let _liveMatchTimer = null;
+let _liveClockTimer = null;   // 1-second clock ticker, independent of events
 function stopLiveMatchPoll() {
   if (_liveMatchTimer) { clearInterval(_liveMatchTimer); _liveMatchTimer = null; }
+  if (_liveClockTimer) { clearInterval(_liveClockTimer); _liveClockTimer = null; }
 }
 
 function startLiveMatchPoll(matchId) {
@@ -3413,6 +3417,13 @@ function startLiveMatchPoll(matchId) {
   let seenIds = new Set();
   let lastMatch = null;
 
+  // Dedicated clock: ticks every real second so the minute never freezes
+  // between events. `authMin` is the authoritative minute from the last poll;
+  // the local tick advances up to 2' past it, then each poll resyncs.
+  let clockMin = 0, authMin = 0;
+  const writeClock = () => { const c = document.getElementById('match-clock'); if (c) c.textContent = `⏱ ${clockMin}'`; };
+  _liveClockTimer = setInterval(() => { clockMin = Math.min(clockMin + 1, authMin + 2); writeClock(); }, 1000);
+
   async function poll() {
     let data;
     try { data = await GET('/matches/'+matchId); } catch { return; }
@@ -3422,6 +3433,9 @@ function startLiveMatchPoll(matchId) {
     const sa = document.getElementById('score-away');
 
     if (data.status === 'in_progress') {
+      // resync the ticker to the server minute (never let it run backwards)
+      authMin = data.live_minute || 0;
+      if (authMin > clockMin) { clockMin = authMin; writeClock(); }
       // Feed newly revealed events to the pitch. Scoreboard, clock and the feed
       // line are driven by MatchViz.onEvent AFTER each animation plays, so the
       // picture leads the caption — we deliberately do NOT set score/clock from
