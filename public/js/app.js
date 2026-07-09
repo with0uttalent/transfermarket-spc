@@ -4316,12 +4316,29 @@ async function leagueNextSeason(id) {
 }
 
 async function leagueReschedule(id) {
-  if (!confirm('Пересчитать расписание матчей по текущим настройкам времени?')) return;
-  try {
-    const r = await POST('/leagues/'+id+'/reschedule', {});
-    toast(`Расписание обновлено: ${r.updated} матчей`);
-    navigate('/leagues/'+id);
-  } catch(e) { toast(e.message,'error'); }
+  let lg = {};
+  try { lg = await GET('/leagues/' + id); } catch {}
+  // default to the league's current start date, else today
+  const firstDate = (() => {
+    const days = Object.values(lg.schedule || {}).flat()
+      .map(s => (s.scheduled_date || '').slice(0, 10)).filter(Boolean).sort();
+    return lg.start_date ? lg.start_date.slice(0, 10) : (days[0] || new Date().toISOString().slice(0, 10));
+  })();
+  mkModal('Пересчитать расписание', `
+    <div class="form-group">
+      <label>Дата начала лиги</label>
+      <input type="date" id="resched-date" value="${firstDate}"/>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+        Несыгранные туры сдвинутся так, чтобы первый из них начался с этой даты
+        (промежутки между турами сохранятся). Время матчей — по текущим настройкам лиги.
+      </div>
+    </div>
+  `, async () => {
+    const start_date = document.getElementById('resched-date').value;
+    const r = await POST('/leagues/' + id + '/reschedule', start_date ? { start_date } : {});
+    toast(`Расписание обновлено: ${r.matches} матч(ей)`);
+    navigate('/leagues/' + id);
+  });
 }
 
 async function deleteLeague(id, name) {

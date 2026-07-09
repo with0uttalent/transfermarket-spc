@@ -700,6 +700,16 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
   const [sh, sm] = startTime.split(':').map(Number);
   const pad2 = n => String(n).padStart(2, '0');
 
+  // Optional: shift the whole UNPLAYED schedule so its earliest matchday lands
+  // on start_date, preserving the day gaps between matchdays.
+  let startDate = null;
+  if (req.body && req.body.start_date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.start_date)) {
+      return res.status(400).json({ error: 'start_date must be YYYY-MM-DD' });
+    }
+    startDate = req.body.start_date;
+  }
+
   const matches = db.prepare(`
     SELECT m.id, m.matchday, m.status, m.match_date
     FROM matches m
@@ -709,7 +719,7 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
 
   // Update scheduled_time on not-yet-played league_schedule slots
   const slots = db.prepare(`
-    SELECT id, matchday FROM league_schedule
+    SELECT id, matchday, scheduled_date FROM league_schedule
     WHERE league_id = ? AND match_id IS NULL
     ORDER BY matchday ASC, id ASC
   `).all(league.id);
@@ -726,6 +736,38 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
     });
   }
 
+  // ── Shift schedule dates so the earliest unplayed matchday = start_date ──────
+  const dateByMatchday = {};
+  if (startDate) {
+    const dated = slots.filter(s => s.scheduled_date);
+    const earliest = dated.length ? dated.map(s => s.scheduled_date.slice(0, 10)).sort()[0] : null;
+    const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+
+    const unplayedMDs = [...new Set(slots.map(s => s.matchday))].sort((a, b) => a - b);
+    for (let k = 0; k < unplayedMDs.length; k++) {
+      const md = unplayedMDs[k];
+      let newDate;
+      if (earliest) {
+        // preserve the gap this matchday had relative to the old earliest date
+        const cur = bySlot[md].find(s => s.scheduled_date)?.scheduled_date;
+        const gap = cur ? daysBetween(earliest, cur.slice(0, 10)) : k;
+        newDate = dateAddDays(startDate, Math.max(0, gap));
+      } else {
+        // no dates on record — spread the remaining matchdays over ~30 days
+        const span = unplayedMDs.length <= 1 ? 0 : Math.round(k * 30 / (unplayedMDs.length - 1));
+        newDate = dateAddDays(startDate, span);
+      }
+      dateByMatchday[md] = newDate;
+      db.prepare('UPDATE league_schedule SET scheduled_date=? WHERE league_id=? AND matchday=? AND match_id IS NULL')
+        .run(newDate, league.id, md);
+    }
+    // keep the league's start_date in sync with the (new) first matchday date
+    const firstMd = unplayedMDs[0];
+    if (firstMd != null && dateByMatchday[firstMd]) {
+      db.prepare('UPDATE leagues SET start_date=? WHERE id=?').run(dateByMatchday[firstMd], league.id);
+    }
+  }
+
   // Also fix match_time on already-created unfinished matches
   const byMatchday = {};
   for (const m of matches) {
@@ -733,17 +775,22 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
     byMatchday[m.matchday].push(m);
   }
   let updated = 0;
-  for (const dayMatches of Object.values(byMatchday)) {
+  for (const [md, dayMatches] of Object.entries(byMatchday)) {
     dayMatches.forEach((m, idx) => {
       const totalMin = sh * 60 + sm + idx * intervalMin;
       const h = Math.floor(totalMin / 60) % 24;
       const min = totalMin % 60;
       const timeStr = `${pad2(h)}:${pad2(min)}`;
+      // Move the match's date too when the schedule was shifted (don't touch
+      // an in-progress match's date — only its kickoff time is refreshed).
+      const newDate = dateByMatchday[md];
       if (m.status === 'in_progress') {
         const kickoff = new Date();
         kickoff.setHours(h, min, 0, 0);
         db.prepare(`UPDATE matches SET match_time=?, started_at=?, tg_kickoff_sent=0 WHERE id=?`)
           .run(timeStr, kickoff.toISOString(), m.id);
+      } else if (newDate) {
+        db.prepare(`UPDATE matches SET match_time=?, match_date=? WHERE id=?`).run(timeStr, newDate, m.id);
       } else {
         db.prepare(`UPDATE matches SET match_time=? WHERE id=?`).run(timeStr, m.id);
       }
@@ -751,7 +798,7 @@ router.post('/:id/reschedule', requireAdmin, (req, res) => {
     });
   }
 
-  res.json({ ok: true, slots: slots.length, matches: updated });
+  res.json({ ok: true, slots: slots.length, matches: updated, start_date: startDate || null });
 });
 
 // ─── GET /:id/budget/:teamId ──────────────────────────────────────────────────
