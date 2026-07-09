@@ -393,16 +393,17 @@ router.post('/:id/simulate-matchday', requireAdmin, (req, res) => {
     const pre = db.prepare(`
       SELECT id FROM matches
       WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND status='scheduled'
+        AND (season IS NULL OR season=?)
       ORDER BY id LIMIT 1
-    `).get(league.id, matchday, srow.home_team_id, srow.away_team_id);
+    `).get(league.id, matchday, srow.home_team_id, srow.away_team_id, league.season);
     let matchId;
     if (pre) {
       matchId = pre.id;
     } else {
       const matchR = db.prepare(`
-        INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
-        VALUES (?,?,?,?,'scheduled',?,?)
-      `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, matchday);
+        INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, season)
+        VALUES (?,?,?,?,'scheduled',?,?,?)
+      `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, matchday, league.season);
       matchId = matchR.lastInsertRowid;
     }
 
@@ -567,6 +568,11 @@ router.post('/:id/next-season', requireAdmin, (req, res) => {
   const daysPerMatchday = Math.max(1, Math.floor(30 / totalMatchdays));
 
   db.prepare('DELETE FROM league_schedule WHERE league_id=?').run(league.id);
+
+  // Drop last season's never-played betting placeholders (status 'scheduled').
+  // Their open bets cascade-delete with them; budgets are reset below anyway.
+  // Without this they could be "reused" as pre-created matches next season.
+  db.prepare(`DELETE FROM matches WHERE league_id=? AND status='scheduled'`).run(league.id);
 
   const insertSchedule = db.prepare(`
     INSERT INTO league_schedule (league_id, matchday, home_team_id, away_team_id, scheduled_date)

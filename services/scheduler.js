@@ -465,10 +465,10 @@ function simulateLeagueMatchday(leagueId) {
     const matchTimeStr = `${pad2(kickoff.getHours())}:${pad2(kickoff.getMinutes())}`;
 
     const matchR = db.prepare(`
-      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score)
-      VALUES (?,?,?,?,'in_progress',?,?,?,?,?)
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score, season)
+      VALUES (?,?,?,?,'in_progress',?,?,?,?,?,?)
     `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, leagueId, matchday,
-           kickoff.toISOString(), result.homeScore, result.awayScore);
+           kickoff.toISOString(), result.homeScore, result.awayScore, league.season);
     const matchId = matchR.lastInsertRowid;
 
     // Apply player/team stat updates immediately (hidden from match view until finished)
@@ -932,8 +932,9 @@ function simulateSingleLeagueMatch(db, league, srow) {
   const pre = db.prepare(`
     SELECT id FROM matches
     WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND status='scheduled'
+      AND (season IS NULL OR season=?)
     ORDER BY id LIMIT 1
-  `).get(league.id, srow.matchday, srow.home_team_id, srow.away_team_id);
+  `).get(league.id, srow.matchday, srow.home_team_id, srow.away_team_id, league.season);
 
   let matchId;
   if (pre) {
@@ -944,10 +945,10 @@ function simulateSingleLeagueMatch(db, league, srow) {
     matchId = pre.id;
   } else {
     const matchR = db.prepare(`
-      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score)
-      VALUES (?,?,?,?,'in_progress',?,?,?,?,?)
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, started_at, home_score, away_score, season)
+      VALUES (?,?,?,?,'in_progress',?,?,?,?,?,?)
     `).run(srow.home_team_id, srow.away_team_id, today, matchTimeStr, league.id, srow.matchday,
-           now.toISOString(), result.homeScore, result.awayScore);
+           now.toISOString(), result.homeScore, result.awayScore, league.season);
     matchId = matchR.lastInsertRowid;
   }
 
@@ -981,7 +982,7 @@ function precreateUpcomingLeagueMatches() {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 
     const slots = db.prepare(`
-      SELECT ls.*
+      SELECT ls.*, l.season AS league_season
       FROM league_schedule ls
       JOIN leagues l ON ls.league_id = l.id
       WHERE l.status = 'active'
@@ -995,13 +996,13 @@ function precreateUpcomingLeagueMatches() {
       WHERE league_id=? AND matchday=? AND home_team_id=? AND away_team_id=? AND status='scheduled'
     `);
     const insertMatch = db.prepare(`
-      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday)
-      VALUES (?,?,?,?,'scheduled',?,?)
+      INSERT INTO matches (home_team_id, away_team_id, match_date, match_time, status, league_id, matchday, season)
+      VALUES (?,?,?,?,'scheduled',?,?,?)
     `);
 
     for (const s of slots) {
       if (findExisting.get(s.league_id, s.matchday, s.home_team_id, s.away_team_id)) continue;
-      insertMatch.run(s.home_team_id, s.away_team_id, s.scheduled_date, s.scheduled_time, s.league_id, s.matchday);
+      insertMatch.run(s.home_team_id, s.away_team_id, s.scheduled_date, s.scheduled_time, s.league_id, s.matchday, s.league_season);
     }
   } catch(e) {
     console.warn('[Scheduler] precreateUpcomingLeagueMatches error:', e.message);
@@ -1011,6 +1012,11 @@ function precreateUpcomingLeagueMatches() {
 // Self-heal: record any finished league match that was never written into the
 // standings/schedule (e.g. force-started before the bookkeeping fix). Idempotent
 // — a fixture is only recorded while its schedule slot is still unlinked.
+// CRITICAL: only matches of the league's CURRENT season qualify. When
+// /next-season regenerates the schedule, last season's finished matches all
+// become "orphans" and (same teams -> same round-robin pairs) would otherwise
+// be re-applied to the fresh slots: stale table, instant champion, league
+// bounced straight back into transfer_window.
 function reconcileUnrecordedLeagueMatches() {
   try {
     const db = getDb();
@@ -1018,9 +1024,11 @@ function reconcileUnrecordedLeagueMatches() {
       SELECT m.id, m.league_id, m.matchday, m.home_team_id, m.away_team_id,
              m.home_score, m.away_score
       FROM matches m
+      JOIN leagues l ON l.id = m.league_id
       WHERE m.status='finished'
         AND m.league_id IS NOT NULL
         AND (m.is_friendly IS NULL OR m.is_friendly = 0)
+        AND m.season = l.season
         AND NOT EXISTS (SELECT 1 FROM league_schedule ls WHERE ls.match_id = m.id)
     `).all();
 

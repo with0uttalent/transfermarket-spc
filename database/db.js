@@ -624,6 +624,11 @@ function initSchema() {
     // profile (via their matching league_winner achievement).
     `ALTER TABLE titles ADD COLUMN league_id INTEGER`,
     `ALTER TABLE player_achievements ADD COLUMN league_id INTEGER`,
+    // Which league season a match belongs to. Without this, finished matches
+    // from a previous season become "orphans" once /next-season regenerates
+    // the schedule, and the reconcile self-heal re-applies them to the new
+    // season's slots (stale table, instant champion, stuck transfer window).
+    `ALTER TABLE matches ADD COLUMN season INTEGER`,
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch { /* column already exists */ }
