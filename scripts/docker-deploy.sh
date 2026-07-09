@@ -85,6 +85,14 @@ log "Building image"
 $DC build
 
 log "Starting container"
+# docker-compose V1 (1.29.x) throws KeyError: 'ContainerConfig' when it tries to
+# RECREATE a container over an image using the newer image schema. Removing the
+# old container first makes 'up' create a fresh one instead of taking the buggy
+# recreate path. Data lives in the ./data bind mount, so this is safe.
+# (V2 recreates cleanly, so only do this on V1.)
+if [ "$DC" = "docker-compose" ]; then
+  $DC down --remove-orphans 2>/dev/null || true
+fi
 $DC up -d
 
 log "Waiting for the app to become healthy"
