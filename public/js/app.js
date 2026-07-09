@@ -1064,6 +1064,7 @@ function navigate(path) { window.location.hash = '#' + path; }
 function router() {
   if (!isLoggedIn()) { updateAuthUI(); return; }
   stopLiveMatchPoll(); // cancel live polling when navigating away
+  if (window.MatchViz) MatchViz.destroy(); // stop pitch animations when leaving a match page
   if (_homeLivePollTimer) { clearInterval(_homeLivePollTimer); _homeLivePollTimer = null; }
   if (window.PokerUI && window.PokerUI.teardown) window.PokerUI.teardown();
   if (window.TriviaUI && window.TriviaUI.teardown) window.TriviaUI.teardown();
@@ -3097,24 +3098,31 @@ async function renderMatchDetail(app, id) {
         ${canSimulate?`<button class="btn-simulate" id="btn-sim" onclick="startMatchSimulation(${id})">▶ Начать матч</button>`:''}
       </div>
       ${match.challengeMessage ? `<div class="challenge-match-banner"><span class="challenge-match-icon">⚔️</span><span class="challenge-match-text">«${escHtml(match.challengeMessage.text)}»</span>${match.challengeMessage.from_team_name?`<span class="challenge-match-from">— ${escHtml(match.challengeMessage.from_team_name)}</span>`:''}</div>` : ''}
+      <div class="mviz-layout">
+        <div class="mviz-main" style="position:relative">
+          ${isFinished?`<button class="btn btn-sm btn-outline mviz-replay-btn" id="mviz-replay">▶ Повтор матча</button>`:''}
+          <div id="match-viz"><div class="empty-state" style="padding:60px 0"><p>Загрузка поля…</p></div></div>
+        </div>
+        <aside class="mviz-side card" style="padding:0">
+          <div class="mviz-side-head">📋 События</div>
+          <div class="event-log" id="event-log">
+            ${isFinished ? renderEventLog(match.events) : (isLive ? renderEventLog(match.events) : '<div style="padding:40px;text-align:center;color:var(--text-muted)">Матч ещё не начался</div>')}
+          </div>
+        </aside>
+      </div>
       <div class="detail-tabs" id="match-tabs">
-        <button class="detail-tab active" data-tab="m-events">📋 Events</button>
-        <button class="detail-tab" data-tab="m-ratings">👤 Ratings</button>
+        <button class="detail-tab active" data-tab="m-ratings">👤 Ratings</button>
         ${isFinished?`<button class="detail-tab" data-tab="m-fullstats">📊 Stats</button>`:''}
         ${isFinished?`<button class="detail-tab" data-tab="m-formations">🏟️ Formations</button>`:''}
       </div>
-      <div id="tab-m-events" class="tab-panel active">
-        <div class="event-log" id="event-log">
-          ${isFinished ? renderEventLog(match.events) : (isLive ? renderEventLog(match.events) : '<div style="padding:40px;text-align:center;color:var(--text-muted)">Матч ещё не начался</div>')}
-        </div>
-      </div>
-      <div id="tab-m-ratings" class="tab-panel">
+      <div id="tab-m-ratings" class="tab-panel active">
         ${isFinished&&match.stats.length?renderMatchPlayerRatings(match.stats,match.home_team_id,match.away_team_id):'<div class="empty-state"><p>Stats available after match</p></div>'}
       </div>
       ${isFinished?`<div id="tab-m-fullstats" class="tab-panel">${renderMatchFullStats(match.fullStats, match.home_team_name, match.away_team_name)}</div>`:''}
       ${isFinished?`<div id="tab-m-formations" class="tab-panel"><div id="match-formations-panel"><div class="empty-state"><p>Loading formations…</p></div></div></div>`:''}
     `;
     setupTabs(app);
+    initMatchViz(match, isFinished).catch(()=>{});
     // Lazy-load formations tab
     if (isFinished) {
       app.querySelector('[data-tab="m-formations"]')?.addEventListener('click', async () => {
@@ -3139,6 +3147,52 @@ async function renderMatchDetail(app, id) {
       startLiveMatchPoll(id);
     }
   } catch(err){app.innerHTML=`<div class="empty-state"><p>Error: ${err.message}</p></div>`;}
+}
+
+// ── Pitch visualization glue ─────────────────────────────────────────────────
+// Loads both line-ups, maps each starter to a tactical zone and boots MatchViz.
+// For finished matches wires the replay button; live events are fed from the
+// poll loop in startLiveMatchPoll.
+async function initMatchViz(match, isFinished) {
+  const box = document.getElementById('match-viz');
+  if (!box || !window.MatchViz) return;
+  const [homeLineup, awayLineup] = await Promise.all([
+    GET('/lineups/'+match.home_team_id).catch(()=>({lineup:[]})),
+    GET('/lineups/'+match.away_team_id).catch(()=>({lineup:[]})),
+  ]);
+  const toViz = rows => (rows||[]).filter(s=>s.slot>=1&&s.slot<=11).map(s=>({
+    id: s.player_id,
+    name: s.player_name || s.name || '',
+    image_url: s.image_url || null,
+    shirt_number: s.shirt_number || null,
+    zone: ALL_ZONES.includes(s.position_override) ? s.position_override : posToZone(s.position),
+  }));
+  MatchViz.init(box, {
+    homeId: match.home_team_id, awayId: match.away_team_id,
+    homeColor: match.home_color_primary || '#2e7d32',
+    awayColor: match.away_color_primary || '#c62828',
+    homePlayers: toViz(homeLineup.lineup),
+    awayPlayers: toViz(awayLineup.lineup),
+  });
+
+  const replayBtn = document.getElementById('mviz-replay');
+  if (replayBtn && isFinished) {
+    replayBtn.onclick = () => {
+      const sh = document.getElementById('score-home'), sa = document.getElementById('score-away');
+      const clock = document.getElementById('match-clock');
+      replayBtn.disabled = true; replayBtn.textContent = '⏸ Идёт повтор…';
+      if (sh) sh.textContent = '0'; if (sa) sa.textContent = '0';
+      MatchViz.replay(match.events || [], {
+        onMinute: m => { if (clock) clock.textContent = `⏱ ${m}'`; },
+        onScore: (h,a) => { if (sh) sh.textContent = h; if (sa) sa.textContent = a; },
+        onDone: () => {
+          if (sh) sh.textContent = match.home_score; if (sa) sa.textContent = match.away_score;
+          if (clock) clock.textContent = `⏱ 90'`;
+          replayBtn.disabled = false; replayBtn.textContent = '▶ Повтор матча';
+        },
+      });
+    };
+  }
 }
 
 function renderEventLog(events) {
@@ -3336,6 +3390,9 @@ function startLiveMatchPoll(matchId) {
       for (const ev of (data.events || [])) {
         if (seenIds.has(ev.id)) continue;
         seenIds.add(ev.id);
+
+        // Act the event out on the pitch (queued, plays in order)
+        if (window.MatchViz) MatchViz.playEvent(ev);
 
         if (ev.event_type === 'goal' || ev.event_type === 'own_goal') {
           const isOwnGoal = ev.event_type === 'own_goal';
