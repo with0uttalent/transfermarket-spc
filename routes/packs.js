@@ -264,25 +264,35 @@ router.post('/:id/pick', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ─── POST /packs/buy (coach buys a pack for €1M) ─────────────────────────────
+// ─── POST /packs/buy (coach buys 1..10 packs, €1M each) ──────────────────────
 router.post('/buy', requireAuth, (req, res) => {
   const db = getDb();
   const coach = db.prepare('SELECT * FROM coaches WHERE user_id=?').get(req.user.id);
   if (!coach || !coach.team_id) return res.status(403).json({ error: 'No team' });
 
+  const count = Math.floor(Number(req.body?.count ?? 1));
+  if (!Number.isFinite(count) || count < 1 || count > 10) {
+    return res.status(400).json({ error: 'count must be between 1 and 10' });
+  }
+
   const team = db.prepare('SELECT transfer_budget, transfer_budget_spent FROM teams WHERE id=?').get(coach.team_id);
   const available = (team.transfer_budget || 0) - (team.transfer_budget_spent || 0);
   const PACK_PRICE = 1000000;
+  const total = PACK_PRICE * count;
 
-  if (available < PACK_PRICE) return res.status(400).json({ error: 'Недостаточно средств (нужно €1M)' });
-
-  // Deduct budget
-  db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(PACK_PRICE, coach.team_id);
+  if (available < total) {
+    return res.status(400).json({ error: `Недостаточно средств: нужно €${(total/1e6).toFixed(0)}M, доступно €${(available/1e6).toFixed(1)}M` });
+  }
 
   const countries = db.prepare('SELECT id FROM countries').all();
-  generatePackForCoach(db, coach.id, countries);
+  // One transaction: either the whole batch is paid & generated, or nothing is.
+  db.transaction(() => {
+    db.prepare('UPDATE teams SET transfer_budget_spent = transfer_budget_spent + ? WHERE id=?').run(total, coach.team_id);
+    for (let i = 0; i < count; i++) generatePackForCoach(db, coach.id, countries);
+  })();
 
-  res.json({ ok: true });
+  const pending = db.prepare(`SELECT COUNT(*) AS c FROM player_packs WHERE coach_id=? AND status='pending'`).get(coach.id).c;
+  res.json({ ok: true, bought: count, spent: total, pending_count: pending });
 });
 
 // ─── POST /packs/generate-for-coach (admin, single coach) ────────────────────

@@ -6149,14 +6149,39 @@ function _restoreRevealedCard(playerId) {
   card.classList.add('pack-card-revealed');
 }
 
-async function buyPack() {
-  if (!confirm('Купить пак за €1,000,000?')) return;
-  try {
-    await POST('/packs/buy', {});
-    toast('Пак куплен! 🎁');
-    const coach = State.coachProfile;
-    if (coach) loadPackTab(coach);
-  } catch(e) { toast(e.message, 'error'); }
+function buyPack() {
+  const coach = State.coachProfile;
+  const avail = coach && coach._budgetAvailable != null ? coach._budgetAvailable : null;
+  const maxAfford = avail != null ? Math.max(1, Math.min(10, Math.floor(avail / 1000000))) : 10;
+  mkModal('🛒 Купить паки', `
+    <div class="form-group">
+      <label>Количество (€1M за пак)</label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button type="button" class="btn btn-outline" onclick="const i=document.getElementById('buy-pack-n');i.value=Math.max(1,+i.value-1);i.dispatchEvent(new Event('input'))">−</button>
+        <input type="number" id="buy-pack-n" value="1" min="1" max="10" style="width:80px;text-align:center"/>
+        <button type="button" class="btn btn-outline" onclick="const i=document.getElementById('buy-pack-n');i.value=Math.min(10,+i.value+1);i.dispatchEvent(new Event('input'))">+</button>
+      </div>
+    </div>
+    <div style="font-size:13px;color:var(--text-muted)">
+      Итого: <strong id="buy-pack-total">€1M</strong>
+      ${avail != null ? ` · Доступно: <strong>${fmtValue(avail)}</strong> (макс. ${maxAfford} пак(ов))` : ''}
+    </div>
+  `, async () => {
+    const n = Math.max(1, Math.min(10, parseInt(document.getElementById('buy-pack-n').value) || 1));
+    const r = await POST('/packs/buy', { count: n });
+    toast(`Куплено паков: ${r.bought} 🎁 (в очереди: ${r.pending_count})`);
+    if (State.coachProfile) loadPackTab(State.coachProfile);
+    return true;
+  });
+  // live total
+  setTimeout(() => {
+    const inp = document.getElementById('buy-pack-n');
+    if (inp) inp.addEventListener('input', () => {
+      const n = Math.max(1, Math.min(10, parseInt(inp.value) || 1));
+      const t = document.getElementById('buy-pack-total');
+      if (t) t.textContent = `€${n}M`;
+    });
+  }, 0);
 }
 
 function renderPackTab(pack, coach) {
@@ -6190,11 +6215,13 @@ function renderPackTab(pack, coach) {
   const rarityName = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный', icon:'🌟 Иконка' };
   const rarityGlow = { common:'none', uncommon:'0 0 12px rgba(52,152,219,0.7)', rare:'0 0 18px rgba(155,89,182,0.8)', epic:'0 0 24px rgba(230,126,34,0.9)', legendary:'0 0 30px rgba(241,196,15,1)', icon:'0 0 40px rgba(231,76,60,1)' };
 
+  const queueN = pack.pending_count || 1;
   return `
     <div class="pack-container">
       <div class="pack-header">
-        <h3>🎁 Еженедельный пак</h3>
-        <p style="color:var(--text-muted);font-size:13px">Выберите одного игрока. Остальные станут свободными агентами.</p>
+        <h3>🎁 Еженедельный пак${queueN > 1 ? ` <span style="font-size:14px;color:var(--text-muted);font-weight:600">(в очереди: ${queueN})</span>` : ''}</h3>
+        <p style="color:var(--text-muted);font-size:13px">Выберите одного игрока. Остальные станут свободными агентами.${queueN > 1 ? ' После выбора откроется следующий пак.' : ''}</p>
+        <div style="margin-top:6px"><button class="btn btn-sm btn-outline" onclick="buyPack()">🛒 Купить ещё (€1M)</button></div>
       </div>
       <div class="pack-cards" id="pack-cards">
         ${players.map((p, i) => {
@@ -6269,13 +6296,15 @@ async function pickPackPlayer(packId, playerId) {
   try {
     await POST('/packs/'+packId+'/pick', { player_id: playerId });
     toast('Игрок добавлен в команду! 🎉');
+    // Flash a brief confirmation, then auto-reload the tab: the next queued
+    // pack opens right away (or the buy screen appears) — no manual refresh.
     const el = document.getElementById('tab-pack');
     if (el) el.innerHTML = `<div style="padding:40px;text-align:center">
       <div style="font-size:64px">✅</div>
       <h3>Отличный выбор!</h3>
-      <p>Игрок добавлен в состав команды.</p>
-      <button class="btn btn-green" onclick="navigate('/coaches/me')">Перейти в команду</button>
+      <p style="color:var(--text-muted)">Игрок добавлен в состав. Обновляю…</p>
     </div>`;
+    setTimeout(() => { if (State.coachProfile) loadPackTab(State.coachProfile); }, 1200);
   } catch(e) { toast(e.message, 'error'); }
 }
 
